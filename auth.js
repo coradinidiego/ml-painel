@@ -133,8 +133,20 @@ function paginaConta(u, msg) {
   <p class="s">Atualize aqui as planilhas de custo. Depois de enviar as planilhas do Bling, clique em <b>Atualizar</b> na aba Apuração para recarregar os custos.</p>
   <form method="post" action="/conta/upload" enctype="multipart/form-data">
     <label>Qual arquivo</label><select name="destino">${Object.entries(ARQUIVOS_DADOS).map(([k, v]) => `<option value="${esc(k)}">${esc(v)} — ${esc(k)} (atual: ${quando(k)})</option>`).join('')}</select>
-    <label>Arquivo</label><input type="file" name="arquivo" required>
-    <button>Enviar</button></form></div>
+    <label>Arquivo</label><input type="file" name="arquivo" id="up-arq" required>
+    <div id="up-aviso" style="font-size:12px;margin-top:6px;color:#2e7d32"></div>
+    <button>Enviar</button></form>
+  <script>
+  // Seleciona sozinho o destino certo pelo nome do arquivo escolhido
+  document.getElementById('up-arq').addEventListener('change', e => {
+    const f = e.target.files[0]; if (!f) return;
+    const sel = document.querySelector('select[name=destino]'), aviso = document.getElementById('up-aviso');
+    const nome = f.name.normalize('NFC').toLowerCase();
+    const op = [...sel.options].find(o => o.value.split('/').pop().normalize('NFC').toLowerCase() === nome);
+    if (op) { sel.value = op.value; aviso.style.color = '#2e7d32'; aviso.textContent = '✔ Destino ajustado automaticamente: ' + op.value; }
+    else { aviso.style.color = '#c62828'; aviso.textContent = 'Nome de arquivo não reconhecido — confira o destino no menu acima.'; }
+  });
+  </script></div>
 
   ${u.admin ? `<div class="box"><h2>👥 Usuários</h2><p class="s">Todos os usuários têm acesso completo ao painel.</p>
   <table><tr><th>Nome</th><th>E-mail</th><th></th></tr>${usuarios.map(x => `<tr><td>${esc(x.nome)}${x.admin ? ' <small style="color:#999">(admin)</small>' : ''}</td><td>${esc(x.email)}</td><td style="text-align:right">${x.email === u.email ? '' : `<form method="post" action="/conta/remover" style="margin:0" onsubmit="return confirm('Remover ${esc(x.email)}?')"><input type="hidden" name="email" value="${esc(x.email)}"><button class="del">Remover</button></form>`}</td></tr>`).join('')}</table>
@@ -208,9 +220,13 @@ function montar(app) {
   const multer = require('multer');
   const up = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 * 1024 * 1024 } });
   app.post('/conta/upload', exigeLogin, up.single('arquivo'), (req, res) => {
-    const destino = req.body.destino;
+    let destino = req.body.destino;
     if (!ARQUIVOS_DADOS[destino]) return volta(res, 'erro', 'Destino inválido.');
     if (!req.file) return volta(res, 'erro', 'Escolha um arquivo.');
+    // nome do arquivo enviado (multer entrega em latin1) — se bater com um destino conhecido, usa ele
+    const nomeEnviado = Buffer.from(req.file.originalname || '', 'latin1').toString('utf8').normalize('NFC').toLowerCase();
+    const peloNome = Object.keys(ARQUIVOS_DADOS).find(k => k.split('/').pop().normalize('NFC').toLowerCase() === nomeEnviado);
+    if (peloNome && peloNome !== destino) destino = peloNome;
     const ehXlsx = destino.endsWith('.xlsx'), buf = req.file.buffer;
     if (ehXlsx && !(buf[0] === 0x50 && buf[1] === 0x4b)) return volta(res, 'erro', 'O arquivo não parece ser um .xlsx.');
     if (!ehXlsx) { try { JSON.parse(buf.toString('utf8')); } catch (e) { return volta(res, 'erro', 'O arquivo não é um JSON válido.'); } }
