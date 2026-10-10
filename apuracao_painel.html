@@ -1,0 +1,204 @@
+<!-- 
+  Bloco HTML para adicionar ao painel.html
+  Cole dentro da seção de abas do painel, junto com os outros conteúdos
+-->
+
+<!-- Aba Apuração — adicionar ao nav de abas -->
+<!--
+<button class="tab-btn" onclick="mostrarAba('apuracao')">📊 Apuração</button>
+-->
+
+<!-- Conteúdo da aba -->
+<div id="aba-apuracao" class="aba-conteudo" style="display:none">
+  <div style="max-width:600px; margin:30px auto; font-family:Arial,sans-serif">
+    
+    <h2 style="color:#1a3a6b; border-bottom:2px solid #1a3a6b; padding-bottom:8px">
+      📊 Apuração Mensal
+    </h2>
+
+    <div id="apuracao-form" style="background:#f8f9fa; border-radius:8px; padding:24px; margin-top:20px">
+      
+      <div style="margin-bottom:16px">
+        <label style="font-weight:bold; display:block; margin-bottom:4px">Mês de referência</label>
+        <input type="text" id="ap-mes" placeholder="Ex: Maio" 
+          style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px">
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px">
+        
+        <div style="background:white; border-radius:6px; padding:16px; border:1px solid #ddd">
+          <h3 style="color:#1a3a6b; margin:0 0 12px; font-size:14px">🏪 Zagodini</h3>
+          <label style="font-size:12px; color:#666; display:block; margin-bottom:4px">Export Amazon (Z)</label>
+          <input type="file" id="ap-z-amazon" accept=".xls,.xlsx"
+            style="width:100%; font-size:12px; margin-bottom:8px">
+          <label style="font-size:12px; color:#666; display:block; margin-bottom:4px">Export Shein (Z)</label>
+          <input type="file" id="ap-z-shein" accept=".xls,.xlsx"
+            style="width:100%; font-size:12px">
+        </div>
+
+        <div style="background:white; border-radius:6px; padding:16px; border:1px solid #ddd">
+          <h3 style="color:#c0392b; margin:0 0 12px; font-size:14px">💝 Com Amor de Mae</h3>
+          <label style="font-size:12px; color:#666; display:block; margin-bottom:4px">Export Amazon (C)</label>
+          <input type="file" id="ap-c-amazon" accept=".xls,.xlsx"
+            style="width:100%; font-size:12px; margin-bottom:8px">
+          <label style="font-size:12px; color:#666; display:block; margin-bottom:4px">Export Shein (C)</label>
+          <input type="file" id="ap-c-shein" accept=".xls,.xlsx"
+            style="width:100%; font-size:12px">
+        </div>
+
+      </div>
+
+      <div style="font-size:11px; color:#888; margin-bottom:16px; background:#fff3cd; padding:8px; border-radius:4px">
+        💡 Os custos fixos são lidos automaticamente das planilhas no OneDrive (sempre atualizados).
+        Imposto: <strong>Zagodini 11%</strong> | <strong>Com Amor de Mae 8%</strong>
+      </div>
+
+      <button onclick="gerarApuracao()" id="ap-btn"
+        style="width:100%; padding:12px; background:#1a3a6b; color:white; border:none;
+               border-radius:6px; font-size:15px; font-weight:bold; cursor:pointer">
+        ⚡ Gerar Apuração
+      </button>
+
+    </div>
+
+    <!-- Progresso -->
+    <div id="ap-progresso" style="display:none; margin-top:16px; text-align:center">
+      <div style="font-size:14px; color:#555">⏳ Processando... aguarde</div>
+      <div style="margin-top:8px; height:4px; background:#e0e0e0; border-radius:2px; overflow:hidden">
+        <div id="ap-barra" style="height:100%; width:0; background:#1a3a6b; 
+             animation:progresso 8s linear forwards"></div>
+      </div>
+    </div>
+
+    <!-- Resultado -->
+    <div id="ap-resultado" style="display:none; margin-top:16px; background:#d4edda;
+         border:1px solid #c3e6cb; border-radius:8px; padding:16px">
+      <h3 style="color:#155724; margin:0 0 12px">✅ Apuração gerada com sucesso!</h3>
+      <div style="display:flex; gap:12px">
+        <a id="ap-link-z" href="#" onclick="baixarApuracao('zagodini')" 
+          style="flex:1; text-align:center; padding:10px; background:#1a3a6b; color:white;
+                 border-radius:6px; text-decoration:none; font-size:13px">
+          📥 Baixar Zagodini
+        </a>
+        <a id="ap-link-c" href="#" onclick="baixarApuracao('camae')"
+          style="flex:1; text-align:center; padding:10px; background:#c0392b; color:white;
+                 border-radius:6px; text-decoration:none; font-size:13px">
+          📥 Baixar Com Amor de Mae
+        </a>
+      </div>
+      <div id="ap-avisos" style="margin-top:10px; font-size:11px; color:#856404"></div>
+    </div>
+
+    <!-- Erro -->
+    <div id="ap-erro" style="display:none; margin-top:16px; background:#f8d7da;
+         border:1px solid #f5c6cb; border-radius:8px; padding:16px; color:#721c24; font-size:13px">
+    </div>
+
+    <!-- Histórico -->
+    <div style="margin-top:24px">
+      <h3 style="color:#555; font-size:14px">📁 Apurações anteriores</h3>
+      <div id="ap-historico" style="font-size:13px; color:#666">Carregando...</div>
+    </div>
+
+  </div>
+</div>
+
+<style>
+@keyframes progresso { from { width:0 } to { width:90% } }
+</style>
+
+<script>
+let _apMesAtual = '';
+
+async function gerarApuracao() {
+  const mes     = document.getElementById('ap-mes').value.trim();
+  const zAmazon = document.getElementById('ap-z-amazon').files[0];
+  const zShein  = document.getElementById('ap-z-shein').files[0];
+  const cAmazon = document.getElementById('ap-c-amazon').files[0];
+  const cShein  = document.getElementById('ap-c-shein').files[0];
+
+  if (!mes)     return alert('Informe o mês de referência');
+  if (!zAmazon) return alert('Selecione o export Amazon da Zagodini');
+  if (!zShein)  return alert('Selecione o export Shein da Zagodini');
+  if (!cAmazon) return alert('Selecione o export Amazon da Com Amor de Mae');
+  if (!cShein)  return alert('Selecione o export Shein da Com Amor de Mae');
+
+  _apMesAtual = mes;
+
+  document.getElementById('ap-resultado').style.display = 'none';
+  document.getElementById('ap-erro').style.display      = 'none';
+  document.getElementById('ap-progresso').style.display = 'block';
+  document.getElementById('ap-btn').disabled = true;
+  document.getElementById('ap-barra').style.animation = 'progresso 30s linear forwards';
+
+  const form = new FormData();
+  form.append('mes',     mes);
+  form.append('z_amazon', zAmazon);
+  form.append('z_shein',  zShein);
+  form.append('c_amazon', cAmazon);
+  form.append('c_shein',  cShein);
+
+  try {
+    const resp = await fetch('/apuracao/gerar', { method: 'POST', body: form });
+    const data = await resp.json();
+
+    document.getElementById('ap-progresso').style.display = 'none';
+    document.getElementById('ap-btn').disabled = false;
+
+    if (!resp.ok) throw new Error(data.erro || 'Erro desconhecido');
+
+    document.getElementById('ap-resultado').style.display = 'block';
+
+    if (data.avisos && data.avisos.length > 0) {
+      document.getElementById('ap-avisos').innerHTML =
+        '⚠️ ' + data.avisos.join('<br>⚠️ ');
+    }
+
+    carregarHistorico();
+
+  } catch (err) {
+    document.getElementById('ap-progresso').style.display = 'none';
+    document.getElementById('ap-btn').disabled = false;
+    document.getElementById('ap-erro').style.display = 'block';
+    document.getElementById('ap-erro').textContent = '❌ ' + err.message;
+  }
+}
+
+function baixarApuracao(empresa) {
+  window.location.href = `/apuracao/baixar/${empresa}/${_apMesAtual}`;
+  return false;
+}
+
+async function carregarHistorico() {
+  try {
+    const resp = await fetch('/apuracao/listar');
+    const data = await resp.json();
+    const el   = document.getElementById('ap-historico');
+
+    if (!data.arquivos || data.arquivos.length === 0) {
+      el.textContent = 'Nenhuma apuração gerada ainda.';
+      return;
+    }
+
+    el.innerHTML = data.arquivos.map(f => {
+      const partes  = f.nome.replace('Apuracao_','').replace('.xlsx','').split('_');
+      const empresa = partes[0];
+      const mes     = partes.slice(1).join('_');
+      const kb      = Math.round(f.tamanho / 1024);
+      const data_   = new Date(f.data).toLocaleDateString('pt-BR');
+      const tipo    = empresa === 'Zagodini' ? 'zagodini' : 'camae';
+      return `<div style="display:flex;justify-content:space-between;align-items:center;
+              padding:6px 0;border-bottom:1px solid #eee">
+        <span>${empresa} — ${mes} <small style="color:#999">(${kb}KB, ${data_})</small></span>
+        <a href="/apuracao/baixar/${tipo}/${mes}" 
+           style="font-size:12px;color:#1a3a6b">📥 baixar</a>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('ap-historico').textContent = 'Erro ao carregar histórico.';
+  }
+}
+
+// Carrega histórico ao abrir a aba
+carregarHistorico();
+</script>

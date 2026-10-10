@@ -1,0 +1,14 @@
+node_modules
+.env
+*.xlsx
+*.json.bak*
+apuracao_cache
+apuracao_saida
+apuracao_uploads
+tokens.json
+bling_tokens.json
+shopee_tokens.json
+notificadas.json
+usuarios.json
+.session_secret
+.git

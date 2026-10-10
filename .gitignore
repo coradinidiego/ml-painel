@@ -1,0 +1,29 @@
+# Lista de PERMISSÃO: só o que está abaixo vai para o GitHub.
+# Tokens, .env, planilhas, cache e scripts antigos (criar*.js com tokens) ficam de fora.
+/*
+!/.gitignore
+!/.dockerignore
+!/.env.example
+!/Dockerfile
+!/LEIA-ME-NUVEM.md
+!/package.json
+!/package-lock.json
+!/server.js
+!/dados.js
+!/auth.js
+!/bling.js
+!/shopee.js
+!/telegram.js
+!/ads.js
+!/apuracao.js
+!/shopee-boost-server.js
+!/tiny.js
+!/tiny_apuracao.js
+!/renovar.js
+!/auth_ml.js
+!/gerar_apuracao.py
+!/gerar_custos_json.py
+!/painel.html
+!/painel_ads.html
+!/apuracao_painel.html
+!/logos.json
