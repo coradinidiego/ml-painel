@@ -9,7 +9,8 @@ const fs = require('fs');
 const PARTNER_ID  = parseInt(process.env.SHOPEE_PARTNER_ID);
 const PARTNER_KEY = process.env.SHOPEE_PARTNER_KEY;
 const REDIRECT_URL = process.env.SHOPEE_REDIRECT_URL;
-const SANDBOX = true; // Mude para false ao fazer Go Live
+// Ambiente: produção por padrão. Para usar o sandbox (lojas de teste da Shopee), defina SHOPEE_SANDBOX=true no Railway.
+const SANDBOX = String(process.env.SHOPEE_SANDBOX || '').toLowerCase() === 'true';
 
 const BASE_URL = SANDBOX
   ? 'https://partner.test-stable.shopeemobile.com'
@@ -149,7 +150,7 @@ async function replyRating(ratingId, comment) {
   });
 }
 
-module.exports = {
+module.exports = { SANDBOX, BASE_URL,
   getAuthUrl, getToken, refreshToken,
   saveTokens, getTokens,
   getProducts, getProductDetails,

@@ -396,12 +396,26 @@ app.get('/shopee/callback', async (req, res) => {
   if (!code || !shop_id) return res.send('<h2>❌ Parâmetros inválidos</h2>');
   try {
     const data = await shopee.getToken(code, parseInt(shop_id));
+    if (!data.access_token) {
+      console.error('[shopee/callback] sem token:', JSON.stringify(data));
+      return res.status(400).send('<div style="font-family:system-ui;padding:2rem"><h2>❌ A Shopee não liberou o acesso</h2><p>' + String(data.message || data.error || 'resposta sem token').replace(/</g, '&lt;') + '</p><p><a href="/painel.html">Voltar ao painel</a></p></div>');
+    }
     shopee.saveTokens({ access_token: data.access_token, refresh_token: data.refresh_token, shop_id: parseInt(shop_id) });
-    res.send('<h2 style="font-family:system-ui;padding:2rem">✅ Shopee autorizada com sucesso! <a href="/">Voltar ao painel</a></h2>');
+    res.send('<div style="font-family:system-ui;padding:2rem"><h2>✅ Shopee autorizada com sucesso!</h2><p>Loja ' + parseInt(shop_id) + ' conectada' + (shopee.SANDBOX ? ' (ambiente de teste)' : '') + '. Os dados aparecem no painel em instantes.</p><p><a href="/painel.html">Voltar ao painel</a></p></div>');
     carregarShopee();
   } catch (e) {
-    res.status(500).send('Erro: ' + e.message);
+    const det = e.response?.data ? JSON.stringify(e.response.data) : e.message;
+    console.error('[shopee/callback] erro:', det);
+    res.status(500).send('<div style="font-family:system-ui;padding:2rem"><h2>❌ Erro ao autorizar a Shopee</h2><pre style="white-space:pre-wrap">' + String(det).replace(/</g, '&lt;') + '</pre><p><a href="/painel.html">Voltar ao painel</a></p></div>');
   }
+});
+
+app.get('/shopee/config', (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const t = shopee.getTokens();
+  res.json({ ambiente: shopee.SANDBOX ? 'sandbox (teste)' : 'produção', host: shopee.BASE_URL,
+    partnerId: process.env.SHOPEE_PARTNER_ID || null, chaveConfigurada: !!process.env.SHOPEE_PARTNER_KEY,
+    redirect: process.env.SHOPEE_REDIRECT_URL || null, autorizada: !!t.access_token, shopId: t.shop_id || null, status: shopeeStatus });
 });
 
 app.get('/shopee/dados', (req, res) => {
