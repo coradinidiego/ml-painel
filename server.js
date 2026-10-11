@@ -146,6 +146,21 @@ async function ml(idx, path, params) {
   return r.data;
 }
 
+// Vendedores concorrentes (cache de 24h — o mesmo concorrente costuma ganhar vários catálogos)
+const _vendedores = new Map();
+async function vendedorML(idx, sellerId) {
+  if (!sellerId) return null;
+  const c = _vendedores.get(sellerId);
+  if (c && Date.now() - c.ts < 24 * 3600e3) return c;
+  try {
+    const u = await ml(idx, '/users/' + sellerId);
+    const nick = u.nickname || String(sellerId);
+    const v = { nome: nick, loja: u.permalink || ('https://perfil.mercadolivre.com.br/' + encodeURIComponent(nick)), ts: Date.now() };
+    _vendedores.set(sellerId, v);
+    return v;
+  } catch (e) { return null; }
+}
+
 async function carregarConta(idx) {
   statusCache[idx] = 'carregando';
   progressoCache[idx] = { conta: 0, cat: 0, promo: 0, perguntas: 0 };
@@ -202,7 +217,20 @@ async function carregarConta(idx) {
         it.visit_share = ptw.visit_share;
         it.catalog_product_id = ptw.catalog_product_id;
         it.diff = ptw.current_price && ptw.price_to_win ? (ptw.current_price - ptw.price_to_win) : 999;
-        if (ptw.status === 'competing') perdendo.push(it);
+        if (ptw.status === 'competing') {
+          // quem está ganhando o catálogo: anúncio ganhador -> vendedor (nome + link da loja)
+          try {
+            const wid = ptw.winner?.item_id;
+            if (wid) {
+              const wi = await ml(idx, '/items/' + wid, { attributes: 'id,seller_id,permalink,official_store_id' });
+              it.winner_item_id = wid;
+              it.winner_permalink = wi.permalink || ('https://produto.mercadolivre.com.br/' + wid.replace(/^MLB/, 'MLB-'));
+              const v = await vendedorML(idx, wi.seller_id);
+              if (v) { it.winner_nome = v.nome; it.winner_loja = v.loja; }
+            }
+          } catch(e3) {}
+          perdendo.push(it);
+        }
         else if (ptw.status === 'winning') {
           try {
             if (ptw.catalog_product_id) {
