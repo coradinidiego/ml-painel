@@ -220,14 +220,19 @@ async function carregarConta(idx) {
         if (ptw.status === 'competing') {
           // quem está ganhando o catálogo: anúncio ganhador -> vendedor (nome + link da loja)
           try {
-            const wid = ptw.winner?.item_id;
-            if (wid) {
-              const wi = await ml(idx, '/items/' + wid, { attributes: 'id,seller_id,permalink,official_store_id' });
-              it.winner_item_id = wid;
-              it.winner_permalink = wi.permalink || ('https://produto.mercadolivre.com.br/' + wid.replace(/^MLB/, 'MLB-'));
-              const v = await vendedorML(idx, wi.seller_id);
-              if (v) { it.winner_nome = v.nome; it.winner_loja = v.loja; }
+            let wid = ptw.winner?.item_id, sellerId = ptw.winner?.seller_id;
+            if ((!wid || !sellerId) && ptw.catalog_product_id) {
+              const prod = await ml(idx, '/products/' + ptw.catalog_product_id);
+              wid = wid || prod.buy_box_winner?.item_id;
+              sellerId = sellerId || prod.buy_box_winner?.seller_id;
             }
+            if (wid) {
+              it.winner_item_id = wid;
+              it.winner_permalink = 'https://produto.mercadolivre.com.br/' + wid.replace(/^MLB/, 'MLB-');
+              if (!sellerId) sellerId = (await ml(idx, '/items/' + wid, { attributes: 'id,seller_id' })).seller_id;
+            }
+            const v = await vendedorML(idx, sellerId);
+            if (v) { it.winner_nome = v.nome; it.winner_loja = v.loja; }
           } catch(e3) {}
           perdendo.push(it);
         }
@@ -1202,6 +1207,15 @@ app.get('/debug/bling/:idx', async (req, res) => {
   } catch(e) {
     res.json({ erro: e.message, status: e.response?.status, data: e.response?.data });
   }
+});
+
+// Diagnóstico (admin): GET cru na API do ML com o token da conta. Ex.: /debug/ml-raw/0?path=/products/MLB123
+app.get('/debug/ml-raw/:idx', async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const p = String(req.query.path || '');
+  if (!/^\/(items|products|users|shipments|orders)\//.test(p)) return res.status(400).json({ erro: 'path não permitido' });
+  try { res.json(await ml(parseInt(req.params.idx), p)); }
+  catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
 
 app.get('/debug/ml/:idx', async (req, res) => {
