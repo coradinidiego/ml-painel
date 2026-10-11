@@ -70,8 +70,21 @@ async function custosErp(idx) {
   const mapa = {};
   try {
     if (idx === 2) {
-      const t = await require('./tiny').custosPorSku();
-      for (const [sku, v] of Object.entries(t)) { const c = v.precoCusto > 0 ? v.precoCusto : v.precoCustoMedio; if (c > 0) mapa[K(sku)] = c; }
+      // Tiny: mapeia pelo código e pelo GTIN/EAN (os anúncios da Lufe no ML usam o EAN como SKU)
+      const tiny = require('./tiny');
+      for (let pagina = 1, total = 1; pagina <= total && pagina <= 50; pagina++) {
+        const ret = await tiny.chamar('produtos.pesquisa.php', { pesquisa: '', pagina });
+        if (ret.vazio) break;
+        total = parseInt(ret.numero_paginas || 1);
+        for (const x of ret.produtos || []) {
+          const p = x.produto || {};
+          const c = num(p.preco_custo) > 0 ? num(p.preco_custo) : num(p.preco_custo_medio);
+          if (!(c > 0)) continue;
+          if (p.codigo) mapa[K(p.codigo)] = c;
+          if (p.gtin) mapa[K(p.gtin)] = c;
+        }
+        await new Promise(r => setTimeout(r, 1100));
+      }
     } else {
       const b = await require('./bling').getCustosPorSku(idx);
       for (const [sku, c] of Object.entries(b)) if (c > 0) mapa[K(sku)] = c;
