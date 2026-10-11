@@ -2,7 +2,7 @@
  * Margem dos anúncios de catálogo: lucro % no preço atual e no "preço para ganhar".
  *
  *  lucro = preço − custo do produto − tarifa de venda do ML (comissão + taxa fixa)
- *          − frete grátis (só ≥ R$ 79) − imposto
+ *          − custo de envio do vendedor (ML cobra por peso/faixa de preço, inclusive abaixo de R$ 79) − imposto
  *
  *  - Custo: ERP primeiro — Bling (Zagodini, Com Amor de Mãe) / Tiny (Lufe), preço de custo do produto;
  *           planilha de precificação só como reserva para SKUs sem custo no ERP.
@@ -167,7 +167,7 @@ async function calcularMargens(ml, idx, uid, itens) {
         if (!(preco > 0)) return null;
         const tarifa = await tarifaML(ml, idx, preco, it.listing_type_id, it.category_id);
         if (tarifa == null) return null;
-        const frete = preco >= 79 ? (freteBase || 0) : 0;   // abaixo de R$ 79 o comprador paga o frete
+        const frete = freteBase || 0;   // custo de envio do vendedor (o ML cobra também abaixo de R$ 79, por peso/faixa de preço)
         const lucro = preco - custo - tarifa - frete - preco * imp;
         return { lucro, pct: lucro / preco * 100, tarifa, frete };
       };
