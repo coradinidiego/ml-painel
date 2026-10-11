@@ -69,6 +69,16 @@ body{background:#f0f2f5;color:#111}
 .btn{background:white;border:1px solid #ddd;border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer}
 .btn:hover{background:#f5f5f5}
 .alink{font-size:11px;color:#378ADD;text-decoration:none}
+.ctw{position:relative;cursor:help;border-bottom:1px dotted currentColor}
+.ctw .ct{display:none;position:absolute;right:0;top:calc(100% + 8px);z-index:50;width:310px;background:#1c1c1e;color:#f2f2f2;border-radius:10px;padding:12px 14px;font-size:13px;font-weight:400;white-space:normal;box-shadow:0 8px 24px rgba(0,0,0,.25);text-align:left}
+.ctw:hover .ct{display:block}
+#tab-perdendo .section{overflow:visible}
+.ct-h{font-size:11px;color:#9aa0a6;margin-bottom:6px}
+.ct-l,.ct-t{display:flex;justify-content:space-between;gap:12px;line-height:1.7}
+.ct-l small{color:#9aa0a6}
+.ct-t{border-top:1px solid #3a3a3c;margin-top:6px;padding-top:6px;font-weight:700}
+.ct-t.pos span:last-child{color:#5ee08f}.ct-t.mid span:last-child{color:#ffb547}.ct-t.neg span:last-child{color:#ff6b6b}
+.ct-n{font-size:11px;color:#9aa0a6;margin-top:8px;line-height:1.4}
 .qrow{display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid #f0f0f0}
 .qrow:last-child{border-bottom:none}
 .qbody{flex:1}.qtxt{font-size:13px;line-height:1.5}.qmeta{font-size:11px;color:#aaa;margin-top:3px}
@@ -452,12 +462,30 @@ function renderPerdendo(from){
   }).join('');
 }
 
+function calcTip(c,titulo){
+  if(!c)return '';
+  const m=v=>'R$ '+(+v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const p=v=>(+v||0).toLocaleString('pt-BR',{maximumFractionDigits:2})+'%';
+  const l=(a,b,neg)=>'<div class="ct-l"><span>'+a+'</span><span>'+(neg?'−':'')+b+'</span></div>';
+  const escH=t=>String(t||'').replace(/[&<>"]/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[x]));
+  return '<div class="ct">'+
+    '<div class="ct-h">'+titulo+'</div>'+
+    l('Preço de venda',m(c.preco))+
+    l('Envio (pago por você)',m(c.frete),1)+
+    l('Tarifa ML'+(c.tarifaPct!=null?' ('+p(c.tarifaPct)+(c.tarifaFixa?' + '+m(c.tarifaFixa):'')+')':''),m(c.tarifa),1)+
+    l('Custo do produto <small>('+escH(c.custoFonte)+')</small>',m(c.custo),1)+
+    (c.embalagem?l('Embalagem',m(c.embalagem),1):'')+
+    l('Imposto ('+p(c.impostoPct)+')',m(c.imposto),1)+
+    '<div class="ct-t '+(c.lucro<0?'neg':c.pct<10?'mid':'pos')+'"><span>Margem</span><span>'+m(c.lucro)+' ('+p(c.pct)+')</span></div>'+
+    '<div class="ct-n">Envio e tarifa informados pelo Mercado Livre para este anúncio'+(c.tipoAnuncio?' ('+escH(c.tipoAnuncio)+')':'')+(c.pesoG?' · peso faturável '+c.pesoG+' g':'')+'.</div>'+
+  '</div>';
+}
 function lucroHtml(it){
-  const pc=v=>(v>0?'':'')+v.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%';
+  const pc=v=>v.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
   const cor=v=>v<0?'#c62828':v<10?'#e67e00':'#2e7d32';
   if(it.lucro_ptw_pct==null) return it.margem_obs?'<div style="font-size:11px;color:#999;margin-top:2px">Lucro: '+it.margem_obs+'</div>':'';
-  const dica='Custo '+fmt(it.custo_produto||0)+' ('+(it.custo_fonte||'?')+') · tarifa ML '+fmt(it.tarifa_ptw||0)+(it.frete_ptw?' · envio '+fmt(it.frete_ptw):'')+(it.embalagem?' · embalagem '+fmt(it.embalagem):'')+' · imposto '+(it.imposto_pct||0)+'%'+(it.lucro_ptw!=null?' · lucro '+fmt(it.lucro_ptw):'');
-  return '<div title="'+dica+'" style="font-size:12px;margin-top:3px;white-space:nowrap">Lucro: '+(it.lucro_atual_pct!=null?'<span style="color:'+cor(it.lucro_atual_pct)+'">'+pc(it.lucro_atual_pct)+'</span> → ':'')+'<b style="color:'+cor(it.lucro_ptw_pct)+'">'+pc(it.lucro_ptw_pct)+'</b></div>';
+  const atual=it.lucro_atual_pct!=null?'<span class="ctw" style="color:'+cor(it.lucro_atual_pct)+'">'+pc(it.lucro_atual_pct)+calcTip(it.calc_atual,'Hoje, no seu preço')+'</span> → ':'';
+  return '<div style="font-size:12px;margin-top:3px;white-space:nowrap">Lucro: '+atual+'<b class="ctw" style="color:'+cor(it.lucro_ptw_pct)+'">'+pc(it.lucro_ptw_pct)+calcTip(it.calc_ptw,'No preço para ganhar')+'</b></div>';
 }
 
 function renderConcorrentes(){

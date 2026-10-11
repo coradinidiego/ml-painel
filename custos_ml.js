@@ -131,8 +131,9 @@ async function tarifaML(ml, idx, preco, tipo, categoria) {
   if (_tarifa.has(k)) return _tarifa.get(k);
   const r = await ml(idx, '/sites/MLB/listing_prices', { price: preco.toFixed(2), listing_type_id: tipo, category_id: categoria });
   const linha = Array.isArray(r) ? r.find(x => x.listing_type_id === tipo) || r[0] : r;
-  const v = num(linha?.sale_fee_amount) ?? null;
-  if (v != null) _tarifa.set(k, v);
+  const valor = num(linha?.sale_fee_amount);
+  const v = valor == null ? null : { valor, pct: num(linha?.sale_fee_details?.percentage_fee), fixa: num(linha?.sale_fee_details?.fixed_fee) || 0, tipo: linha?.listing_type_name || tipo };
+  if (v) _tarifa.set(k, v);
   return v;
 }
 async function freteML(ml, idx, uid, itemId) {
@@ -140,7 +141,7 @@ async function freteML(ml, idx, uid, itemId) {
   if (c && Date.now() - c.ts < 6 * 3600e3) return c.v;
   try {
     const r = await ml(idx, `/users/${uid}/shipping_options/free`, { item_id: itemId });
-    const v = num(r?.coverage?.all_country?.list_cost) ?? 0;
+    const v = { valor: num(r?.coverage?.all_country?.list_cost) ?? 0, pesoG: num(r?.coverage?.all_country?.billable_weight) };
     _frete.set(itemId, { v, ts: Date.now() });
     return v;
   } catch (e) { return null; }
@@ -160,19 +161,23 @@ async function calcularMargens(ml, idx, uid, itens) {
       const custo = cf.v; it.custo_fonte = cf.fonte;
       if (!it.listing_type_id || !it.category_id) { it.margem_obs = 'sem dados do anúncio'; continue; }
       const freteBase = await freteML(ml, idx, uid, it.id);
+      const r2 = x => Math.round(x * 100) / 100;
       const calc = async preco => {
         if (!(preco > 0)) return null;
-        const tarifa = await tarifaML(ml, idx, preco, it.listing_type_id, it.category_id);
-        if (tarifa == null) return null;
-        const frete = freteBase || 0;   // custo de envio do vendedor (o ML cobra também abaixo de R$ 79, por peso/faixa de preço)
-        const lucro = preco - custo - tarifa - frete - emb - preco * imp;
-        return { lucro, pct: lucro / preco * 100, tarifa, frete };
+        const t = await tarifaML(ml, idx, preco, it.listing_type_id, it.category_id);
+        if (!t) return null;
+        const frete = freteBase?.valor || 0;   // custo de envio do vendedor (o ML cobra também abaixo de R$ 79, por peso/faixa de preço)
+        const imposto = preco * imp;
+        const lucro = preco - custo - t.valor - frete - emb - imposto;
+        return { preco: r2(preco), frete: r2(frete), pesoG: freteBase?.pesoG || null, tarifa: r2(t.valor), tarifaPct: t.pct, tarifaFixa: t.fixa, tipoAnuncio: t.tipo,
+                 custo: r2(custo), custoFonte: cf.fonte, embalagem: r2(emb), imposto: r2(imposto), impostoPct: Math.round(imp * 1000) / 10,
+                 lucro: r2(lucro), pct: Math.round(lucro / preco * 1000) / 10 };
       };
       const atual = await calc(it.current_price);
       const ganhar = await calc(it.price_to_win);
       it.custo_produto = custo;
-      if (atual) it.lucro_atual_pct = Math.round(atual.pct * 10) / 10;
-      if (ganhar) { it.lucro_ptw_pct = Math.round(ganhar.pct * 10) / 10; it.lucro_ptw = Math.round(ganhar.lucro * 100) / 100; it.tarifa_ptw = ganhar.tarifa; it.frete_ptw = ganhar.frete; }
+      if (atual) { it.lucro_atual_pct = atual.pct; it.calc_atual = atual; }
+      if (ganhar) { it.lucro_ptw_pct = ganhar.pct; it.lucro_ptw = ganhar.lucro; it.tarifa_ptw = ganhar.tarifa; it.frete_ptw = ganhar.frete; it.calc_ptw = ganhar; }
       it.imposto_pct = Math.round(imp * 1000) / 10; it.embalagem = emb;
     } catch (e) { it.margem_obs = 'erro ao calcular'; }
   }
