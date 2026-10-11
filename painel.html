@@ -186,6 +186,7 @@ body{background:#f0f2f5;color:#111}
       </select>
     </div>
     <div class="section"><div class="sec-head">🔴 Perdendo no catalogo <span class="cnt" id="c-perdendo">-</span></div><div id="b-perdendo"><div class="loading">Carregando...</div></div></div>
+    <div class="section"><div class="sec-head">🏆 Quem ganha catálogo de você <span class="cnt" id="c-concorrentes">-</span></div><div id="b-concorrentes"><div class="loading">Carregando...</div></div></div>
     <div class="footer"><span id="upd-p">-</span><button class="btn" onclick="recarregarConta()">↺ Atualizar</button></div>
   </div>
   <div id="tab-ganhando" class="tab-content">
@@ -424,6 +425,7 @@ function exibirDados(idx){
 }
 
 function renderPerdendo(from){
+  try{renderConcorrentes();}catch(e){}
   const d=window._dados[ci];const b=el('b-perdendo');
   if(!d){b.innerHTML='<div class="loading">Aguarde...</div>';return;}
   const q=(el('bp')?.value||'').toLowerCase();
@@ -441,6 +443,34 @@ function renderPerdendo(from){
     return'<div class="item-row '+(diff<=2?'hl':'')+'"><div class="thumb">'+thumb+'</div><div class="iinfo"><div class="ititle">'+(it.title||'-')+'</div><div class="imeta">'+it.id+sku+' · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+it.id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/lista/promos?page=1&search='+it.id.replace("MLB","")+' " target="_blank">Promo</a></div>'+ganhador+'</div><div class="prices"><div class="mp">Meu: '+fmt(it.current_price||0)+'</div><div class="pw">Ganhador: '+fmt(it.winner_price||0)+'</div><div class="'+cls+'">Para ganhar: '+fmt(it.price_to_win||0)+'</div></div></div>';
   }).join('');
 }
+
+function renderConcorrentes(){
+  const d=window._dados[ci];const b=el('b-concorrentes');if(!b)return;
+  if(!d){b.innerHTML='<div class="loading">Aguarde...</div>';return;}
+  const escH=t=>String(t||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const urlOk=u=>/^https:\/\/[a-z0-9.-]*mercadoli[vb]re\.com(\.br)?\//i.test(u||'')?u:'';
+  const perd=d.perdendo||[];
+  if(!perd.length){b.innerHTML='<div class="loading" style="color:green">✓ Você não está perdendo nenhum catálogo.</div>';set('c-concorrentes','0');return;}
+  const g={};
+  perd.forEach(it=>{const k=it.winner_nome||'(não identificado)';const x=g[k]||(g[k]={nome:k,loja:it.winner_loja,qtd:0,difSoma:0,difN:0});x.qtd++;
+    if(it.current_price&&it.winner_price){x.difSoma+=it.current_price-it.winner_price;x.difN++;}});
+  const lista=Object.values(g).sort((a,b)=>b.qtd-a.qtd);
+  const total=perd.length, cat=d.catTotal||0, max=lista[0].qtd;
+  set('c-concorrentes',lista.length+' lojas');
+  const pct=v=>(v*100).toLocaleString('pt-BR',{maximumFractionDigits:1})+'%';
+  const resumo='<div style="padding:12px 16px;font-size:13px;color:#555;border-bottom:1px solid #f2f2f2">Você está perdendo <b>'+total+'</b>'+(cat?' de <b>'+cat+'</b> catálogos (<b>'+pct(total/cat)+'</b>)':' catálogos')+'. Os '+Math.min(3,lista.length)+' maiores concorrentes levam <b>'+pct(lista.slice(0,3).reduce((s,x)=>s+x.qtd,0)/total)+'</b> deles. Clique num nome para ver os catálogos dele na lista acima.</div>';
+  b.innerHTML=resumo+'<div style="padding:6px 16px 12px">'+lista.map((x,i)=>{
+    const nome=urlOk(x.loja)?'<a class="alink" style="font-size:13px" href="'+escH(urlOk(x.loja))+'" target="_blank" rel="noopener" title="Abrir a loja no ML">↗</a>':'';
+    const dif=x.difN?(x.difSoma/x.difN):null;
+    return '<div style="display:grid;grid-template-columns:28px minmax(120px,220px) 1fr 64px 120px;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid #f5f5f5;font-size:13px">'+
+      '<span style="color:#aaa;text-align:right">'+(i+1)+'º</span>'+
+      '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><a href="#" data-n="'+escH(x.nome)+'" onclick="filtrarConcorrente(this.dataset.n);return false" style="color:#1a1a2e;font-weight:600;text-decoration:none">'+escH(x.nome)+'</a> '+nome+'</span>'+
+      '<span style="background:#f2f3f5;border-radius:4px;height:10px;overflow:hidden"><i style="display:block;height:100%;width:'+(x.qtd/max*100)+'%;background:#e53935;border-radius:4px"></i></span>'+
+      '<span style="text-align:right"><b>'+pct(x.qtd/total)+'</b></span>'+
+      '<span style="color:#888;text-align:right;white-space:nowrap">'+x.qtd+' catálogo'+(x.qtd>1?'s':'')+(dif!=null?' · '+(dif>=0?'+':'')+fmt(dif):'')+'</span></div>';
+  }).join('')+'<div style="font-size:11px;color:#999;margin-top:8px">% = parte dos seus catálogos perdidos que cada loja está levando. O valor ao lado é quanto o seu preço está, em média, acima do dela.</div></div>';
+}
+function filtrarConcorrente(nome){const i=el('bp');if(!i)return;i.value=nome;renderPerdendo(0);el('b-perdendo').scrollIntoView({behavior:'smooth',block:'start'});}
 
 function renderGanhando(from){
   const d=window._dados[ci];const b=el('b-ganhando');
