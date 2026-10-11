@@ -102,14 +102,47 @@ body{background:#f0f2f5;color:#111}
 .reply-box input{flex:1;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:12px}
 .reply-box button{background:#EE4D2D;color:white;border:none;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:500}
 #shopee-content{display:none}
+/* ── Cabeçalho e contas ───────────────────────────── */
+.hd{background:#0d1b2a;color:#fff;box-shadow:0 1px 0 rgba(255,255,255,.04)}
+.hd .top-bar{background:transparent;padding:14px 2rem 10px;gap:16px}
+.hd-marca{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0}
+.hd-titulo{font-size:12px;font-weight:600;color:#8fa3bf;letter-spacing:.02em}
+.hd-sub{display:flex;align-items:center;gap:10px;min-width:0}
+.hd-sub span{font-size:18px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hd .top-logo{height:28px;width:28px;border-radius:7px;padding:2px;object-fit:contain;background:#fff}
+.hd .top-logo:not([src]){display:none}
+.hd .timer{background:#15283d;color:#9fb3cc;font-variant-numeric:tabular-nums}
+.contas{display:flex;gap:10px;padding:4px 2rem 16px;background:transparent;overflow-x:auto}
+.conta-tab{--cor:#ffe600;position:relative;display:flex;align-items:center;gap:12px;min-width:220px;padding:10px 14px 10px 10px;border:1px solid #1f3550;border-radius:14px;background:#13263a;color:#cfd9e6;text-align:left;cursor:pointer;transition:background .15s,border-color .15s;border-bottom:1px solid #1f3550}
+.conta-tab:hover{background:#18304a;color:#fff}
+.conta-tab.active{background:#fff;color:#0d1b2a;border-color:var(--cor);box-shadow:inset 0 -3px 0 var(--cor)}
+.conta-tab.shp.active{border-color:var(--cor);border-bottom-color:var(--cor)}
+.ct-logo{flex:none;width:46px;height:46px;border-radius:11px;background:#fff;display:grid;place-items:center;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.06)}
+.ct-logo img{width:100%;height:100%;object-fit:contain;border-radius:0;background:transparent;padding:3px}
+.ct-shp{background:#ee4d2d;font-size:22px}
+.ct-logo img[src$="/mae"]{padding:0}
+.ct-txt{display:flex;flex-direction:column;gap:3px;min-width:0}
+.ct-txt b{font-size:14px;font-weight:700;white-space:nowrap}
+.ct-txt small{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#8fa3bf}
+.conta-tab.active .ct-txt small{color:#5d6b7d}
+.ct-canal{opacity:.8}
+.stx::after{content:'Carregando…'}
+.sdot.sp+.stx::after{content:'Atualizado'}
+.sdot.se+.stx::after{content:'Com erro'}
+.stx+.ct-canal::before{content:'·';margin-right:6px}
+.conta-tab .badge{position:absolute;top:-6px;right:-6px;margin:0;font-size:11px;font-weight:700;padding:2px 7px;border:2px solid #0d1b2a}
+.conta-tab.active .badge{border-color:#fff}
+.shp-sep{display:none}
+@media(max-width:700px){.conta-tab{min-width:180px}.hd .top-bar,.contas{padding-left:16px;padding-right:16px}}
 </style>
 </head><body>
-<div class="top-bar">
-  <img class="top-logo" id="top-logo" />
-  <h1 id="top-title">Painel ML</h1>
-  <span class="timer" id="timer">⏱ 30:00</span>
-</div>
-<div class="contas" id="contas-bar"></div>
+<header class="hd">
+  <div class="top-bar">
+    <div class="hd-marca"><span class="hd-titulo">Painel de Marketplaces</span><span class="hd-sub"><img class="top-logo" id="top-logo" /><span id="top-title">Painel ML</span></span></div>
+    <span class="timer" id="timer">⏱ 30:00</span>
+  </div>
+  <nav class="contas" id="contas-bar" aria-label="Contas"></nav>
+</header>
 
 <!-- Conteúdo Shopee (separado do ML) -->
 <div id="shopee-content">
@@ -281,7 +314,7 @@ body{background:#f0f2f5;color:#111}
 })();
 </script>
 <script>
-const CONTAS=[{nome:'Comercial Zagodini',logo:'zagodini'},{nome:'Com Amor de Mae',logo:'mae'},{nome:'Magazine Lufe',logo:'lufe'}];
+const CONTAS=[{nome:'Comercial Zagodini',logo:'zagodini',cor:'#2f9e5b'},{nome:'Com Amor de Mãe',logo:'mae',cor:'#b9525c'},{nome:'Magazine Lufe',logo:'lufe',cor:'#b08a57'}];
 let modoShopee=false;
 let ci=0,timerSecs=1800,timerInt=null;
 const fmt=n=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(n);
@@ -295,7 +328,8 @@ CONTAS.forEach((c,i)=>{
   const btn=document.createElement('button');
   btn.className='conta-tab'+(i===0?' active':'');
   btn.id='cb-'+i;
-  btn.innerHTML='<span class="sdot sl" id="dot-'+i+'"></span><img src="/logo/'+c.logo+'" onerror="this.style.display=\'none\'" /> '+c.nome+' <span class="badge" id="badge-'+i+'"></span>';
+  btn.style.setProperty('--cor',c.cor);
+  btn.innerHTML='<span class="ct-logo"><img src="/logo/'+c.logo+'" alt="" onerror="this.style.display=\'none\'" /></span><span class="ct-txt"><b>'+c.nome+'</b><small><span class="sdot sl" id="dot-'+i+'"></span><span class="stx"></span><span class="ct-canal">Mercado Livre</span></small></span><span class="badge" id="badge-'+i+'"></span>';
   btn.onclick=()=>trocarConta(i,btn);
   bar.appendChild(btn);
 });
@@ -303,7 +337,8 @@ CONTAS.forEach((c,i)=>{
 const sep=document.createElement('div');sep.className='shp-sep';bar.appendChild(sep);
 const shpBtn=document.createElement('button');
 shpBtn.className='conta-tab shp';shpBtn.id='cb-shp';
-shpBtn.innerHTML='<span class="sdot sl" id="dot-shp"></span> 🛍 Shopee Zagodini <span class="shp-tag">SHOPEE</span>';
+shpBtn.style.setProperty('--cor','#ee4d2d');
+shpBtn.innerHTML='<span class="ct-logo ct-shp">🛍</span><span class="ct-txt"><b>Shopee Zagodini</b><small><span class="sdot sl" id="dot-shp"></span><span class="stx"></span><span class="ct-canal">Shopee</span></small></span>';
 shpBtn.onclick=()=>trocarParaShopee(shpBtn);
 bar.appendChild(shpBtn);
 
@@ -323,7 +358,7 @@ function trocarConta(idx,btn){
   document.querySelectorAll('.conta-tab').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
   el('top-logo').src='/logo/'+CONTAS[idx].logo;
-  el('top-title').textContent='Painel ML - '+CONTAS[idx].nome;
+  el('top-title').textContent=CONTAS[idx].nome;
   el('ml-content').style.display='block';
   el('shopee-content').style.display='none';
   exibirDados(idx);
@@ -334,7 +369,7 @@ function trocarParaShopee(btn){
   document.querySelectorAll('.conta-tab').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
   el('top-logo').removeAttribute('src');
-  el('top-title').textContent='Painel Shopee - Zagodini';
+  el('top-title').textContent='Shopee Zagodini';
   el('ml-content').style.display='none';
   el('shopee-content').style.display='block';
   renderShopee();
@@ -418,7 +453,7 @@ function exibirDados(idx){
     return;
   }
   el('top-logo').src='/logo/'+CONTAS[idx].logo;
-  el('top-title').textContent='Painel ML - '+CONTAS[idx].nome;
+  el('top-title').textContent=CONTAS[idx].nome;
   set('card-ativos',d.ativos);set('card-pausados',d.pausados);
   set('r-at',d.ativos);set('r-pa',d.pausados);
   set('card-catalogo',d.catTotal);set('r-tc',d.catTotal);
@@ -716,7 +751,7 @@ function resetarTimer(){timerSecs=1800;} function iniciarTimer(){
 }
 
 el('top-logo').src='/logo/zagodini';
-el('top-title').textContent='Painel ML - Comercial Zagodini';
+el('top-title').textContent='Comercial Zagodini';
 iniciarTimer();
 pollDados();
 setInterval(pollDados,5000);
