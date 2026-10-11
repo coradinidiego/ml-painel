@@ -435,6 +435,7 @@ app.get('/bling/callback', async (req, res) => {
 const IMPOSTOS_FILE = path.join(DATA, 'impostos.json');
 let IMPOSTO_RATE = { 0: 0.11, 1: 0.09 };
 try { IMPOSTO_RATE = { ...IMPOSTO_RATE, ...JSON.parse(fs.readFileSync(IMPOSTOS_FILE)) }; } catch(e) {}
+process.on('config-empresas', () => { try { IMPOSTO_RATE = { ...IMPOSTO_RATE, ...JSON.parse(fs.readFileSync(IMPOSTOS_FILE)) }; } catch(e) {} });
 
 app.get('/apuracao-bling/impostos', (req, res) => {
   res.json(IMPOSTO_RATE);

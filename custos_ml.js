@@ -2,13 +2,13 @@
  * Margem dos anúncios de catálogo: lucro % no preço atual e no "preço para ganhar".
  *
  *  lucro = preço − custo do produto − tarifa de venda do ML (comissão + taxa fixa)
- *          − custo de envio do vendedor (ML cobra por peso/faixa de preço, inclusive abaixo de R$ 79) − imposto
+ *          − embalagem − custo de envio do vendedor (ML cobra por peso/faixa de preço, inclusive abaixo de R$ 79) − imposto
  *
  *  - Custo: ERP primeiro — Bling (Zagodini, Com Amor de Mãe) / Tiny (Lufe), preço de custo do produto;
  *           planilha de precificação só como reserva para SKUs sem custo no ERP.
  *  - Tarifa: API do ML /sites/MLB/listing_prices (por preço, tipo de anúncio e categoria).
  *  - Frete: API do ML /users/{id}/shipping_options/free (custo do vendedor no anúncio).
- *  - Imposto: Zagodini e Com Amor de Mãe de impostos.json (apuração Bling); Lufe da config do Tiny.
+ *  - Imposto e embalagem: config_empresas.js (página Conta).
  */
 const fs = require('fs');
 const path = require('path');
@@ -121,11 +121,8 @@ function custoSku(idx, sku) {
   return null;
 }
 
-function aliquota(idx) {
-  if (idx === 2) { try { return JSON.parse(fs.readFileSync(path.join(DATA, 'tiny_lufe_config.json'))).imposto ?? 0.05; } catch (e) { return 0.05; } }
-  try { const j = JSON.parse(fs.readFileSync(path.join(DATA, 'impostos.json'))); if (j[idx] != null) return parseFloat(j[idx]); } catch (e) {}
-  return idx === 0 ? 0.11 : 0.09;
-}
+function aliquota(idx) { return require('./config_empresas').porMlIdx(idx)?.imposto ?? (idx === 2 ? 0.05 : idx === 0 ? 0.11 : 0.09); }
+function embalagem(idx) { return require('./config_empresas').porMlIdx(idx)?.embalagem ?? 0; }
 
 // ─── Tarifas e frete do ML (com cache) ─────────────────────────────────────
 const _tarifa = new Map(), _frete = new Map();
@@ -154,7 +151,7 @@ async function freteML(ml, idx, uid, itemId) {
  * `ml` é a função do server.js que chama a API do ML com o token da conta.
  */
 async function calcularMargens(ml, idx, uid, itens) {
-  const imp = aliquota(idx);
+  const imp = aliquota(idx), emb = embalagem(idx);
   const erp = await custosErp(idx);
   for (const it of itens) {
     try {
@@ -168,7 +165,7 @@ async function calcularMargens(ml, idx, uid, itens) {
         const tarifa = await tarifaML(ml, idx, preco, it.listing_type_id, it.category_id);
         if (tarifa == null) return null;
         const frete = freteBase || 0;   // custo de envio do vendedor (o ML cobra também abaixo de R$ 79, por peso/faixa de preço)
-        const lucro = preco - custo - tarifa - frete - preco * imp;
+        const lucro = preco - custo - tarifa - frete - emb - preco * imp;
         return { lucro, pct: lucro / preco * 100, tarifa, frete };
       };
       const atual = await calc(it.current_price);
@@ -176,7 +173,7 @@ async function calcularMargens(ml, idx, uid, itens) {
       it.custo_produto = custo;
       if (atual) it.lucro_atual_pct = Math.round(atual.pct * 10) / 10;
       if (ganhar) { it.lucro_ptw_pct = Math.round(ganhar.pct * 10) / 10; it.lucro_ptw = Math.round(ganhar.lucro * 100) / 100; it.tarifa_ptw = ganhar.tarifa; it.frete_ptw = ganhar.frete; }
-      it.imposto_pct = imp * 100;
+      it.imposto_pct = Math.round(imp * 1000) / 10; it.embalagem = emb;
     } catch (e) { it.margem_obs = 'erro ao calcular'; }
   }
 }

@@ -456,7 +456,7 @@ function lucroHtml(it){
   const pc=v=>(v>0?'':'')+v.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%';
   const cor=v=>v<0?'#c62828':v<10?'#e67e00':'#2e7d32';
   if(it.lucro_ptw_pct==null) return it.margem_obs?'<div style="font-size:11px;color:#999;margin-top:2px">Lucro: '+it.margem_obs+'</div>':'';
-  const dica='Custo '+fmt(it.custo_produto||0)+' ('+(it.custo_fonte||'?')+') · tarifa ML '+fmt(it.tarifa_ptw||0)+(it.frete_ptw?' · frete '+fmt(it.frete_ptw):'')+' · imposto '+(it.imposto_pct||0)+'%'+(it.lucro_ptw!=null?' · lucro '+fmt(it.lucro_ptw):'');
+  const dica='Custo '+fmt(it.custo_produto||0)+' ('+(it.custo_fonte||'?')+') · tarifa ML '+fmt(it.tarifa_ptw||0)+(it.frete_ptw?' · envio '+fmt(it.frete_ptw):'')+(it.embalagem?' · embalagem '+fmt(it.embalagem):'')+' · imposto '+(it.imposto_pct||0)+'%'+(it.lucro_ptw!=null?' · lucro '+fmt(it.lucro_ptw):'');
   return '<div title="'+dica+'" style="font-size:12px;margin-top:3px;white-space:nowrap">Lucro: '+(it.lucro_atual_pct!=null?'<span style="color:'+cor(it.lucro_atual_pct)+'">'+pc(it.lucro_atual_pct)+'</span> → ':'')+'<b style="color:'+cor(it.lucro_ptw_pct)+'">'+pc(it.lucro_ptw_pct)+'</b></div>';
 }
 

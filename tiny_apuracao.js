@@ -135,7 +135,7 @@ function calcular(lista, cfg) {
       let taxa;
       if (canal === 'Mercado Livre') { const kg = pesoSku(s); taxa = pu >= 79 ? mlEnvio(pu, (kg || 0.5) * q) : mlEnvio(pu, kg) * q; }
       else taxa = (rg.fixo + rg.frete) * q;
-      const insumos = idx === 0 ? rg.insumos : 0;
+      const insumos = idx === 0 ? (cfg.embalagem ?? rg.insumos) : 0;   // embalagem por pedido (página Conta)
       const lucro = receita - cmv - imposto - comissao - taxa - insumos;
       linhas.push({
         data: p.data_pedido, dataIso: brToIso(p.data_pedido), pedido: p.numero, pedidoCanal: p.numero_ecommerce, canal, situacao: p.situacao,
@@ -231,7 +231,7 @@ router.get('/resultado', (req, res) => {
       lista = Object.values(cache).filter(p => { const d = brToIso(p.data_pedido); return d >= ini && d <= fim; });
       if (!lista.length) return res.json({ ok: false, vazio: true });
     }
-    res.json({ ok: true, ini, fim, geradoEm: meta?.geradoEm || null, ...calcular(lista, getConfig()) });
+    res.json({ ok: true, ini, fim, geradoEm: meta?.geradoEm || null, ...calcular(lista, { ...getConfig(), embalagem: require('./config_empresas').get().find(e => e.id === 'lufe')?.embalagem }) });
   } catch (e) { console.error('[apuracao-tiny]', e); res.status(500).json({ ok: false, erro: e.message }); }
 });
 

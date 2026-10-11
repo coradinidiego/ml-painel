@@ -174,6 +174,13 @@ function paginaConta(u, msg, hostBase = '') {
   <div style="display:flex;gap:10px;flex-wrap:wrap"><a href="/tv/config"><button type="button">Configurar situações</button></a>
   <form method="post" action="/conta/tv-nova-chave" style="margin:0" onsubmit="return confirm('Gerar nova chave? A TV atual vai perder o acesso até abrir o link novo.')"><button style="background:#c62828">Gerar nova chave</button></form></div></div>` : ''}
 
+  <div class="box"><h2>🧾 Impostos e embalagem</h2><p class="s">Usados no lucro do "preço para ganhar" do catálogo e nas apurações. A embalagem é o custo por pedido (caixa, fita, etiqueta).</p>
+  <form method="post" action="/conta/empresas"><table><tr><th>Empresa</th><th>Imposto (%)</th><th>Embalagem por pedido (R$)</th></tr>
+  ${require('./config_empresas').get().map(e => `<tr><td>${esc(e.nome)}</td>
+    <td><input name="imp_${e.id}" type="number" step="0.01" min="0" max="99" value="${+(e.imposto * 100).toFixed(2)}" ${u.admin ? '' : 'disabled'} style="max-width:110px"></td>
+    <td><input name="emb_${e.id}" type="number" step="0.01" min="0" value="${(+e.embalagem).toFixed(2)}" ${u.admin ? '' : 'disabled'} style="max-width:130px"></td></tr>`).join('')}
+  </table>${u.admin ? '<button>Salvar impostos e embalagem</button>' : '<p class="s">Só o administrador altera.</p>'}</form></div>
+
   <div class="box"><h2>🔑 Trocar minha senha</h2><form method="post" action="/conta/senha"><div class="row">
     <div><label>Senha atual</label><input name="atual" type="password" required></div><div><label>Nova senha</label><input name="nova" type="password" minlength="8" required></div><div><label>Repita a nova</label><input name="nova2" type="password" minlength="8" required></div></div>
     <button>Trocar senha</button></form></div>
@@ -229,6 +236,17 @@ function montar(app) {
     const email = normEmail(req.body.email);
     if (email === req.usuario.email) return volta(res, 'erro', 'Você não pode remover a si mesmo.');
     salvarUsuarios(lerUsuarios().filter(x => x.email !== email)); volta(res, 'ok', `Usuário ${email} removido.`);
+  });
+  app.post('/conta/empresas', exigeLogin, form, (req, res) => {
+    if (!req.usuario.admin) return volta(res, 'erro', 'Só o administrador altera impostos e embalagem.');
+    const n = v => { const x = parseFloat(String(v ?? '').replace(',', '.')); return isNaN(x) ? null : x; };
+    const novo = {};
+    for (const e of require('./config_empresas').EMPRESAS) {
+      const imp = n(req.body['imp_' + e.id]), emb = n(req.body['emb_' + e.id]);
+      novo[e.id] = { imposto: imp == null ? null : imp / 100, embalagem: emb };
+    }
+    require('./config_empresas').set(novo);
+    volta(res, 'ok', 'Impostos e embalagem salvos. O lucro do catálogo usa os novos valores na próxima atualização das contas.');
   });
   app.post('/conta/tv-nova-chave', exigeLogin, (req, res) => {
     if (!req.usuario.admin) return volta(res, 'erro', 'Só o administrador.');
