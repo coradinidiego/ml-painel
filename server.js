@@ -155,7 +155,7 @@ async function vendedorML(idx, sellerId) {
   try {
     const u = await ml(idx, '/users/' + sellerId);
     const nick = u.nickname || String(sellerId);
-    const v = { nome: nick, loja: u.permalink || ('https://perfil.mercadolivre.com.br/' + encodeURIComponent(nick)), ts: Date.now() };
+    const v = { nome: nick, loja: (u.permalink || ('https://perfil.mercadolivre.com.br/' + encodeURIComponent(nick))).replace(/^http:/, 'https:'), ts: Date.now() };
     _vendedores.set(sellerId, v);
     return v;
   } catch (e) { return null; }
@@ -220,16 +220,22 @@ async function carregarConta(idx) {
         if (ptw.status === 'competing') {
           // quem está ganhando o catálogo: anúncio ganhador -> vendedor (nome + link da loja)
           try {
-            let wid = ptw.winner?.item_id, sellerId = ptw.winner?.seller_id;
-            if ((!wid || !sellerId) && ptw.catalog_product_id) {
-              const prod = await ml(idx, '/products/' + ptw.catalog_product_id);
-              wid = wid || prod.buy_box_winner?.item_id;
-              sellerId = sellerId || prod.buy_box_winner?.seller_id;
-            }
+            // O ML bloqueia (403) ler anúncios de outros vendedores; a lista de anúncios do produto
+            // de catálogo traz o vendedor de cada um — achamos o ganhador ali.
+            const wid = ptw.winner?.item_id;
+            let sellerId = ptw.winner?.seller_id;
             if (wid) {
               it.winner_item_id = wid;
               it.winner_permalink = 'https://produto.mercadolivre.com.br/' + wid.replace(/^MLB/, 'MLB-');
-              if (!sellerId) sellerId = (await ml(idx, '/items/' + wid, { attributes: 'id,seller_id' })).seller_id;
+            }
+            if (!sellerId && ptw.catalog_product_id) {
+              for (let off = 0; off < 200 && !sellerId; off += 50) {
+                const pr = await ml(idx, '/products/' + ptw.catalog_product_id + '/items', { limit: 50, offset: off });
+                const lista = pr.results || [];
+                const w = wid ? lista.find(x => x.item_id === wid) : lista.find(x => x.seller_id != uid);
+                if (w) { sellerId = w.seller_id; if (!wid) { it.winner_item_id = w.item_id; it.winner_permalink = 'https://produto.mercadolivre.com.br/' + w.item_id.replace(/^MLB/, 'MLB-'); } }
+                if (lista.length < 50) break;
+              }
             }
             const v = await vendedorML(idx, sellerId);
             if (v) { it.winner_nome = v.nome; it.winner_loja = v.loja; }
