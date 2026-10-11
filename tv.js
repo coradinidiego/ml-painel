@@ -14,6 +14,7 @@ const path = require('path');
 const DATA = require('./dados');
 const bling = require('./bling');
 const tiny = require('./tiny');
+const mlEnvios = require('./ml_envios');
 
 const ARQ_CFG = path.join(DATA, 'tv_config.json');
 const ARQ_CANAL_TINY = path.join(DATA, 'apuracao_cache', 'tv_tiny_canal.json');
@@ -21,9 +22,9 @@ const INTERVALO = 90 * 1000;
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
 const EMPRESAS = [
-  { id: 'lufe',     nome: 'Magazine Lufe',    logo: 'lufe',     erp: 'tiny',  canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein'] },
-  { id: 'zagodini', nome: 'Zagodini',         logo: 'zagodini', erp: 'bling', idx: 0, canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein'] },
-  { id: 'mae',      nome: 'Com Amor de Mãe',  logo: 'mae',      erp: 'bling', idx: 1, canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein', 'TikTok'] },
+  { id: 'lufe',     nome: 'Magazine Lufe',    logo: 'lufe',     erp: 'tiny',  ml: 'Lufe',  canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein'] },
+  { id: 'zagodini', nome: 'Zagodini',         logo: 'zagodini', erp: 'bling', idx: 0, ml: 'Zagodini', canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein'] },
+  { id: 'mae',      nome: 'Com Amor de Mãe',  logo: 'mae',      erp: 'bling', idx: 1, ml: 'Mae', canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein', 'TikTok'] },
 ];
 const TINY_SITUACOES = ['Em aberto', 'Aprovado', 'Preparando envio', 'Faturado', 'Pronto para envio', 'Enviado', 'Entregue', 'Não Entregue', 'Cancelado', 'Dados incompletos'];
 
@@ -158,6 +159,7 @@ async function coletarTiny(cfg, hoje) {
 // ─── Agregação + laço em segundo plano ─────────────────────────────────────
 let ESTADO = { atualizadoEm: null, empresas: [], erros: {} };
 let ultimoPedido = 0, rodando = false;
+const ULTIMAS = {}; // último dado bom por empresa/fonte
 
 function agregar(emp, linhas) {
   const canais = {};
@@ -177,17 +179,27 @@ async function atualizar() {
   if (rodando) return; rodando = true;
   const cfg = getCfg(), hoje = hojeIso(), empresas = [], erros = {};
   for (const emp of EMPRESAS) {
+    // Mercado Livre direto da API do ML; demais canais pelo ERP (sem o ML, para não contar duas vezes)
+    const anterior = ULTIMAS[emp.id] || { ml: [], erp: [] };
+    let ml = anterior.ml, erp = anterior.erp, desatualizado = false;
+    try { ml = await mlEnvios.coletar(emp.ml, prazo); }
+    catch (e) { desatualizado = true; erros[emp.id + ' ML'] = e.response?.status === 401 ? 'token do ML expirado' : (e.message || 'erro'); console.warn('[tv] ML', emp.id, e.message); }
     try {
       const linhas = emp.erp === 'tiny' ? await coletarTiny(cfg, hoje) : await coletarBling(emp, cfg, hoje);
-      empresas.push(agregar(emp, linhas));
+      erp = linhas.filter(l => l.canal !== 'Mercado Livre');
     } catch (e) {
-      erros[emp.id] = e.response?.status === 401 ? 'ERP não autorizado' : (e.message || 'erro');
-      console.warn('[tv]', emp.id, erros[emp.id]);
-      const antiga = ESTADO.empresas.find(x => x.id === emp.id); // mantém o último dado bom
-      empresas.push(antiga ? { ...antiga, desatualizado: true } : agregar(emp, []));
+      desatualizado = true;
+      erros[emp.id + ' ' + emp.erp] = e.response?.status === 401 ? 'ERP não autorizado' : (e.message || 'erro');
+      console.warn('[tv]', emp.id, e.message);
+    }
+    ULTIMAS[emp.id] = { ml, erp };
+    empresas.push({ ...agregar(emp, [...ml, ...erp]), desatualizado });
+    if (!ESTADO.atualizadoEm) { // primeira carga: mostra cada empresa assim que fica pronta
+      const vazias = EMPRESAS.filter(e => !empresas.find(x => x.id === e.id)).map(e => ({ ...agregar(e, []), carregando: true }));
+      ESTADO = { ...ESTADO, parcial: true, empresas: [...empresas, ...vazias], hoje };
     }
   }
-  ESTADO = { atualizadoEm: new Date().toISOString(), hoje, empresas, erros, configurado: !!cfg.configurado };
+  ESTADO = { atualizadoEm: new Date().toISOString(), hoje, empresas, erros, configurado: !!cfg.configurado, parcial: false };
   rodando = false;
 }
 setInterval(() => { if (Date.now() - ultimoPedido < 10 * 60e3) atualizar().catch(e => { rodando = false; console.warn('[tv]', e.message); }); }, INTERVALO);
@@ -198,7 +210,22 @@ router.get('/', (req, res) => res.sendFile(path.join(__dirname, 'tv.html')));
 router.get('/dados', async (req, res) => {
   ultimoPedido = Date.now();
   if (!ESTADO.atualizadoEm && !rodando) atualizar().catch(() => { rodando = false; }); // primeira carga em segundo plano
-  res.json({ ...ESTADO, carregando: !ESTADO.atualizadoEm });
+  res.json({ ...ESTADO, atualizadoEm: ESTADO.atualizadoEm || new Date().toISOString(), carregando: !ESTADO.atualizadoEm && !ESTADO.parcial });
+});
+
+router.get('/diagnostico', (req, res) => {
+  if (!req.usuario?.admin && require('./auth').ativo()) return res.status(403).send('Só o administrador.');
+  const nomes = { Lufe: 'Magazine Lufe', Zagodini: 'Zagodini', Mae: 'Com Amor de Mãe' };
+  const rot = { aEmpacotar: 'A empacotar', empacotado: 'Empacotado', enviado: 'Enviado hoje', ignorado: 'Não conta' };
+  const blocos = Object.entries(nomes).map(([c, n]) => {
+    const d = mlEnvios.diagnostico(c);
+    const linhas = Object.entries(d.porStatus).sort((a, b) => b[1].qtd - a[1].qtd)
+      .map(([k, v]) => `<tr><td>${esc(k)}</td><td style="text-align:right">${v.qtd}</td><td>${rot[v.tvConta]}</td></tr>`).join('') || '<tr><td colspan=3>Sem dados ainda — abra a TV e aguarde 1–2 min.</td></tr>';
+    return `<h2>${esc(n)}</h2><table><tr><th>status / substatus no ML</th><th>pacotes</th><th>na TV conta como</th></tr>${linhas}</table>
+      <p style="color:#777;font-size:12px">Tipos de logística: ${esc(Object.entries(d.logistica).map(([k, v]) => k + ': ' + v).join(' · ') || '—')} (fulfillment = Full, não entra na TV)</p>`;
+  }).join('');
+  res.send(`<!doctype html><meta charset="utf-8"><title>Diagnóstico ML</title><style>body{font-family:-apple-system,sans-serif;max-width:820px;margin:24px auto;padding:0 16px;color:#1a1a2e}table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:7px;border-bottom:1px solid #eee;text-align:left}h2{margin-top:28px;font-size:17px}</style>
+  <h1 style="font-size:20px">📦 Pacotes do Mercado Livre por situação</h1><p style="color:#666">Pedidos pagos dos últimos 12 dias ainda não finalizados. Compare com <i>Vendas → Envios</i> no ML.</p>${blocos}`);
 });
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

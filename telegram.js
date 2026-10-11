@@ -35,8 +35,9 @@ function sendTelegramTo(chatId, msg, replyMarkup) {
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
     }, res => {
       let b = ''; res.on('data', d => b+=d);
-      res.on('end', () => resolve(JSON.parse(b)));
+      res.on('end', () => { try { resolve(JSON.parse(b)); } catch (e) { resolve({ ok: false, raw: b }); } });
     });
+    req.on('error', e => resolve({ ok: false, erro: e.message })); // falha de rede não derruba o servidor
     req.write(body); req.end();
   });
 }

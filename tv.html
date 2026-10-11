@@ -27,7 +27,7 @@ body{display:flex;flex-direction:column;padding:1.6vw 2vw;gap:1.4vw}
 /* empresas */
 .grade{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:1.4vw;min-height:0}
 .emp{background:var(--card);border:1px solid var(--line);border-radius:1.2vw;padding:1.4vw;display:flex;flex-direction:column;gap:1.1vw;min-height:0;position:relative}
-.emp.desat::after{content:"dados desatualizados";position:absolute;top:1vw;right:1.2vw;font-size:.8vw;color:var(--late);font-weight:700;text-transform:uppercase}
+.emp.desat::after{content:"sem atualização recente";position:absolute;top:1vw;right:1.2vw;font-size:.8vw;color:var(--late);font-weight:700;text-transform:uppercase}
 .emp-cab{display:flex;align-items:center;gap:1vw}
 .emp-cab img{width:3.4vw;height:3.4vw;border-radius:.7vw;background:#fff;object-fit:contain;padding:.2vw}
 .emp-cab h2{font-size:1.75vw;font-weight:800;letter-spacing:-.01em}
@@ -98,6 +98,7 @@ function cartao(e){
       <td class="num ${c.aEmpacotar?'c-pend':'zero'}">${fmt(c.aEmpacotar)}${c.atrasados?`<span class="late">(${c.atrasados} atras.)</span>`:''}</td>
       <td class="num ${c.empacotados?'c-ok':'zero'}">${fmt(c.empacotados)}</td>
       <td class="num ${c.enviados?'c-env':'zero'}">${fmt(c.enviados)}</td></tr>`).join('');
+  if (e.carregando) return `<section class="emp"><div class="emp-cab"><img src="/logo/${esc(e.logo)}" alt=""><h2>${esc(e.nome)}</h2></div><div style="margin:auto;color:var(--dim);font-size:1.4vw">Carregando…</div></section>`;
   return `<section class="emp ${e.desatualizado?'desat':''}">
     <div class="emp-cab"><img src="/logo/${esc(e.logo)}" alt=""><h2>${esc(e.nome)}</h2></div>
     <div class="grandes">

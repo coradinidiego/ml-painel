@@ -108,6 +108,8 @@ function renovarToken(conta, refresh) {
         } catch(e) { reject(e); }
       });
     });
+    req.on('error', reject); // sem isto, uma falha de rede derrubava o servidor inteiro
+    req.setTimeout(20000, () => req.destroy(new Error('timeout renovando token ML')));
     req.write(data); req.end();
   });
 }
@@ -1298,6 +1300,8 @@ app.get('/', (req, res) => res.redirect('/painel.html'));
 for (const pg of ['painel.html', 'painel_ads.html', 'apuracao_painel.html'])
   app.get('/' + pg, (req, res) => res.sendFile(path.join(__dirname, pg)));
 
+process.on('unhandledRejection', e => console.error('[erro não tratado]', e?.message || e));
+process.on('uncaughtException', e => console.error('[exceção não tratada]', e?.message || e));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
   console.log('Servidor rodando na porta ' + PORT + ' — dados em ' + DATA);
