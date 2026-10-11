@@ -115,6 +115,10 @@ async function situacoesBling(idx) {
   const sits = (await blingGet(c, `/situacoes/modulos/${vendas.id}`))?.data || [];
   return sits.map(s => ({ id: s.id, nome: s.nome || s.descricao || String(s.id) }));
 }
+function canalBling(canais, p) { // Bling não devolve o nome das lojas: usa o número do pedido no marketplace
+  const porLoja = canalDe(canais[p.loja?.id] || '');
+  return porLoja !== 'Outros' ? porLoja : (canalPeloNumero(p.numeroLoja) || 'Outros');
+}
 async function coletarBling(emp, cfg, hoje) {
   const m = { ...vazio(), ...(cfg.bling[emp.idx] || {}) };
   const canais = await canaisBling(emp.idx);
@@ -122,12 +126,12 @@ async function coletarBling(emp, cfg, hoje) {
   const linhas = [];
   for (const etapa of ['emitirNF', 'aEmpacotar', 'empacotado']) {
     for (const p of await blingListar(emp.idx, m[etapa], janela)) {
-      linhas.push({ tipo: etapa, canal: canalDe(canais[p.loja?.id] || ''), prazo: prazo((p.dataPrevista || '').slice(0, 10), hoje) });
+      linhas.push({ tipo: etapa, canal: canalBling(canais, p), prazo: prazo((p.dataPrevista || '').slice(0, 10), hoje) });
     }
     await delay(350);
   }
   for (const p of await blingListar(emp.idx, m.enviado, { dataAlteracaoInicial: hoje, dataAlteracaoFinal: hoje })) {
-    linhas.push({ tipo: 'enviado', canal: canalDe(canais[p.loja?.id] || ''), prazo: 'hoje' });
+    linhas.push({ tipo: 'enviado', canal: canalBling(canais, p), prazo: 'hoje' });
   }
   return linhas;
 }
@@ -162,6 +166,7 @@ function canalPeloNumero(n) {
   if (/^\d{3}-\d{7}-\d{7}$/.test(n)) return 'Amazon';        // 701-1234567-1234567
   if (/^GSH/i.test(n)) return 'Shein';
   if (/^\d{6}[A-Z0-9]{8}$/i.test(n)) return 'Shopee';          // 251011ABCDEF12
+  if (/^\d{18,19}$/.test(n)) return 'TikTok';                  // 576461413038785752
   return null;
 }
 async function canalTiny(p, consultas) {
