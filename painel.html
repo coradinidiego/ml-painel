@@ -184,6 +184,13 @@ body{background:#f0f2f5;color:#111}
         <option value="10">Ate R$10</option>
         <option value="20">Ate R$20</option>
       </select>
+      <select class="sselect" onchange="renderPerdendo(0)" id="fl" title="Lucro se eu baixar para o preço para ganhar">
+        <option value="">Qualquer lucro</option>
+        <option value="0">Lucro para ganhar ≥ 0%</option>
+        <option value="10">Lucro para ganhar ≥ 10%</option>
+        <option value="15">Lucro para ganhar ≥ 15%</option>
+        <option value="20">Lucro para ganhar ≥ 20%</option>
+      </select>
     </div>
     <div class="section"><div class="sec-head">🔴 Perdendo no catalogo <span class="cnt" id="c-perdendo">-</span></div><div id="b-perdendo"><div class="loading">Carregando...</div></div></div>
     <div class="section"><div class="sec-head">🏆 Quem ganha catálogo de você <span class="cnt" id="c-concorrentes">-</span></div><div id="b-concorrentes"><div class="loading">Carregando...</div></div></div>
@@ -432,6 +439,7 @@ function renderPerdendo(from){
   const mx=parseFloat(el('fp')?.value)||0;
   let f=q?d.perdendo.filter(it=>(it.title||'').toLowerCase().includes(q)||(it.id||'').toLowerCase().includes(q)||(it._sku||it.seller_sku||'').toLowerCase().includes(q)||(it.winner_nome||'').toLowerCase().includes(q)):[...d.perdendo];
   if(mx>0)f=f.filter(it=>(it.diff||0)<=mx);
+  const ml_=el('fl')?.value; if(ml_!==''&&ml_!=null)f=f.filter(it=>it.lucro_ptw_pct!=null&&it.lucro_ptw_pct>=parseFloat(ml_));
   if(!f.length){b.innerHTML='<div class="loading" style="color:green">✓ Nenhum resultado!</div>';return;}
   b.innerHTML=f.map(it=>{
     const thumb=it.thumbnail?'<img src="'+it.thumbnail+'" />':'📦';
@@ -440,8 +448,16 @@ function renderPerdendo(from){
     const escH=t=>String(t||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const urlOk=u=>/^https:\/\/[a-z0-9.-]*mercadoli[vb]re\.com(\.br)?\//i.test(u||'')?u:'';
     const ganhador=it.winner_nome?'<div class="imeta" style="margin-top:3px">🏆 Ganhador: '+(urlOk(it.winner_loja)?'<a class="alink" href="'+escH(urlOk(it.winner_loja))+'" target="_blank" rel="noopener"><b>'+escH(it.winner_nome)+'</b></a>':'<b>'+escH(it.winner_nome)+'</b>')+(urlOk(it.winner_permalink)?' · <a class="alink" href="'+escH(urlOk(it.winner_permalink))+'" target="_blank" rel="noopener">Ver anúncio dele</a>':'')+'</div>':'';
-    return'<div class="item-row '+(diff<=2?'hl':'')+'"><div class="thumb">'+thumb+'</div><div class="iinfo"><div class="ititle">'+(it.title||'-')+'</div><div class="imeta">'+it.id+sku+' · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+it.id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/lista/promos?page=1&search='+it.id.replace("MLB","")+' " target="_blank">Promo</a></div>'+ganhador+'</div><div class="prices"><div class="mp">Meu: '+fmt(it.current_price||0)+'</div><div class="pw">Ganhador: '+fmt(it.winner_price||0)+'</div><div class="'+cls+'">Para ganhar: '+fmt(it.price_to_win||0)+'</div></div></div>';
+    return'<div class="item-row '+(diff<=2?'hl':'')+'"><div class="thumb">'+thumb+'</div><div class="iinfo"><div class="ititle">'+(it.title||'-')+'</div><div class="imeta">'+it.id+sku+' · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+it.id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/lista/promos?page=1&search='+it.id.replace("MLB","")+' " target="_blank">Promo</a></div>'+ganhador+'</div><div class="prices"><div class="mp">Meu: '+fmt(it.current_price||0)+'</div><div class="pw">Ganhador: '+fmt(it.winner_price||0)+'</div><div class="'+cls+'">Para ganhar: '+fmt(it.price_to_win||0)+'</div>'+lucroHtml(it)+'</div></div>';
   }).join('');
+}
+
+function lucroHtml(it){
+  const pc=v=>(v>0?'':'')+v.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%';
+  const cor=v=>v<0?'#c62828':v<10?'#e67e00':'#2e7d32';
+  if(it.lucro_ptw_pct==null) return it.margem_obs?'<div style="font-size:11px;color:#999;margin-top:2px">Lucro: '+it.margem_obs+'</div>':'';
+  const dica='Custo '+fmt(it.custo_produto||0)+' ('+(it.custo_fonte||'?')+') · tarifa ML '+fmt(it.tarifa_ptw||0)+(it.frete_ptw?' · frete '+fmt(it.frete_ptw):'')+' · imposto '+(it.imposto_pct||0)+'%'+(it.lucro_ptw!=null?' · lucro '+fmt(it.lucro_ptw):'');
+  return '<div title="'+dica+'" style="font-size:12px;margin-top:3px;white-space:nowrap">Lucro: '+(it.lucro_atual_pct!=null?'<span style="color:'+cor(it.lucro_atual_pct)+'">'+pc(it.lucro_atual_pct)+'</span> → ':'')+'<b style="color:'+cor(it.lucro_ptw_pct)+'">'+pc(it.lucro_ptw_pct)+'</b></div>';
 }
 
 function renderConcorrentes(){

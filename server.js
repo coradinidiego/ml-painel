@@ -198,7 +198,7 @@ async function carregarConta(idx) {
     const details = {};
     for (let i = 0; i < catIds.length; i += 20) {
       const chunk = catIds.slice(i, i+20);
-      const det = await ml(idx, '/items', {ids:chunk.join(','), attributes:'id,title,price,thumbnail,seller_sku,attributes'});
+      const det = await ml(idx, '/items', {ids:chunk.join(','), attributes:'id,title,price,thumbnail,seller_sku,attributes,listing_type_id,category_id'});
       const list = Array.isArray(det) ? det : [det];
       list.forEach(w => { const it = w.body||w; it._sku = extrairSKU(it); details[it.id] = it; });
     }
@@ -297,6 +297,10 @@ const semPromo = [], comPromo = [];
       }
       progressoCache[idx].promo = (i+1)/allItems.length;
     }
+
+    // Lucro % no preço atual e no preço para ganhar (custo da planilha + tarifa/frete do ML + imposto)
+    try { await require('./custos_ml').calcularMargens(ml, idx, uid, perdendo); }
+    catch (e) { console.warn('[margens]', idx, e.message); }
 
     perdendo.sort((a,b) => a.diff-b.diff);
     ganhando.sort((a,b) => (b.margem||0)-(a.margem||0));
