@@ -133,6 +133,12 @@ body{background:#f0f2f5;color:#111}
 .conta-tab .badge{position:absolute;top:-6px;right:-6px;margin:0;font-size:11px;font-weight:700;padding:2px 7px;border:2px solid #0d1b2a}
 .conta-tab.active .badge{border-color:#fff}
 .shp-sep{display:none}
+.canal-sw{display:none;gap:4px;margin:-4px 2rem 14px;padding:4px;background:#13263a;border:1px solid #1f3550;border-radius:10px;width:max-content}
+.canal-sw.show{display:flex}
+.canal-sw button{display:flex;align-items:center;gap:6px;border:none;background:transparent;color:#9fb3cc;font-size:13px;font-weight:600;padding:6px 14px;border-radius:7px;cursor:pointer}
+.canal-sw button:hover{color:#fff}
+.canal-sw button.on{background:#fff;color:#0d1b2a}
+#canal-sw-shp.on{background:#ee4d2d;color:#fff}
 @media(max-width:700px){.conta-tab{min-width:180px}.hd .top-bar,.contas{padding-left:16px;padding-right:16px}}
 </style>
 </head><body>
@@ -142,6 +148,10 @@ body{background:#f0f2f5;color:#111}
     <span class="timer" id="timer">⏱ 30:00</span>
   </div>
   <nav class="contas" id="contas-bar" aria-label="Contas"></nav>
+  <div class="canal-sw" id="canal-sw" role="tablist" aria-label="Canal da Zagodini">
+    <button id="canal-sw-ml" class="on" role="tab">Mercado Livre</button>
+    <button id="canal-sw-shp" role="tab"><span class="sdot sl" id="dot-shp"></span>Shopee</button>
+  </div>
 </header>
 
 <!-- Conteúdo Shopee (separado do ML) -->
@@ -333,14 +343,10 @@ CONTAS.forEach((c,i)=>{
   btn.onclick=()=>trocarConta(i,btn);
   bar.appendChild(btn);
 });
-// Separador + tab Shopee
-const sep=document.createElement('div');sep.className='shp-sep';bar.appendChild(sep);
-const shpBtn=document.createElement('button');
-shpBtn.className='conta-tab shp';shpBtn.id='cb-shp';
-shpBtn.style.setProperty('--cor','#ee4d2d');
-shpBtn.innerHTML='<span class="ct-logo ct-shp">🛍</span><span class="ct-txt"><b>Shopee Zagodini</b><small><span class="sdot sl" id="dot-shp"></span><span class="stx"></span><span class="ct-canal">Shopee</span></small></span>';
-shpBtn.onclick=()=>trocarParaShopee(shpBtn);
-bar.appendChild(shpBtn);
+// Shopee fica dentro da Zagodini: chave Mercado Livre | Shopee
+el('canal-sw-ml').onclick=()=>trocarConta(0,el('cb-0'));
+el('canal-sw-shp').onclick=()=>trocarParaShopee(el('cb-0'));
+el('cb-0').querySelector('.ct-canal').textContent='Mercado Livre · Shopee';
 
 function showTab(name,btn){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
@@ -361,6 +367,8 @@ function trocarConta(idx,btn){
   el('top-title').textContent=CONTAS[idx].nome;
   el('ml-content').style.display='block';
   el('shopee-content').style.display='none';
+  el('canal-sw').classList.toggle('show', idx===0);
+  el('canal-sw-ml').classList.add('on'); el('canal-sw-shp').classList.remove('on');
   exibirDados(idx);
 }
 
@@ -368,8 +376,10 @@ function trocarParaShopee(btn){
   modoShopee=true;
   document.querySelectorAll('.conta-tab').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
-  el('top-logo').removeAttribute('src');
-  el('top-title').textContent='Shopee Zagodini';
+  el('top-logo').src='/logo/zagodini';
+  el('top-title').textContent='Comercial Zagodini · Shopee';
+  el('canal-sw').classList.add('show');
+  el('canal-sw-shp').classList.add('on'); el('canal-sw-ml').classList.remove('on');
   el('ml-content').style.display='none';
   el('shopee-content').style.display='block';
   renderShopee();
@@ -752,6 +762,7 @@ function resetarTimer(){timerSecs=1800;} function iniciarTimer(){
 
 el('top-logo').src='/logo/zagodini';
 el('top-title').textContent='Comercial Zagodini';
+el('canal-sw').classList.add('show');
 iniciarTimer();
 pollDados();
 setInterval(pollDados,5000);
