@@ -147,6 +147,24 @@ async function freteML(ml, idx, uid, itemId) {
   } catch (e) { return null; }
 }
 
+// Campanha com co-participação do ML (rebate): o ML banca meli_percentage% do preço original
+const _promo = new Map();
+async function rebateML(ml, idx, itemId, precoAtual) {
+  const c = _promo.get(itemId);
+  let lista = c && Date.now() - c.ts < 3600e3 ? c.v : null;
+  if (!lista) {
+    try { lista = await ml(idx, '/seller-promotions/items/' + itemId, { app_version: 'v2' }); } catch (e) { lista = []; }
+    if (!Array.isArray(lista)) lista = [];
+    _promo.set(itemId, { v: lista, ts: Date.now() });
+  }
+  const ativas = lista.filter(p => p.status === 'started' && num(p.meli_percentage) > 0 && num(p.original_price) > 0);
+  // a campanha que está valendo é a que tem o preço atual do anúncio
+  const p = ativas.find(x => Math.abs(num(x.price) - precoAtual) < 0.05) || null;
+  if (!p) return null;
+  return { valor: Math.round(num(p.original_price) * num(p.meli_percentage)) / 100, meliPct: num(p.meli_percentage),
+           preco: num(p.price), nome: p.name || p.type, tipo: p.type };
+}
+
 /**
  * Preenche em cada item perdendo: lucro_atual_pct, lucro_ptw_pct, lucro_ptw (R$), custo_produto, e margem_obs.
  * `ml` é a função do server.js que chama a API do ML com o token da conta.
@@ -162,14 +180,17 @@ async function calcularMargens(ml, idx, uid, itens) {
       if (!it.listing_type_id || !it.category_id) { it.margem_obs = 'sem dados do anúncio'; continue; }
       const freteBase = await freteML(ml, idx, uid, it.id);
       const r2 = x => Math.round(x * 100) / 100;
+      const rebate = await rebateML(ml, idx, it.id, it.current_price);
       const calc = async preco => {
         if (!(preco > 0)) return null;
         const t = await tarifaML(ml, idx, preco, it.listing_type_id, it.category_id);
         if (!t) return null;
         const frete = freteBase?.valor || 0;   // custo de envio do vendedor (o ML cobra também abaixo de R$ 79, por peso/faixa de preço)
         const imposto = preco * imp;
-        const lucro = preco - custo - t.valor - frete - emb - imposto;
-        return { preco: r2(preco), frete: r2(frete), pesoG: freteBase?.pesoG || null, tarifa: r2(t.valor), tarifaPct: t.pct, tarifaFixa: t.fixa, tipoAnuncio: t.tipo,
+        const reb = rebate && Math.abs(rebate.preco - preco) < 0.05 ? rebate.valor : 0;   // só vale no preço da campanha
+        const lucro = preco - custo - t.valor - frete - emb - imposto + reb;
+        return { preco: r2(preco), frete: r2(frete), rebate: r2(reb), campanha: reb ? rebate.nome : null,
+                 perdeCampanha: !!(rebate && !reb), campanhaNome: rebate?.nome || null, pesoG: freteBase?.pesoG || null, tarifa: r2(t.valor), tarifaPct: t.pct, tarifaFixa: t.fixa, tipoAnuncio: t.tipo,
                  custo: r2(custo), custoFonte: cf.fonte, embalagem: r2(emb), imposto: r2(imposto), impostoPct: Math.round(imp * 1000) / 10,
                  lucro: r2(lucro), pct: Math.round(lucro / preco * 1000) / 10 };
       };

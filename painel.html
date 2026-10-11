@@ -476,7 +476,9 @@ function calcTip(c,titulo){
     l('Custo do produto <small>('+escH(c.custoFonte)+')</small>',m(c.custo),1)+
     (c.embalagem?l('Embalagem',m(c.embalagem),1):'')+
     l('Imposto ('+p(c.impostoPct)+')',m(c.imposto),1)+
+    (c.rebate?'<div class="ct-l" style="color:#5ee08f"><span>Redução de tarifa ML <small>('+escH(c.campanha)+')</small></span><span>+'+m(c.rebate)+'</span></div>':'')+
     '<div class="ct-t '+(c.lucro<0?'neg':c.pct<10?'mid':'pos')+'"><span>Margem</span><span>'+m(c.lucro)+' ('+p(c.pct)+')</span></div>'+
+    (c.perdeCampanha?'<div class="ct-n" style="color:#ffb547">Neste preço o anúncio sai da campanha “'+escH(c.campanhaNome)+'” e perde a redução de tarifa do ML.</div>':'')+
     '<div class="ct-n">Envio e tarifa informados pelo Mercado Livre para este anúncio'+(c.tipoAnuncio?' ('+escH(c.tipoAnuncio)+')':'')+(c.pesoG?' · peso faturável '+c.pesoG+' g':'')+'.</div>'+
   '</div>';
 }
