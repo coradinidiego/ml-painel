@@ -77,9 +77,14 @@ function prazo(dataIso, hoje) {
 }
 
 // ─── Bling ─────────────────────────────────────────────────────────────────
+function qs(params) { // Bling exige idsSituacoes[]=6&idsSituacoes[]=15 (axios serializaria errado)
+  const u = new URLSearchParams();
+  for (const [k, v] of Object.entries(params || {})) (Array.isArray(v) ? v : [v]).forEach(x => u.append(k, x));
+  return u.toString();
+}
 async function blingGet(c, url, params, tent = 5) {
   for (let t = 0; t < tent; t++) {
-    try { return (await c.get(url, { params })).data; }
+    try { return (await c.get(url + (params ? '?' + qs(params) : ''), { timeout: 30000 })).data; }
     catch (e) { if (e.response?.status === 429 && t < tent - 1) { await delay(3000 * (t + 1)); continue; } throw e; }
   }
 }
@@ -151,9 +156,20 @@ async function tinyListar(situacao, extra) {
   } while (pagina <= total && pagina <= 10);
   return lista;
 }
-async function canalTiny(p) {
+function canalPeloNumero(n) {
+  n = String(n || '').trim();
+  if (/^2\d{15}$/.test(n)) return 'Mercado Livre';           // ML: 2000xxxxxxxxxxxx
+  if (/^\d{3}-\d{7}-\d{7}$/.test(n)) return 'Amazon';        // 701-1234567-1234567
+  if (/^GSH/i.test(n)) return 'Shein';
+  if (/^\d{6}[A-Z0-9]{8}$/i.test(n)) return 'Shopee';          // 251011ABCDEF12
+  return null;
+}
+async function canalTiny(p, consultas) {
   const cache = canalTinyCache();
   if (cache[p.id]) return cache[p.id];
+  const peloNum = canalPeloNumero(p.numero_ecommerce);
+  if (peloNum) return (cache[p.id] = { canal: peloNum, prevista: brToIso(p.data_prevista) });
+  if (consultas && consultas.n++ >= 40) return { canal: 'Outros', prevista: '' }; // limite por rodada; o resto vem na próxima
   try {
     const d = (await tiny.chamar('pedido.obter.php', { id: p.id })).pedido;
     cache[p.id] = { canal: canalDe(d?.ecommerce?.nomeEcommerce || ''), prevista: brToIso(d?.data_prevista) };
@@ -162,19 +178,19 @@ async function canalTiny(p) {
   } catch (e) { return { canal: 'Outros', prevista: '' }; }
 }
 async function coletarTiny(cfg, hoje) {
-  const linhas = [];
+  const linhas = [], consultas = { n: 0 };
   const janela = { dataInicial: isoToBr(isoMenosDias(hoje, JANELA_DIAS)), dataFinal: isoToBr(hoje) };
   for (const etapa of ['emitirNF', 'aEmpacotar', 'empacotado']) {
     for (const sit of cfg.tiny[etapa] || []) {
       for (const p of await tinyListar(sit, janela)) {
-        const info = await canalTiny(p);
+        const info = await canalTiny(p, consultas);
         linhas.push({ tipo: etapa, canal: info.canal, prazo: prazo(brToIso(p.data_prevista) || info.prevista, hoje) });
       }
     }
   }
   for (const sit of cfg.tiny.enviado || []) {
     for (const p of await tinyListar(sit, { dataAtualizacao: isoToBr(hoje) })) {
-      const info = await canalTiny(p);
+      const info = await canalTiny(p, consultas);
       linhas.push({ tipo: 'enviado', canal: info.canal, prazo: 'hoje' });
     }
   }
@@ -204,10 +220,10 @@ let ESTADO = { atualizadoEm: null, empresas: [], erros: {} };
 let ultimoPedido = 0, rodando = false;
 const ULTIMAS = {}; // último dado bom por empresa e fonte
 
-async function coletarEmpresa(emp, cfg, hoje, erros) {
+async function coletarEmpresa(emp, cfg, hoje, erros, aoParcial) {
   const ant = ULTIMAS[emp.id] || { ml: [], erp: [], okMl: false, okErp: false };
   const [rMl, rErp] = await Promise.allSettled([
-    mlEnvios.coletar(emp.ml, prazo),
+    mlEnvios.coletar(emp.ml, prazo).then(ml => { aoParcial && aoParcial({ ...agregar(emp, [...ml, ...ant.erp]), carregandoErp: !ant.okErp }); return ml; }),
     emp.erp === 'tiny' ? coletarTiny(cfg, hoje) : coletarBling(emp, cfg, hoje),
   ]);
   const atual = { ...ant };
@@ -225,10 +241,11 @@ async function atualizar() {
   try {
     const cfg = getCfg(), hoje = hojeIso(), erros = {};
     const prontas = {};
+    const publicar = () => { if (!ESTADO.atualizadoEm) // primeira carga: mostra o que já chegou
+      ESTADO = { ...ESTADO, parcial: true, hoje, erros, empresas: EMPRESAS.map(e => prontas[e.id] || { ...agregar(e, []), carregando: true }) }; };
     await Promise.all(EMPRESAS.map(async emp => {
-      prontas[emp.id] = await coletarEmpresa(emp, cfg, hoje, erros);
-      if (!ESTADO.atualizadoEm) // primeira carga: mostra cada empresa assim que fica pronta
-        ESTADO = { ...ESTADO, parcial: true, hoje, empresas: EMPRESAS.map(e => prontas[e.id] || { ...agregar(e, []), carregando: true }) };
+      prontas[emp.id] = await coletarEmpresa(emp, cfg, hoje, erros, parcial => { if (!prontas[emp.id]) { prontas[emp.id] = parcial; publicar(); } });
+      publicar();
     }));
     ESTADO = { atualizadoEm: new Date().toISOString(), hoje, empresas: EMPRESAS.map(e => prontas[e.id]), erros, configurado: !!cfg.configurado, parcial: false, duracaoSeg: Math.round((Date.now() - t0) / 1000) };
   } finally { rodando = false; }

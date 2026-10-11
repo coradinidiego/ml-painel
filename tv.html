@@ -124,6 +124,7 @@ function estacao(e, etapa, classe, passo, rotulo){
 function faixa(e){
   const t = e.total, pendente = t.emitirNF + t.aEmpacotar;
   const estado = e.carregando ? 'Carregando…'
+    : e.carregandoErp ? 'Carregando outros canais…'
     : pendente === 0 && t.empacotado + t.enviado > 0 ? 'Tudo empacotado'
     : pendente === 0 ? 'Sem pedidos pendentes'
     : `${fmt(pendente)} para preparar`;
