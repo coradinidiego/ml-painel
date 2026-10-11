@@ -1,12 +1,15 @@
 /**
- * Painel da TV — pacotes a empacotar x empacotados (envios de hoje), por empresa e canal.
- *  - Zagodini (Bling idx 0) e Com Amor de Mãe (Bling idx 1): /pedidos/vendas por situação
- *  - Magazine Lufe: Tiny (pedidos.pesquisa por situação + canal via pedido.obter, com cache)
- *  - Quais situações contam como "a empacotar", "empacotado" e "enviado" é configurado em /tv/config
+ * Painel da TV — pedidos do dia por empresa, no fluxo da expedição:
+ *     Emitir NF  →  A empacotar  →  Empacotados      (+ enviados hoje e próximos dias)
  *
- *  /tv            tela cheia para a TV (acesso por login OU pelo link com chave)
- *  /tv/dados      JSON agregado (atualizado em segundo plano a cada ~90s enquanto a TV estiver aberta)
- *  /tv/config     mapeamento de situações (admin)
+ *  - Mercado Livre: direto da API do ML (ml_envios.js), por pacote.
+ *  - Demais canais: ERP — Bling (Zagodini idx 0, Com Amor de Mãe idx 1) e Tiny (Magazine Lufe),
+ *    por situação do pedido (mapeada em /tv/config). Só pedidos dos últimos 15 dias.
+ *
+ *  /tv               tela da TV (login OU link com chave)
+ *  /tv/dados         JSON agregado (atualiza em segundo plano a cada ~90s enquanto a TV estiver aberta)
+ *  /tv/config        mapeamento de situações (admin)
+ *  /tv/diagnostico   pacotes do ML por status/substatus (admin)
  */
 const express = require('express');
 const fs = require('fs');
@@ -18,26 +21,39 @@ const mlEnvios = require('./ml_envios');
 
 const ARQ_CFG = path.join(DATA, 'tv_config.json');
 const ARQ_CANAL_TINY = path.join(DATA, 'apuracao_cache', 'tv_tiny_canal.json');
+const ARQ_PED_TINY = path.join(DATA, 'apuracao_cache', 'tiny_lufe_pedidos.json');
 const INTERVALO = 90 * 1000;
+const JANELA_DIAS = 15;
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
 const EMPRESAS = [
-  { id: 'lufe',     nome: 'Magazine Lufe',    logo: 'lufe',     erp: 'tiny',  ml: 'Lufe',  canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein'] },
-  { id: 'zagodini', nome: 'Zagodini',         logo: 'zagodini', erp: 'bling', idx: 0, ml: 'Zagodini', canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein'] },
-  { id: 'mae',      nome: 'Com Amor de Mãe',  logo: 'mae',      erp: 'bling', idx: 1, ml: 'Mae', canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein', 'TikTok'] },
+  { id: 'lufe',     nome: 'Magazine Lufe',   logo: 'lufe',     erp: 'tiny',          ml: 'Lufe',     canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein'] },
+  { id: 'zagodini', nome: 'Zagodini',        logo: 'zagodini', erp: 'bling', idx: 0, ml: 'Zagodini', canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein'] },
+  { id: 'mae',      nome: 'Com Amor de Mãe', logo: 'mae',      erp: 'bling', idx: 1, ml: 'Mae',      canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein', 'TikTok'] },
 ];
+const ETAPAS = ['emitirNF', 'aEmpacotar', 'empacotado', 'enviado'];
+const ROTULO = { emitirNF: 'Emitir NF', aEmpacotar: 'A empacotar', empacotado: 'Empacotado', enviado: 'Enviado', ignorar: 'Ignorar' };
 const TINY_SITUACOES = ['Em aberto', 'Aprovado', 'Preparando envio', 'Faturado', 'Pronto para envio', 'Enviado', 'Entregue', 'Não Entregue', 'Cancelado', 'Dados incompletos'];
 
 // ─── Config ────────────────────────────────────────────────────────────────
+const vazio = () => ({ emitirNF: [], aEmpacotar: [], empacotado: [], enviado: [] });
 function cfgPadrao() {
   return {
-    tiny: { aEmpacotar: ['Em aberto', 'Aprovado', 'Preparando envio', 'Faturado'], empacotado: ['Pronto para envio'], enviado: ['Enviado'] },
-    bling: { 0: { aEmpacotar: [6, 15], empacotado: [], enviado: [9] }, 1: { aEmpacotar: [6, 15], empacotado: [], enviado: [9] } },
+    versao: 2,
+    tiny: { emitirNF: ['Em aberto', 'Aprovado', 'Preparando envio'], aEmpacotar: ['Faturado'], empacotado: ['Pronto para envio'], enviado: ['Enviado'] },
+    bling: { 0: { ...vazio(), emitirNF: [6], aEmpacotar: [15], enviado: [9] }, 1: { ...vazio(), emitirNF: [6], aEmpacotar: [15], enviado: [9] } },
     configurado: false,
   };
 }
-function getCfg() { try { return { ...cfgPadrao(), ...JSON.parse(fs.readFileSync(ARQ_CFG)) }; } catch (e) { return cfgPadrao(); } }
-function salvarCfg(c) { fs.writeFileSync(ARQ_CFG, JSON.stringify(c, null, 2)); }
+function getCfg() {
+  let c; try { c = JSON.parse(fs.readFileSync(ARQ_CFG)); } catch (e) { return cfgPadrao(); }
+  if (c.versao !== 2) { // config antiga (sem "Emitir NF"): Tiny volta ao padrão novo, Bling ganha a etapa vazia
+    const p = cfgPadrao();
+    c = { ...p, bling: Object.fromEntries(Object.entries(c.bling || p.bling).map(([k, v]) => [k, { ...vazio(), ...v }])), configurado: false };
+  }
+  return c;
+}
+function salvarCfg(c) { fs.writeFileSync(ARQ_CFG, JSON.stringify({ ...c, versao: 2 }, null, 2)); }
 
 // ─── Utilidades ────────────────────────────────────────────────────────────
 function canalDe(nome) {
@@ -49,10 +65,12 @@ function canalDe(nome) {
   if (/tik ?tok/.test(s)) return 'TikTok';
   return 'Outros';
 }
-const hojeIso = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // YYYY-MM-DD
+const hojeIso = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+const isoMenosDias = (iso, d) => new Date(new Date(iso + 'T12:00:00Z').getTime() - d * 864e5).toISOString().slice(0, 10);
+const isoToBr = iso => iso.split('-').reverse().join('/');
 const brToIso = br => /^\d{2}\/\d{2}\/\d{4}$/.test(br || '') ? br.split('/').reverse().join('-') : (br || '').slice(0, 10);
-function prazo(dataIso, hoje) {           // classifica pelo prazo de envio
-  if (!dataIso || dataIso < '2000-01-01') return 'hoje'; // sem data prevista: considera para hoje
+function prazo(dataIso, hoje) {
+  if (!dataIso || dataIso < '2000-01-01') return 'hoje';
   if (dataIso < hoje) return 'atrasado';
   if (dataIso === hoje) return 'hoje';
   return 'futuro';
@@ -66,9 +84,9 @@ async function blingGet(c, url, params, tent = 5) {
   }
 }
 async function blingListar(idx, ids, extra = {}) {
-  if (!ids.length) return [];
+  if (!ids?.length) return [];
   const c = bling.client(idx), todos = [];
-  for (let pagina = 1; pagina <= 30; pagina++) {
+  for (let pagina = 1; pagina <= 20; pagina++) {
     const d = await blingGet(c, '/pedidos/vendas', { limite: 100, pagina, 'idsSituacoes[]': ids, ...extra });
     const items = d?.data || [];
     todos.push(...items);
@@ -93,17 +111,16 @@ async function situacoesBling(idx) {
   return sits.map(s => ({ id: s.id, nome: s.nome || s.descricao || String(s.id) }));
 }
 async function coletarBling(emp, cfg, hoje) {
-  const m = cfg.bling[emp.idx] || { aEmpacotar: [], empacotado: [], enviado: [] };
+  const m = { ...vazio(), ...(cfg.bling[emp.idx] || {}) };
   const canais = await canaisBling(emp.idx);
-  const grupos = { aEmpacotar: m.aEmpacotar, empacotado: m.empacotado };
+  const janela = { dataInicial: isoMenosDias(hoje, JANELA_DIAS), dataFinal: hoje };
   const linhas = [];
-  for (const [tipo, ids] of Object.entries(grupos)) {
-    for (const p of await blingListar(emp.idx, ids)) {
-      linhas.push({ tipo, canal: canalDe(canais[p.loja?.id] || ''), prazo: prazo((p.dataPrevista || '').slice(0, 10), hoje) });
+  for (const etapa of ['emitirNF', 'aEmpacotar', 'empacotado']) {
+    for (const p of await blingListar(emp.idx, m[etapa], janela)) {
+      linhas.push({ tipo: etapa, canal: canalDe(canais[p.loja?.id] || ''), prazo: prazo((p.dataPrevista || '').slice(0, 10), hoje) });
     }
-    await delay(400);
+    await delay(350);
   }
-  // enviados hoje: alterados hoje para uma situação de "enviado"
   for (const p of await blingListar(emp.idx, m.enviado, { dataAlteracaoInicial: hoje, dataAlteracaoFinal: hoje })) {
     linhas.push({ tipo: 'enviado', canal: canalDe(canais[p.loja?.id] || ''), prazo: 'hoje' });
   }
@@ -112,8 +129,18 @@ async function coletarBling(emp, cfg, hoje) {
 
 // ─── Tiny (Lufe) ───────────────────────────────────────────────────────────
 let _canalTiny = null;
-function canalTinyCache() { if (!_canalTiny) { try { _canalTiny = JSON.parse(fs.readFileSync(ARQ_CANAL_TINY)); } catch (e) { _canalTiny = {}; } } return _canalTiny; }
-async function tinyListar(situacao, extra = {}) {
+function canalTinyCache() {
+  if (_canalTiny) return _canalTiny;
+  try { _canalTiny = JSON.parse(fs.readFileSync(ARQ_CANAL_TINY)); } catch (e) { _canalTiny = {}; }
+  // aproveita os pedidos já baixados pela apuração (já trazem o canal)
+  try {
+    for (const [id, p] of Object.entries(JSON.parse(fs.readFileSync(ARQ_PED_TINY))))
+      if (!_canalTiny[id] && p?.ecommerce) _canalTiny[id] = { canal: canalDe(p.ecommerce.nomeEcommerce), prevista: brToIso(p.data_prevista) };
+  } catch (e) {}
+  return _canalTiny;
+}
+function salvarCanalTiny() { try { fs.mkdirSync(path.dirname(ARQ_CANAL_TINY), { recursive: true }); fs.writeFileSync(ARQ_CANAL_TINY, JSON.stringify(_canalTiny)); } catch (e) {} }
+async function tinyListar(situacao, extra) {
   const lista = []; let pagina = 1, total = 1;
   do {
     const ret = await tiny.chamar('pedidos.pesquisa.php', { situacao, pagina, ...extra });
@@ -121,7 +148,7 @@ async function tinyListar(situacao, extra = {}) {
     total = parseInt(ret.numero_paginas || 1);
     for (const x of ret.pedidos || []) lista.push(x.pedido);
     pagina++; await delay(1100);
-  } while (pagina <= total && pagina <= 20);
+  } while (pagina <= total && pagina <= 10);
   return lista;
 }
 async function canalTiny(p) {
@@ -130,144 +157,157 @@ async function canalTiny(p) {
   try {
     const d = (await tiny.chamar('pedido.obter.php', { id: p.id })).pedido;
     cache[p.id] = { canal: canalDe(d?.ecommerce?.nomeEcommerce || ''), prevista: brToIso(d?.data_prevista) };
-    fs.mkdirSync(path.dirname(ARQ_CANAL_TINY), { recursive: true });
-    fs.writeFileSync(ARQ_CANAL_TINY, JSON.stringify(cache));
     await delay(1100);
     return cache[p.id];
   } catch (e) { return { canal: 'Outros', prevista: '' }; }
 }
 async function coletarTiny(cfg, hoje) {
   const linhas = [];
-  const grupos = { aEmpacotar: cfg.tiny.aEmpacotar, empacotado: cfg.tiny.empacotado };
-  for (const [tipo, sits] of Object.entries(grupos)) {
-    for (const sit of sits) {
-      for (const p of await tinyListar(sit)) {
+  const janela = { dataInicial: isoToBr(isoMenosDias(hoje, JANELA_DIAS)), dataFinal: isoToBr(hoje) };
+  for (const etapa of ['emitirNF', 'aEmpacotar', 'empacotado']) {
+    for (const sit of cfg.tiny[etapa] || []) {
+      for (const p of await tinyListar(sit, janela)) {
         const info = await canalTiny(p);
-        linhas.push({ tipo, canal: info.canal, prazo: prazo(brToIso(p.data_prevista) || info.prevista, hoje) });
+        linhas.push({ tipo: etapa, canal: info.canal, prazo: prazo(brToIso(p.data_prevista) || info.prevista, hoje) });
       }
     }
   }
-  for (const sit of cfg.tiny.enviado) {
-    for (const p of await tinyListar(sit, { dataAtualizacao: hoje.split('-').reverse().join('/') })) {
+  for (const sit of cfg.tiny.enviado || []) {
+    for (const p of await tinyListar(sit, { dataAtualizacao: isoToBr(hoje) })) {
       const info = await canalTiny(p);
       linhas.push({ tipo: 'enviado', canal: info.canal, prazo: 'hoje' });
     }
   }
+  salvarCanalTiny();
   return linhas;
 }
 
-// ─── Agregação + laço em segundo plano ─────────────────────────────────────
-let ESTADO = { atualizadoEm: null, empresas: [], erros: {} };
-let ultimoPedido = 0, rodando = false;
-const ULTIMAS = {}; // último dado bom por empresa/fonte
-
+// ─── Agregação ─────────────────────────────────────────────────────────────
+const zerado = () => ({ emitirNF: 0, aEmpacotar: 0, empacotado: 0, enviado: 0, atrasados: 0, futuros: 0 });
 function agregar(emp, linhas) {
   const canais = {};
-  for (const c of emp.canais) canais[c] = { canal: c, aEmpacotar: 0, atrasados: 0, futuros: 0, empacotados: 0, enviados: 0 };
+  for (const c of emp.canais) canais[c] = { canal: c, ...zerado() };
   for (const l of linhas) {
-    const c = canais[l.canal] ||= { canal: l.canal, aEmpacotar: 0, atrasados: 0, futuros: 0, empacotados: 0, enviados: 0 };
-    if (l.tipo === 'aEmpacotar') { if (l.prazo === 'futuro') c.futuros++; else { c.aEmpacotar++; if (l.prazo === 'atrasado') c.atrasados++; } }
-    else if (l.tipo === 'empacotado') c.empacotados++;
-    else if (l.tipo === 'enviado') c.enviados++;
+    const c = canais[l.canal] ||= { canal: l.canal, ...zerado() };
+    if (l.tipo === 'futuro' || ((l.tipo === 'emitirNF' || l.tipo === 'aEmpacotar') && l.prazo === 'futuro')) { c.futuros++; continue; }
+    if (!ETAPAS.includes(l.tipo)) continue;
+    c[l.tipo]++;
+    if ((l.tipo === 'emitirNF' || l.tipo === 'aEmpacotar') && l.prazo === 'atrasado') c.atrasados++;
   }
-  const lista = Object.values(canais).filter(c => emp.canais.includes(c.canal) || c.aEmpacotar + c.empacotados + c.enviados + c.futuros > 0);
-  const tot = lista.reduce((t, c) => { for (const k of ['aEmpacotar', 'atrasados', 'futuros', 'empacotados', 'enviados']) t[k] += c[k]; return t; }, { aEmpacotar: 0, atrasados: 0, futuros: 0, empacotados: 0, enviados: 0 });
-  return { id: emp.id, nome: emp.nome, logo: emp.logo, canais: lista, total: tot };
+  const lista = Object.values(canais).filter(c => emp.canais.includes(c.canal) || ETAPAS.some(k => c[k]) || c.futuros);
+  const total = lista.reduce((t, c) => { for (const k in t) t[k] += c[k]; return t; }, zerado());
+  return { id: emp.id, nome: emp.nome, logo: emp.logo, canais: lista, total };
+}
+
+// ─── Coleta em segundo plano ───────────────────────────────────────────────
+let ESTADO = { atualizadoEm: null, empresas: [], erros: {} };
+let ultimoPedido = 0, rodando = false;
+const ULTIMAS = {}; // último dado bom por empresa e fonte
+
+async function coletarEmpresa(emp, cfg, hoje, erros) {
+  const ant = ULTIMAS[emp.id] || { ml: [], erp: [], okMl: false, okErp: false };
+  const [rMl, rErp] = await Promise.allSettled([
+    mlEnvios.coletar(emp.ml, prazo),
+    emp.erp === 'tiny' ? coletarTiny(cfg, hoje) : coletarBling(emp, cfg, hoje),
+  ]);
+  const atual = { ...ant };
+  if (rMl.status === 'fulfilled') Object.assign(atual, { ml: rMl.value, okMl: true });
+  else { erros[`${emp.nome} · Mercado Livre`] = rMl.reason?.response?.status === 401 ? 'token do ML expirado' : (rMl.reason?.message || 'erro'); console.warn('[tv] ML', emp.id, rMl.reason?.message); }
+  if (rErp.status === 'fulfilled') Object.assign(atual, { erp: rErp.value.filter(l => l.canal !== 'Mercado Livre'), okErp: true });
+  else { erros[`${emp.nome} · ${emp.erp === 'tiny' ? 'Tiny' : 'Bling'}`] = rErp.reason?.response?.status === 401 ? 'ERP não autorizado' : (rErp.reason?.message || 'erro'); console.warn('[tv] ERP', emp.id, rErp.reason?.message); }
+  ULTIMAS[emp.id] = atual;
+  return { ...agregar(emp, [...atual.ml, ...atual.erp]), fontes: { ml: rMl.status === 'fulfilled', erp: rErp.status === 'fulfilled' } };
 }
 
 async function atualizar() {
   if (rodando) return; rodando = true;
-  const cfg = getCfg(), hoje = hojeIso(), empresas = [], erros = {};
-  for (const emp of EMPRESAS) {
-    // Mercado Livre direto da API do ML; demais canais pelo ERP (sem o ML, para não contar duas vezes)
-    const anterior = ULTIMAS[emp.id] || { ml: [], erp: [] };
-    let ml = anterior.ml, erp = anterior.erp, desatualizado = false;
-    try { ml = await mlEnvios.coletar(emp.ml, prazo); }
-    catch (e) { desatualizado = true; erros[emp.id + ' ML'] = e.response?.status === 401 ? 'token do ML expirado' : (e.message || 'erro'); console.warn('[tv] ML', emp.id, e.message); }
-    try {
-      const linhas = emp.erp === 'tiny' ? await coletarTiny(cfg, hoje) : await coletarBling(emp, cfg, hoje);
-      erp = linhas.filter(l => l.canal !== 'Mercado Livre');
-    } catch (e) {
-      desatualizado = true;
-      erros[emp.id + ' ' + emp.erp] = e.response?.status === 401 ? 'ERP não autorizado' : (e.message || 'erro');
-      console.warn('[tv]', emp.id, e.message);
-    }
-    ULTIMAS[emp.id] = { ml, erp };
-    empresas.push({ ...agregar(emp, [...ml, ...erp]), desatualizado });
-    if (!ESTADO.atualizadoEm) { // primeira carga: mostra cada empresa assim que fica pronta
-      const vazias = EMPRESAS.filter(e => !empresas.find(x => x.id === e.id)).map(e => ({ ...agregar(e, []), carregando: true }));
-      ESTADO = { ...ESTADO, parcial: true, empresas: [...empresas, ...vazias], hoje };
-    }
-  }
-  ESTADO = { atualizadoEm: new Date().toISOString(), hoje, empresas, erros, configurado: !!cfg.configurado, parcial: false };
-  rodando = false;
+  const t0 = Date.now();
+  try {
+    const cfg = getCfg(), hoje = hojeIso(), erros = {};
+    const prontas = {};
+    await Promise.all(EMPRESAS.map(async emp => {
+      prontas[emp.id] = await coletarEmpresa(emp, cfg, hoje, erros);
+      if (!ESTADO.atualizadoEm) // primeira carga: mostra cada empresa assim que fica pronta
+        ESTADO = { ...ESTADO, parcial: true, hoje, empresas: EMPRESAS.map(e => prontas[e.id] || { ...agregar(e, []), carregando: true }) };
+    }));
+    ESTADO = { atualizadoEm: new Date().toISOString(), hoje, empresas: EMPRESAS.map(e => prontas[e.id]), erros, configurado: !!cfg.configurado, parcial: false, duracaoSeg: Math.round((Date.now() - t0) / 1000) };
+  } finally { rodando = false; }
 }
-setInterval(() => { if (Date.now() - ultimoPedido < 10 * 60e3) atualizar().catch(e => { rodando = false; console.warn('[tv]', e.message); }); }, INTERVALO);
+setInterval(() => { if (Date.now() - ultimoPedido < 10 * 60e3) atualizar().catch(e => console.warn('[tv]', e.message)); }, INTERVALO);
 
 // ─── Rotas ─────────────────────────────────────────────────────────────────
 const router = express.Router();
+const ehAdmin = req => req.usuario?.admin || !require('./auth').ativo();
 router.get('/', (req, res) => res.sendFile(path.join(__dirname, 'tv.html')));
-router.get('/dados', async (req, res) => {
-  ultimoPedido = Date.now();
-  if (!ESTADO.atualizadoEm && !rodando) atualizar().catch(() => { rodando = false; }); // primeira carga em segundo plano
-  res.json({ ...ESTADO, atualizadoEm: ESTADO.atualizadoEm || new Date().toISOString(), carregando: !ESTADO.atualizadoEm && !ESTADO.parcial });
+router.get('/fontes/:f', (req, res) => { // fontes servidas pelo próprio painel (a TV não depende do Google)
+  const m = String(req.params.f).match(/^(barlow(?:-condensed)?)-latin-(500|600|700|800)-normal\.woff2$/);
+  if (!m) return res.status(404).end();
+  res.set('Cache-Control', 'public, max-age=31536000, immutable');
+  res.sendFile(path.join(__dirname, 'node_modules', '@fontsource', m[1], 'files', req.params.f));
 });
-
-router.get('/diagnostico', (req, res) => {
-  if (!req.usuario?.admin && require('./auth').ativo()) return res.status(403).send('Só o administrador.');
-  const nomes = { Lufe: 'Magazine Lufe', Zagodini: 'Zagodini', Mae: 'Com Amor de Mãe' };
-  const rot = { aEmpacotar: 'A empacotar', empacotado: 'Empacotado', enviado: 'Enviado hoje', ignorado: 'Não conta' };
-  const blocos = Object.entries(nomes).map(([c, n]) => {
-    const d = mlEnvios.diagnostico(c);
-    const linhas = Object.entries(d.porStatus).sort((a, b) => b[1].qtd - a[1].qtd)
-      .map(([k, v]) => `<tr><td>${esc(k)}</td><td style="text-align:right">${v.qtd}</td><td>${rot[v.tvConta]}</td></tr>`).join('') || '<tr><td colspan=3>Sem dados ainda — abra a TV e aguarde 1–2 min.</td></tr>';
-    return `<h2>${esc(n)}</h2><table><tr><th>status / substatus no ML</th><th>pacotes</th><th>na TV conta como</th></tr>${linhas}</table>
-      <p style="color:#777;font-size:12px">Tipos de logística: ${esc(Object.entries(d.logistica).map(([k, v]) => k + ': ' + v).join(' · ') || '—')} (fulfillment = Full, não entra na TV)</p>`;
-  }).join('');
-  res.send(`<!doctype html><meta charset="utf-8"><title>Diagnóstico ML</title><style>body{font-family:-apple-system,sans-serif;max-width:820px;margin:24px auto;padding:0 16px;color:#1a1a2e}table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:7px;border-bottom:1px solid #eee;text-align:left}h2{margin-top:28px;font-size:17px}</style>
-  <h1 style="font-size:20px">📦 Pacotes do Mercado Livre por situação</h1><p style="color:#666">Pedidos pagos dos últimos 12 dias ainda não finalizados. Compare com <i>Vendas → Envios</i> no ML.</p>${blocos}`);
+router.get('/dados', (req, res) => {
+  ultimoPedido = Date.now();
+  if (!ESTADO.atualizadoEm && !rodando) atualizar().catch(e => console.warn('[tv]', e.message));
+  res.json({ ...ESTADO, carregando: !ESTADO.atualizadoEm && !ESTADO.parcial });
 });
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const CSS = `body{margin:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#f0f2f5;color:#1a1a2e}.top{background:#0d1b2a;color:#fff;padding:14px 24px;display:flex;gap:14px;align-items:center}.top a{color:#ffd60a;text-decoration:none;font-size:13px}
+.box{background:#fff;border:1px solid #e6e6e6;border-radius:12px;padding:18px 22px;margin:16px auto;max-width:960px}h2{font-size:15px;margin:0 0 10px}table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:7px 6px;border-bottom:1px solid #f2f2f2;text-align:left}
+button{padding:11px 22px;border:none;border-radius:8px;background:#0d1b2a;color:#fff;font-weight:600;font-size:14px;cursor:pointer}p.s{color:#666;font-size:13px}label{white-space:nowrap}`;
+
 router.get('/config', async (req, res) => {
-  if (!req.usuario?.admin && require('./auth').ativo()) return res.status(403).send('Só o administrador configura a TV.');
+  if (!ehAdmin(req)) return res.status(403).send('Só o administrador configura a TV.');
   const cfg = getCfg();
-  const sel = (nome, valorAtual) => ['aEmpacotar', 'empacotado', 'enviado', 'ignorar'].map(v =>
-    `<label style="margin-right:10px"><input type="radio" name="${esc(nome)}" value="${v}" ${valorAtual === v ? 'checked' : ''}> ${{ aEmpacotar: 'A empacotar', empacotado: 'Empacotado', enviado: 'Enviado', ignorar: 'Ignorar' }[v]}</label>`).join('');
-  const papelTiny = s => cfg.tiny.aEmpacotar.includes(s) ? 'aEmpacotar' : cfg.tiny.empacotado.includes(s) ? 'empacotado' : cfg.tiny.enviado.includes(s) ? 'enviado' : 'ignorar';
-  let blocos = `<div class="box"><h2>Magazine Lufe — Tiny</h2><table>${TINY_SITUACOES.map(s => `<tr><td>${esc(s)}</td><td>${sel('tiny|' + s, papelTiny(s))}</td></tr>`).join('')}</table></div>`;
+  const sel = (nome, atual) => [...ETAPAS, 'ignorar'].map(v => `<label style="margin-right:12px"><input type="radio" name="${esc(nome)}" value="${v}" ${atual === v ? 'checked' : ''}> ${ROTULO[v]}</label>`).join('');
+  const papel = (m, x) => ETAPAS.find(e => (m[e] || []).includes(x)) || 'ignorar';
+  let blocos = `<div class="box"><h2>Magazine Lufe — Tiny</h2><table>${TINY_SITUACOES.map(s => `<tr><td>${esc(s)}</td><td>${sel('tiny|' + s, papel(cfg.tiny, s))}</td></tr>`).join('')}</table></div>`;
   for (const emp of EMPRESAS.filter(e => e.erp === 'bling')) {
-    const m = cfg.bling[emp.idx] || { aEmpacotar: [], empacotado: [], enviado: [] };
-    const papel = id => m.aEmpacotar.includes(id) ? 'aEmpacotar' : m.empacotado.includes(id) ? 'empacotado' : m.enviado.includes(id) ? 'enviado' : 'ignorar';
+    const m = { ...vazio(), ...(cfg.bling[emp.idx] || {}) };
     let sits; try { sits = await situacoesBling(emp.idx); } catch (e) { sits = null; }
     blocos += `<div class="box"><h2>${esc(emp.nome)} — Bling</h2>` + (sits?.length
-      ? `<table>${sits.map(s => `<tr><td>${esc(s.nome)} <small style="color:#999">#${s.id}</small></td><td>${sel('bling|' + emp.idx + '|' + s.id, papel(s.id))}</td></tr>`).join('')}</table>`
-      : `<p style="color:#c62828">Não consegui ler as situações do Bling desta conta (autorize o Bling no painel e recarregue).</p>`) + `</div>`;
+      ? `<table>${sits.map(s => `<tr><td>${esc(s.nome)} <small style="color:#999">#${s.id}</small></td><td>${sel('bling|' + emp.idx + '|' + s.id, papel(m, s.id))}</td></tr>`).join('')}</table>`
+      : `<p style="color:#c62828">Não consegui ler as situações do Bling desta conta. Autorize o Bling no painel e recarregue esta página.</p>`) + `</div>`;
   }
-  res.send(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Configurar TV</title>
-  <style>body{margin:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#f0f2f5;color:#1a1a2e}.top{background:#0d1b2a;color:#fff;padding:14px 24px;display:flex;gap:14px;align-items:center}.top a{color:#ffd60a;text-decoration:none;font-size:13px}
-  .box{background:#fff;border:1px solid #e6e6e6;border-radius:12px;padding:18px 22px;margin:16px auto;max-width:900px}h2{font-size:15px;margin:0 0 10px}table{width:100%;border-collapse:collapse;font-size:13px}td{padding:7px 6px;border-bottom:1px solid #f2f2f2}
-  button{padding:11px 22px;border:none;border-radius:8px;background:#0d1b2a;color:#fff;font-weight:600;font-size:14px;cursor:pointer}p.s{color:#666;font-size:13px}</style></head><body>
-  <div class="top"><b>📺 Configurar painel da TV</b><span style="flex:1"></span><a href="/tv" target="_blank">Abrir TV</a><a href="/conta">⚙️ Conta</a><a href="/painel.html">Painel</a></div>
-  <form method="post" action="/tv/config"><div class="box"><p class="s">Para cada situação do pedido, diga o que ela significa na expedição. A TV conta como <b>A empacotar</b> e <b>Empacotado</b> os pedidos que estão hoje nessas situações, e como <b>Enviado</b> os que mudaram para essa situação hoje.</p></div>
+  res.send(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Configurar TV</title><style>${CSS}</style></head><body>
+  <div class="top"><b>📺 Configurar painel da TV</b><span style="flex:1"></span><a href="/tv" target="_blank">Abrir TV</a><a href="/tv/diagnostico">Diagnóstico ML</a><a href="/conta">⚙️ Conta</a></div>
+  ${req.query.ok ? '<div class="box" style="background:#e8f5e9;color:#2e7d32">Configuração salva. A TV atualiza em até 2 minutos.</div>' : ''}
+  <form method="post" action="/tv/config"><div class="box"><p class="s">O Mercado Livre vem direto da API do ML. Aqui você diz, para os outros canais (Amazon, Shopee, Shein, TikTok), em que etapa da expedição cada situação do pedido está: <b>Emitir NF</b> → <b>A empacotar</b> → <b>Empacotado</b>. <b>Enviado</b> conta só o que mudou para essa situação hoje.</p></div>
   ${blocos}<div class="box" style="text-align:right"><button>Salvar</button></div></form></body></html>`);
 });
 router.post('/config', express.urlencoded({ extended: false }), (req, res) => {
-  if (!req.usuario?.admin && require('./auth').ativo()) return res.status(403).send('Só o administrador configura a TV.');
+  if (!ehAdmin(req)) return res.status(403).send('Só o administrador configura a TV.');
   const cfg = getCfg();
-  cfg.tiny = { aEmpacotar: [], empacotado: [], enviado: [] };
-  const blingNovo = {};
+  cfg.tiny = vazio();
+  const novoBling = {};
   for (const [k, v] of Object.entries(req.body)) {
-    if (!['aEmpacotar', 'empacotado', 'enviado'].includes(v)) continue;
+    if (!ETAPAS.includes(v)) continue;
     const [erp, a, b] = k.split('|');
     if (erp === 'tiny' && TINY_SITUACOES.includes(a)) cfg.tiny[v].push(a);
-    if (erp === 'bling') { const idx = parseInt(a), id = parseInt(b); (blingNovo[idx] ||= { aEmpacotar: [], empacotado: [], enviado: [] })[v].push(id); }
+    if (erp === 'bling') (novoBling[parseInt(a)] ||= vazio())[v].push(parseInt(b));
   }
-  for (const idx of Object.keys(blingNovo)) cfg.bling[idx] = blingNovo[idx];
+  for (const idx of Object.keys(novoBling)) cfg.bling[idx] = novoBling[idx];
   cfg.configurado = true;
   salvarCfg(cfg);
-  ESTADO.atualizadoEm = null; // força nova leitura
+  ESTADO = { atualizadoEm: null, empresas: [], erros: {} };
   res.redirect('/tv/config?ok=1');
+});
+
+router.get('/diagnostico', (req, res) => {
+  if (!ehAdmin(req)) return res.status(403).send('Só o administrador.');
+  const nomes = { Lufe: 'Magazine Lufe', Zagodini: 'Zagodini', Mae: 'Com Amor de Mãe' };
+  const rot = { ...ROTULO, futuro: 'Próximos dias', ignorado: 'Não conta' };
+  const blocos = Object.entries(nomes).map(([c, n]) => {
+    const d = mlEnvios.diagnostico(c);
+    const linhas = Object.entries(d.porStatus).sort((a, b) => b[1].qtd - a[1].qtd)
+      .map(([k, v]) => `<tr><td>${esc(k)}</td><td style="text-align:right">${v.qtd}</td><td>${rot[v.tvConta] || v.tvConta}</td></tr>`).join('') || '<tr><td colspan=3>Sem dados ainda. Abra a TV e aguarde 1–2 minutos.</td></tr>';
+    return `<h2>${esc(n)}</h2><table><tr><th>Status / substatus no ML</th><th style="text-align:right">Pacotes</th><th>Na TV conta como</th></tr>${linhas}</table>
+      <p style="color:#777;font-size:12px">Logística: ${esc(Object.entries(d.logistica).map(([k, v]) => k + ' ' + v).join(', ') || '—')}. Full (fulfillment) não entra na TV.</p>`;
+  }).join('');
+  res.send(`<!doctype html><meta charset="utf-8"><title>Diagnóstico ML</title><style>${CSS} body{max-width:860px;margin:24px auto;padding:0 16px}h2{margin-top:28px;font-size:17px}</style>
+  <h1 style="font-size:20px">Pacotes do Mercado Livre por situação</h1><p class="s">Pedidos pagos dos últimos 12 dias ainda não finalizados. Compare com Vendas → Envios no ML.
+  Última atualização da TV: ${ESTADO.atualizadoEm ? new Date(ESTADO.atualizadoEm).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ` (levou ${ESTADO.duracaoSeg}s)` : 'ainda carregando'}.</p>
+  ${Object.keys(ESTADO.erros || {}).length ? `<p style="color:#c62828">Erros: ${esc(Object.entries(ESTADO.erros).map(([k, v]) => k + ': ' + v).join(' | '))}</p>` : ''}${blocos}`);
 });
 
 module.exports = { router, canalDe, agregar, prazo };

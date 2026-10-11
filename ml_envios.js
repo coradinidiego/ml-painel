@@ -5,8 +5,9 @@
  * Ignora Full (fulfillment): quem empacota é o ML.
  *
  * Classificação:
- *   a empacotar  → status "handling", ou "ready_to_ship" com etiqueta ainda não impressa
- *                  (substatus ready_to_print / invoice_pending / sem substatus)
+ *   emitir NF    → "handling" ou ready_to_ship/invoice_pending
+ *   a empacotar  → ready_to_ship com etiqueta ainda não impressa (ready_to_print)
+ *   próximos dias→ "pending" (ex.: buffered: etiqueta libera em outro dia)
  *   empacotado   → "ready_to_ship" com etiqueta impressa, aguardando coleta/postagem
  *                  (printed, in_pickup_list, ready_for_pickup, ready_for_dropoff…)
  *   enviado hoje → entregue à transportadora (picked_up, dropped_off, in_hub…) ou "shipped" hoje
@@ -80,12 +81,14 @@ function resumirEnvio(s) {
 }
 
 function classificar(s, hoje) {
-  if (s.logistica === 'fulfillment') return null;
-  if (s.status === 'handling') return 'aEmpacotar';
+  if (s.logistica === 'fulfillment') return null;                        // Full: quem empacota é o ML
+  if (s.status === 'pending') return 'futuro';                           // ex.: buffered — etiqueta libera em outro dia
+  if (s.status === 'handling') return 'emitirNF';                        // aguardando NF/etiqueta
   if (s.status === 'ready_to_ship') {
+    if (s.substatus === 'invoice_pending') return 'emitirNF';
     if (SUB_ENVIADO.has(s.substatus)) return 'enviado';
     if (SUB_EMPACOTADO.has(s.substatus)) return 'empacotado';
-    return 'aEmpacotar';                     // ready_to_print, invoice_pending, sem substatus
+    return 'aEmpacotar';                                                 // ready_to_print, sem substatus
   }
   if (s.status === 'shipped' && s.enviadoEm === hoje) return 'enviado';
   return null;
@@ -106,7 +109,7 @@ async function coletar(conta, prazoFn) {
       if (consultas % 20 === 0) { salvar(); await delay(300); }
     }
     const tipo = classificar(s, hoje);
-    if (tipo) linhas.push({ tipo, canal: 'Mercado Livre', prazo: tipo === 'aEmpacotar' ? prazoFn(s.limite, hoje) : 'hoje' });
+    if (tipo) linhas.push({ tipo, canal: 'Mercado Livre', prazo: (tipo === 'aEmpacotar' || tipo === 'emitirNF') ? prazoFn(s.limite, hoje) : 'hoje' });
   }
   // limpa do cache envios com mais de 30 dias
   for (const [k, v] of Object.entries(c)) if (v.ts && Date.now() - v.ts > 30 * 864e5) delete c[k];

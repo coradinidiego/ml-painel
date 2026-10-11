@@ -3,136 +3,162 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Expedição — TV</title>
+<title>Expedição — pedidos do dia</title>
 <style>
+@font-face{font-family:var(--cond);font-weight:600;font-style:normal;font-display:swap;src:url(/tv/fontes/barlow-condensed-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:var(--cond);font-weight:700;font-style:normal;font-display:swap;src:url(/tv/fontes/barlow-condensed-latin-700-normal.woff2) format("woff2")}
+@font-face{font-family:var(--cond);font-weight:800;font-style:normal;font-display:swap;src:url(/tv/fontes/barlow-condensed-latin-800-normal.woff2) format("woff2")}
+@font-face{font-family:"Barlow";font-weight:500;font-style:normal;font-display:swap;src:url(/tv/fontes/barlow-latin-500-normal.woff2) format("woff2")}
+@font-face{font-family:"Barlow";font-weight:600;font-style:normal;font-display:swap;src:url(/tv/fontes/barlow-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"Barlow";font-weight:700;font-style:normal;font-display:swap;src:url(/tv/fontes/barlow-latin-700-normal.woff2) format("woff2")}
 :root{
-  --bg:#0b0f17; --card:#131a26; --card2:#1a2332; --line:#243046; --txt:#eef2f8; --dim:#8a97ad;
-  --pend:#ffb020; --ok:#2fd27a; --env:#5aa9ff; --late:#ff4d5e;
+  --cond:"Barlow Condensed","Arial Narrow","Roboto Condensed",sans-serif;
+  --fundo:#0f1d33;      /* azul-marinho do galpão */
+  --faixa:#16284a;
+  --estacao:#1d3360;
+  --linha:#2a4476;
+  --texto:#f3f6fb;
+  --apagado:#8ea3c7;
+  --nf:#6cc4ff;         /* documento */
+  --emp:#ffbf3c;        /* fita adesiva */
+  --ok:#43d99a;         /* pronto */
+  --atraso:#ff5a6e;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;background:var(--bg);color:var(--txt);font-family:"Inter",-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
-body{display:flex;flex-direction:column;padding:1.6vw 2vw;gap:1.4vw}
-.num{font-variant-numeric:tabular-nums}
+html,body{height:100%;background:var(--fundo);color:var(--texto);font-family:Barlow,system-ui,sans-serif;overflow:hidden}
+body{display:grid;grid-template-rows:auto 1fr auto;padding:1.5vw 2vw 1vw;gap:1.2vw}
+.n{font-family:var(--cond);font-variant-numeric:tabular-nums}
 
-/* topo */
-.topo{display:flex;align-items:center;gap:2vw}
-.titulo{font-size:2.3vw;font-weight:800;letter-spacing:-.02em}
-.titulo small{display:block;font-size:1.05vw;font-weight:500;color:var(--dim);letter-spacing:0;margin-top:.2vw}
-.resumo{display:flex;gap:1.2vw;margin-left:auto}
-.pill{background:var(--card);border:1px solid var(--line);border-radius:1vw;padding:.7vw 1.4vw;text-align:center;min-width:10vw}
-.pill b{display:block;font-size:2.8vw;font-weight:800;line-height:1.05}
-.pill span{font-size:.9vw;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
-.relogio{font-size:2.6vw;font-weight:700;color:var(--dim);min-width:9vw;text-align:right}
+/* cabeçalho */
+header{display:flex;align-items:flex-end;gap:2vw}
+header h1{font-family:var(--cond);font-weight:800;font-size:3.2vw;line-height:.9;letter-spacing:-.01em}
+header .data{font-size:1.2vw;color:var(--apagado);font-weight:600;margin-top:.4vw}
+.legenda{display:flex;gap:1.6vw;margin-left:auto;align-items:center;font-size:1.05vw;font-weight:600;color:var(--apagado)}
+.legenda i{display:inline-block;width:.9vw;height:.9vw;border-radius:.2vw;margin-right:.45vw;vertical-align:-.05vw}
+.hora{font-family:var(--cond);font-weight:700;font-size:3.4vw;line-height:.9;margin-left:1.5vw}
 
-/* empresas */
-.grade{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:1.4vw;min-height:0}
-.emp{background:var(--card);border:1px solid var(--line);border-radius:1.2vw;padding:1.4vw;display:flex;flex-direction:column;gap:1.1vw;min-height:0;position:relative}
-.emp.desat::after{content:"sem atualização recente";position:absolute;top:1vw;right:1.2vw;font-size:.8vw;color:var(--late);font-weight:700;text-transform:uppercase}
-.emp-cab{display:flex;align-items:center;gap:1vw}
-.emp-cab img{width:3.4vw;height:3.4vw;border-radius:.7vw;background:#fff;object-fit:contain;padding:.2vw}
-.emp-cab h2{font-size:1.75vw;font-weight:800;letter-spacing:-.01em}
-.grandes{display:grid;grid-template-columns:1fr 1fr;gap:1vw}
-.g{background:var(--card2);border-radius:1vw;padding:1vw 1.2vw}
-.g span{font-size:.95vw;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
-.g b{display:block;font-size:6vw;font-weight:900;line-height:1;margin-top:.3vw}
-.g.pend span,.g.pend b{color:var(--pend)} .g.ok span,.g.ok b{color:var(--ok)}
-.g.zero b{opacity:.35}
-.barra{height:1vw;background:var(--card2);border-radius:1vw;overflow:hidden;display:flex}
-.barra i{display:block;height:100%}
-.barra-leg{display:flex;justify-content:space-between;font-size:.95vw;color:var(--dim);margin-top:-.5vw}
-.barra-leg b{color:var(--txt)}
-.alerta{background:rgba(255,77,94,.14);border:1px solid rgba(255,77,94,.5);color:#ffb3bb;border-radius:.8vw;padding:.55vw .9vw;font-size:1.05vw;font-weight:700}
-.alerta.ok{background:rgba(47,210,122,.12);border-color:rgba(47,210,122,.45);color:#9ff0c4}
+/* faixas por empresa */
+main{display:grid;grid-template-rows:repeat(3,1fr);gap:1vw;min-height:0}
+.faixa{display:grid;grid-template-columns:15vw repeat(3,minmax(0,1fr)) 11vw;align-items:stretch;gap:0;background:var(--faixa);border-radius:1.1vw;overflow:hidden;position:relative}
+.marca{display:flex;flex-direction:column;justify-content:center;gap:.7vw;padding:0 1.4vw;border-right:1px solid var(--linha)}
+.marca img{width:4.2vw;height:4.2vw;border-radius:.8vw;background:#fff;object-fit:contain;padding:.25vw}
+.marca b{font-size:1.45vw;font-weight:700;line-height:1.1}
+.marca .estado{font-size:.95vw;font-weight:600;color:var(--apagado)}
+.marca .estado.pronto{color:var(--ok)}
 
-table{width:100%;border-collapse:collapse;font-size:1.2vw}
-th{white-space:nowrap;font-size:.75vw;color:var(--dim);font-weight:700;text-transform:uppercase;letter-spacing:.08em;text-align:right;padding:.35vw .3vw;border-bottom:1px solid var(--line)}
-th:first-child,td:first-child{text-align:left}
-td{white-space:nowrap;padding:.55vw .3vw;border-bottom:1px solid var(--line);text-align:right;font-weight:700}
-tr:last-child td{border-bottom:none}
-td .dot{display:inline-block;width:.8vw;height:.8vw;border-radius:50%;margin-right:.6vw;vertical-align:middle}
-td.c-pend{color:var(--pend)} td.c-ok{color:var(--ok)} td.c-env{color:var(--env)}
-td.zero{color:#3a4760}
-.late{color:var(--late);font-size:.85vw;margin-left:.3vw}
+.est{position:relative;display:flex;flex-direction:column;justify-content:center;padding:.6vw 1.6vw .6vw 2.6vw;border-right:1px solid var(--linha)}
+.est::before{                       /* seta do fluxo entre estações */
+  content:"";position:absolute;left:-1px;top:50%;width:1.1vw;height:1.1vw;transform:translate(-50%,-50%) rotate(45deg);
+  background:var(--faixa);border-top:1px solid var(--linha);border-right:1px solid var(--linha)}
+.est .rot{display:flex;align-items:center;gap:.6vw;font-size:1.15vw;font-weight:700}
+.est .rot .passo{width:1.6vw;height:1.6vw;border-radius:50%;display:grid;place-items:center;font-size:.9vw;font-weight:800;color:var(--fundo)}
+.est .num{font-family:var(--cond);font-weight:800;font-size:6.4vw;line-height:.95;margin-top:.1vw}
+.est.zero .num{color:var(--linha)!important}
+.est.nf .passo{background:var(--nf)}  .est.nf .num,.est.nf .rot{color:var(--nf)}
+.est.em .passo{background:var(--emp)} .est.em .num,.est.em .rot{color:var(--emp)}
+.est.ok .passo{background:var(--ok)}  .est.ok .num,.est.ok .rot{color:var(--ok)}
+.est.vazio .rot{color:var(--apagado)}
+.atraso{position:absolute;top:.8vw;right:1vw;background:var(--atraso);color:#fff;font-weight:700;font-size:.95vw;padding:.2vw .65vw;border-radius:2vw}
 
-.rodape{display:flex;justify-content:space-between;align-items:center;font-size:.9vw;color:var(--dim)}
-.rodape .aviso{color:var(--pend);font-weight:600}
-.carregando{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font-size:2vw;color:var(--dim);background:var(--bg)}
+.canais{display:flex;flex-wrap:wrap;gap:.35vw;margin-top:.5vw;min-height:1.7vw;max-height:4vw;overflow:hidden}
+.canal{flex:none;display:inline-flex;align-items:center;gap:.3vw;background:rgba(255,255,255,.06);border-radius:.45vw;padding:.15vw .5vw;font-size:.95vw;font-weight:600;color:#d7e1f2}
+.canal i{width:.6vw;height:.6vw;border-radius:50%;display:inline-block}
+.canal b{font-family:var(--cond);font-size:1.25vw;font-weight:700;color:#fff}
+
+.lado{display:flex;flex-direction:column;justify-content:center;gap:1vw;padding:0 1.3vw}
+.lado div{font-size:.95vw;color:var(--apagado);font-weight:600;line-height:1.15}
+.lado b{display:block;font-family:var(--cond);font-size:2.4vw;font-weight:700;color:var(--texto);line-height:1}
+
+.faixa.carregando .est .num,.faixa.carregando .lado b{color:var(--linha)}
+.faixa.velho::after{content:"Sem atualização recente";position:absolute;bottom:.6vw;left:1.4vw;font-size:.85vw;font-weight:700;color:var(--atraso)}
+
+footer{display:flex;justify-content:space-between;font-size:.95vw;color:var(--apagado);font-weight:500}
+footer .erro{color:var(--emp)}
+.aviso{position:fixed;inset:0;display:grid;place-items:center;background:var(--fundo);font-size:1.8vw;color:var(--apagado);text-align:center;padding:4vw}
+@media (prefers-reduced-motion:no-preference){.num{transition:color .4s}}
 </style>
 </head>
 <body>
-<div class="topo">
-  <div class="titulo">Expedição de hoje<small id="data">—</small></div>
-  <div class="resumo">
-    <div class="pill"><b class="num" id="t-pend" style="color:var(--pend)">–</b><span>A empacotar</span></div>
-    <div class="pill"><b class="num" id="t-ok" style="color:var(--ok)">–</b><span>Empacotados</span></div>
-    <div class="pill"><b class="num" id="t-env" style="color:var(--env)">–</b><span>Enviados hoje</span></div>
+<header>
+  <div><h1>Pedidos do dia</h1><div class="data" id="data"></div></div>
+  <div class="legenda">
+    <span><i style="background:var(--nf)"></i>Emitir NF</span>
+    <span><i style="background:var(--emp)"></i>A empacotar</span>
+    <span><i style="background:var(--ok)"></i>Empacotados</span>
   </div>
-  <div class="relogio num" id="relogio">--:--</div>
-</div>
-<div class="grade" id="grade"></div>
-<div class="rodape"><span id="atualizado">—</span><span id="aviso" class="aviso"></span></div>
-<div class="carregando" id="carregando">Carregando pedidos dos marketplaces…</div>
+  <div class="hora n" id="hora">--:--</div>
+</header>
+<main id="faixas"></main>
+<footer><span id="atualizado"></span><span id="erros" class="erro"></span></footer>
+<div class="aviso" id="aviso">Carregando pedidos dos marketplaces…</div>
 
 <script>
-const CORES = { 'Mercado Livre':'#ffe600', 'Amazon':'#ff9900', 'Shopee':'#ee4d2d', 'Shein':'#e8e8e8', 'TikTok':'#fe2c55', 'Outros':'#8a97ad' };
-const el = id => document.getElementById(id);
+const CORES = { 'Mercado Livre':'#ffe600', 'Amazon':'#ff9900', 'Shopee':'#ff5a36', 'Shein':'#e9e9e9', 'TikTok':'#ff2d6f', 'Outros':'#8ea3c7' };
+const CURTO = { 'Mercado Livre':'ML' };
+const $ = id => document.getElementById(id);
 const fmt = n => (n ?? 0).toLocaleString('pt-BR');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 function relogio(){
   const d = new Date();
-  el('relogio').textContent = d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-  el('data').textContent = d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
+  $('hora').textContent = d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  const t = d.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'});
+  $('data').textContent = t.charAt(0).toUpperCase() + t.slice(1);
 }
 setInterval(relogio, 1000); relogio();
 
-function cartao(e){
-  const t = e.total, feito = t.empacotados + t.enviados, todo = t.aEmpacotar + feito;
-  const pct = todo ? Math.round(feito / todo * 100) : 100;
-  const w = v => todo ? (v / todo * 100) + '%' : '0';
-  const alerta = t.atrasados > 0
-    ? `<div class="alerta">⚠ ${fmt(t.atrasados)} ${t.atrasados === 1 ? 'pedido atrasado' : 'pedidos atrasados'} para empacotar</div>`
-    : (t.aEmpacotar === 0 && feito > 0 ? `<div class="alerta ok">✔ Tudo empacotado</div>` : '');
-  const linhas = e.canais.map(c => `<tr>
-      <td><span class="dot" style="background:${CORES[c.canal]||CORES.Outros}"></span>${esc(c.canal)}</td>
-      <td class="num ${c.aEmpacotar?'c-pend':'zero'}">${fmt(c.aEmpacotar)}${c.atrasados?`<span class="late">(${c.atrasados} atras.)</span>`:''}</td>
-      <td class="num ${c.empacotados?'c-ok':'zero'}">${fmt(c.empacotados)}</td>
-      <td class="num ${c.enviados?'c-env':'zero'}">${fmt(c.enviados)}</td></tr>`).join('');
-  if (e.carregando) return `<section class="emp"><div class="emp-cab"><img src="/logo/${esc(e.logo)}" alt=""><h2>${esc(e.nome)}</h2></div><div style="margin:auto;color:var(--dim);font-size:1.4vw">Carregando…</div></section>`;
-  return `<section class="emp ${e.desatualizado?'desat':''}">
-    <div class="emp-cab"><img src="/logo/${esc(e.logo)}" alt=""><h2>${esc(e.nome)}</h2></div>
-    <div class="grandes">
-      <div class="g pend ${t.aEmpacotar?'':'zero'}"><span>A empacotar</span><b class="num">${fmt(t.aEmpacotar)}</b></div>
-      <div class="g ok ${t.empacotados?'':'zero'}"><span>Empacotados</span><b class="num">${fmt(t.empacotados)}</b></div>
+function chips(e, etapa){
+  return e.canais.filter(c => c[etapa] > 0)
+    .map(c => `<span class="canal"><i style="background:${CORES[c.canal]||CORES.Outros}"></i>${esc(CURTO[c.canal]||c.canal)} <b>${fmt(c[etapa])}</b></span>`).join('');
+}
+function estacao(e, etapa, classe, passo, rotulo){
+  const v = e.total[etapa];
+  const atraso = etapa !== 'empacotado' ? e.canais.reduce((s,c)=> s + (c[etapa] ? Math.min(c.atrasados, c[etapa]) : 0), 0) : 0;
+  return `<div class="est ${classe} ${v ? '' : 'zero'}">
+    ${atraso ? `<span class="atraso">${fmt(atraso)} atrasado${atraso>1?'s':''}</span>` : ''}
+    <div class="rot"><span class="passo">${passo}</span>${rotulo}</div>
+    <div class="num">${fmt(v)}</div>
+    <div class="canais">${chips(e, etapa)}</div>
+  </div>`;
+}
+function faixa(e){
+  const t = e.total, pendente = t.emitirNF + t.aEmpacotar;
+  const estado = e.carregando ? 'Carregando…'
+    : pendente === 0 && t.empacotado + t.enviado > 0 ? 'Tudo empacotado'
+    : pendente === 0 ? 'Sem pedidos pendentes'
+    : `${fmt(pendente)} para preparar`;
+  return `<section class="faixa ${e.carregando?'carregando':''} ${e.desatualizado?'velho':''}">
+    <div class="marca"><img src="/logo/${esc(e.logo)}" alt=""><b>${esc(e.nome)}</b><span class="estado ${pendente===0&&!e.carregando?'pronto':''}">${estado}</span></div>
+    ${estacao(e,'emitirNF','nf',1,'Emitir NF')}
+    ${estacao(e,'aEmpacotar','em',2,'A empacotar')}
+    ${estacao(e,'empacotado','ok',3,'Empacotados')}
+    <div class="lado">
+      <div><b class="n">${fmt(t.enviado)}</b>enviados hoje</div>
+      <div><b class="n">${fmt(t.futuros)}</b>próximos dias</div>
     </div>
-    <div class="barra"><i style="width:${w(t.enviados)};background:var(--env)"></i><i style="width:${w(t.empacotados)};background:var(--ok)"></i><i style="width:${w(t.aEmpacotar)};background:var(--pend);opacity:.35"></i></div>
-    <div class="barra-leg"><span><b>${pct}%</b> pronto</span><span>${fmt(t.enviados)} já enviados</span></div>
-    ${alerta}
-    <table><thead><tr><th>Canal</th><th>A empacotar</th><th>Empacot.</th><th>Enviados</th></tr></thead><tbody>${linhas}</tbody></table>
   </section>`;
 }
 
 async function carregar(){
   try{
     const r = await fetch('/tv/dados', {cache:'no-store'});
-    if (r.status === 401) { el('carregando').style.display='flex'; el('carregando').textContent = 'Sem acesso — abra o link da TV (⚙️ Conta → Painel da TV).'; return; }
+    if (r.status === 401) { $('aviso').style.display='grid'; $('aviso').textContent = 'Esta TV ainda não tem acesso. Abra o link da TV que está em Conta → Painel da TV.'; return; }
     const d = await r.json();
-    if (d.carregando || !d.empresas?.length) { setTimeout(carregar, 5000); return; }
-    el('carregando').style.display = 'none';
-    el('grade').innerHTML = d.empresas.map(cartao).join('');
-    const tot = d.empresas.reduce((a,e)=>{a.p+=e.total.aEmpacotar;a.o+=e.total.empacotados;a.e+=e.total.enviados;return a},{p:0,o:0,e:0});
-    el('t-pend').textContent = fmt(tot.p); el('t-ok').textContent = fmt(tot.o); el('t-env').textContent = fmt(tot.e);
-    const quando = new Date(d.atualizadoEm);
-    el('atualizado').textContent = 'Atualizado às ' + quando.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) + ' · atualiza sozinho a cada 1–2 min';
-    const avisos = [];
-    if (!d.configurado) avisos.push('Situações ainda não configuradas (⚙️ Conta → Painel da TV)');
-    for (const [k,v] of Object.entries(d.erros||{})) avisos.push(k + ': ' + v);
-    el('aviso').textContent = avisos.join(' · ');
-  }catch(e){ el('aviso').textContent = 'Sem conexão com o servidor — tentando de novo…'; }
+    if (d.carregando || !d.empresas?.length) { setTimeout(carregar, 4000); return; }
+    $('aviso').style.display = 'none';
+    $('faixas').innerHTML = d.empresas.map(faixa).join('');
+    if (d.parcial) setTimeout(carregar, 4000);
+    $('atualizado').textContent = d.atualizadoEm && !d.parcial
+      ? 'Atualizado às ' + new Date(d.atualizadoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) + '. Atualiza sozinho a cada 1 a 2 minutos.'
+      : 'Carregando as demais empresas…';
+    const erros = Object.entries(d.erros||{}).map(([k,v]) => `${k}: ${v}`);
+    if (!d.configurado && !d.parcial) erros.unshift('Situações do Bling/Tiny ainda não revisadas em /tv/config');
+    $('erros').textContent = erros.join('  |  ');
+  }catch(e){ $('erros').textContent = 'Sem conexão com o servidor. Tentando de novo…'; }
 }
 carregar(); setInterval(carregar, 30000);
-setTimeout(() => location.reload(), 6 * 3600e3);                     // recarrega a cada 6h (pega atualizações)
-try { navigator.wakeLock?.request('screen').catch(()=>{}); } catch(e){}  // evita a tela apagar
+setTimeout(() => location.reload(), 6 * 3600e3);
+try { navigator.wakeLock?.request('screen').catch(()=>{}); } catch(e){}
 </script>
 </body>
 </html>

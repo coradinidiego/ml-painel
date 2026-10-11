@@ -51,7 +51,7 @@ function chaveTv(nova = false) {
   const k = crypto.randomBytes(18).toString('base64url'); fs.writeFileSync(ARQ_TV, k, { mode: 0o600 }); return k;
 }
 function acessoTv(req, res) {
-  if (!(req.path === '/tv' || req.path === '/tv/' || req.path === '/tv/dados' || req.path.startsWith('/logo/'))) return false;
+  if (!(req.path === '/tv' || req.path === '/tv/' || req.path === '/tv/dados' || req.path.startsWith('/tv/fontes/') || req.path.startsWith('/logo/'))) return false;
   const k = chaveTv(), q = String(req.query.chave || '');
   const m = (req.headers.cookie || '').match(/(?:^|;\s*)painel_tv=([^;]+)/);
   const igual = v => v && v.length === k.length && crypto.timingSafeEqual(Buffer.from(v), Buffer.from(k));
