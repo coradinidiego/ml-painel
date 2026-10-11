@@ -1229,6 +1229,23 @@ app.get('/debug/ml-raw/:idx', async (req, res) => {
   catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
 
+// Diagnóstico (admin): de onde vem o custo de um SKU. /debug/custo/2?sku=7898501766807&recarregar=1
+app.get('/debug/custo/:idx', async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const idx = parseInt(req.params.idx), sku = String(req.query.sku || '').trim();
+  const cm = require('./custos_ml');
+  try {
+    if (req.query.recarregar) cm.recarregarErp(idx);
+    const erp = await cm.custosErp(idx);
+    const out = { idx, sku, produtosComCustoNoErp: Object.keys(erp).length, resultado: cm.custoComFonte(idx, sku, erp) };
+    if (idx === 2 && sku) { // o que o Tiny devolve para esse código
+      const r = await require('./tiny').chamar('produtos.pesquisa.php', { pesquisa: sku });
+      out.tiny = (r.produtos || []).map(x => ({ id: x.produto.id, codigo: x.produto.codigo, gtin: x.produto.gtin, nome: x.produto.nome, preco_custo: x.produto.preco_custo, preco_custo_medio: x.produto.preco_custo_medio }));
+    }
+    res.json(out);
+  } catch (e) { res.status(500).json({ erro: e.message }); }
+});
+
 app.get('/debug/ml/:idx', async (req, res) => {
   const idx = parseInt(req.params.idx);
   try {

@@ -204,4 +204,6 @@ async function calcularMargens(ml, idx, uid, itens) {
   }
 }
 
-module.exports = { calcularMargens, custoSku, custosConta, custosErp, custoComFonte, aliquota };
+function recarregarErp(idx) { if (_erp[idx]) _erp[idx].ts = 0; }
+
+module.exports = { recarregarErp, calcularMargens, custoSku, custosConta, custosErp, custoComFonte, aliquota };
