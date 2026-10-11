@@ -173,6 +173,8 @@ async function calcularMargens(ml, idx, uid, itens) {
   const imp = aliquota(idx), emb = embalagem(idx);
   const erp = await custosErp(idx);
   for (const it of itens) {
+    // limpa o cálculo anterior (para o recálculo manual não deixar valores velhos)
+    for (const k of ['margem_obs', 'custo_fonte', 'custo_produto', 'lucro_atual_pct', 'lucro_ptw_pct', 'lucro_ptw', 'tarifa_ptw', 'frete_ptw', 'calc_atual', 'calc_ptw']) delete it[k];
     try {
       const cf = custoComFonte(idx, it._sku || it.seller_sku, erp);
       if (!cf) { it.margem_obs = 'sem custo no ' + (idx === 2 ? 'Tiny' : 'Bling') + ' nem na planilha'; continue; }

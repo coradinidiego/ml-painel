@@ -201,6 +201,8 @@ body{background:#f0f2f5;color:#111}
         <option value="15">Lucro para ganhar ≥ 15%</option>
         <option value="20">Lucro para ganhar ≥ 20%</option>
       </select>
+      <button class="btn" id="btn-custos" onclick="atualizarCustos()" title="Relê o preço de custo no Bling/Tiny e recalcula o lucro">💲 Atualizar custos</button>
+      <span id="custos-msg" style="font-size:12px;color:#666;align-self:center"></span>
     </div>
     <div class="section"><div class="sec-head">🔴 Perdendo no catalogo <span class="cnt" id="c-perdendo">-</span></div><div id="b-perdendo"><div class="loading">Carregando...</div></div></div>
     <div class="section"><div class="sec-head">🏆 Quem ganha catálogo de você <span class="cnt" id="c-concorrentes">-</span></div><div id="b-concorrentes"><div class="loading">Carregando...</div></div></div>
@@ -565,6 +567,18 @@ function renderSemPromo(from){
     const cs=it.catalog_listing?(it.status_cat==='winning'?'<span class="pc">🟢 Ganhando</span>':it.status_cat==='competing'?'<span class="ptw">🔴 Perdendo</span>':'<span class="pv">📋 Catalogo</span>'):'';
     return'<div class="item-row"><div class="thumb">'+thumb+'</div><div class="iinfo"><div class="ititle">'+(it.title||'-')+'</div><div class="imeta">'+it.id+sku+' · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+it.id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/lista/promos?page=1&search='+it.id.replace('MLB','')+' " target="_blank">Promo</a></div></div><div class="prices"><div class="mp">'+fmt(it.price)+'</div>'+cs+'</div></div>';
   }).join('');
+}
+
+async function atualizarCustos(){
+  const b=el('btn-custos'),m=el('custos-msg');if(!b)return;
+  b.disabled=true;const txt=b.textContent;b.textContent='⏳ Atualizando custos…';m.style.color='#666';m.textContent='Lendo os preços de custo no ERP e recalculando o lucro…';
+  try{
+    const r=await fetch('/custos/atualizar/'+ci,{method:'POST'});const j=await r.json();
+    if(!j.ok)throw new Error(j.erro||'erro');
+    const d=await (await fetch('/dados/'+ci)).json();if(d.dados){window._dados[ci]=d.dados;renderPerdendo(0);}
+    m.style.color='#2e7d32';m.textContent='✔ Custos atualizados ('+j.erp+': '+j.produtosComCusto+' produtos com custo). Lucro calculado em '+j.comLucro+' de '+j.catalogos+' catálogos.';
+  }catch(e){m.style.color='#c62828';m.textContent='Não consegui atualizar: '+e.message;}
+  finally{b.disabled=false;b.textContent=txt;}
 }
 
 async function recarregarConta(){

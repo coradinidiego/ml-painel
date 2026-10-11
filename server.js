@@ -367,6 +367,25 @@ app.get('/recarregar/:idx', (req,res) => {
   res.json({ok:true});
 });
 
+// Atualizar custos (botão na aba Perdendo): relê o preço de custo no Bling/Tiny e recalcula o lucro dos catálogos
+const _atualizandoCustos = {};
+app.post('/custos/atualizar/:idx', async (req, res) => {
+  const idx = parseInt(req.params.idx);
+  const d = dadosCache[idx];
+  if (!d) return res.status(409).json({ ok: false, erro: 'A conta ainda está carregando. Tente em instantes.' });
+  if (_atualizandoCustos[idx]) return res.status(409).json({ ok: false, erro: 'Já estou atualizando os custos desta conta.' });
+  _atualizandoCustos[idx] = true;
+  try {
+    const cm = require('./custos_ml');
+    cm.recarregarErp(idx);
+    const erp = await cm.custosErp(idx);
+    await cm.calcularMargens(ml, idx, d.uid, d.perdendo || []);
+    const p = d.perdendo || [];
+    res.json({ ok: true, produtosComCusto: Object.keys(erp).length, catalogos: p.length, comLucro: p.filter(x => x.lucro_ptw_pct != null).length, erp: idx === 2 ? 'Tiny' : 'Bling' });
+  } catch (e) { res.status(500).json({ ok: false, erro: e.message }); }
+  finally { _atualizandoCustos[idx] = false; }
+});
+
 // ─── Rotas Shopee ──────────────────────────────────────────────────────────
 app.get('/shopee/auth', (req, res) => {
   res.redirect(shopee.getAuthUrl());
