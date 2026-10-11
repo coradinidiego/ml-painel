@@ -64,7 +64,7 @@ function custosConta(idx) {
 // ─── Custos do ERP (Bling / Tiny), cache de 6h em memória e em disco ───────
 const _erp = {};
 async function custosErp(idx) {
-  const arq = path.join(DATA, 'apuracao_cache', `custos_erp_${idx}.json`);
+  const arq = path.join(DATA, 'apuracao_cache', `custos_erp_v2_${idx}.json`);
   if (!_erp[idx]) { try { _erp[idx] = JSON.parse(fs.readFileSync(arq)); } catch (e) { _erp[idx] = { ts: 0, mapa: {} }; } }
   if (Date.now() - _erp[idx].ts < 6 * 3600e3) return _erp[idx].mapa;
   const mapa = {};
