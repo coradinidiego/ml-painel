@@ -277,4 +277,4 @@ async function getCustosPorSku(idx) {
   return mapa;
 }
 
-module.exports = { getAuthUrl, exchangeCode, refreshToken, saveTokens, getToken, getProdutosComEstoque, getDepositos, getPedidosVendas, getPedidoDetalhe, getCustosPorSku, getCanaisVenda };
+module.exports = { client, getAuthUrl, exchangeCode, refreshToken, saveTokens, getToken, getProdutosComEstoque, getDepositos, getPedidosVendas, getPedidoDetalhe, getCustosPorSku, getCanaisVenda };

@@ -44,6 +44,21 @@ function bootstrap() {
 }
 const ativo = () => lerUsuarios().length > 0;
 
+// ─── Chave da TV (acesso só à tela /tv, sem login) ─────────────────────────
+const ARQ_TV = path.join(DATA, 'tv_chave.txt');
+function chaveTv(nova = false) {
+  if (!nova) { try { const k = fs.readFileSync(ARQ_TV, 'utf8').trim(); if (k) return k; } catch (e) {} }
+  const k = crypto.randomBytes(18).toString('base64url'); fs.writeFileSync(ARQ_TV, k, { mode: 0o600 }); return k;
+}
+function acessoTv(req, res) {
+  if (!(req.path === '/tv' || req.path === '/tv/' || req.path === '/tv/dados' || req.path.startsWith('/logo/'))) return false;
+  const k = chaveTv(), q = String(req.query.chave || '');
+  const m = (req.headers.cookie || '').match(/(?:^|;\s*)painel_tv=([^;]+)/);
+  const igual = v => v && v.length === k.length && crypto.timingSafeEqual(Buffer.from(v), Buffer.from(k));
+  if (igual(q)) { res.setHeader('Set-Cookie', `painel_tv=${k}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${400 * 86400}${req.secure ? '; Secure' : ''}`); return true; }
+  return igual(m && m[1]);
+}
+
 // ─── Sessão (cookie assinado) ──────────────────────────────────────────────
 function segredo() {
   if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
@@ -121,7 +136,7 @@ const ARQUIVOS_DADOS = {
   'apuracao_cache/tiny_lufe_pedidos.json': 'Pedidos já baixados do Tiny (migração)',
 };
 
-function paginaConta(u, msg) {
+function paginaConta(u, msg, hostBase = '') {
   const usuarios = lerUsuarios();
   const quando = f => { try { return new Date(fs.statSync(path.join(DATA, f)).mtimeMs).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }); } catch (e) { return '—'; } };
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Painel — Conta</title><style>${css}</style></head><body>
@@ -154,6 +169,11 @@ function paginaConta(u, msg) {
     <div><label>Nome</label><input name="nome" required></div><div><label>E-mail</label><input name="email" type="email" required></div><div><label>Senha inicial</label><input name="senha" type="text" minlength="8" required></div></div>
     <button>Adicionar usuário</button></form></div>` : ''}
 
+  ${u.admin ? `<div class="box"><h2>📺 Painel da TV</h2><p class="s">Abra este link uma vez no navegador da TV — ela fica com acesso só à tela de expedição, sem precisar de senha. Não compartilhe fora da empresa.</p>
+  <input readonly value="${esc(hostBase)}/tv?chave=${esc(chaveTv())}" onclick="this.select()" style="font-family:monospace;font-size:13px">
+  <div style="display:flex;gap:10px;flex-wrap:wrap"><a href="/tv/config"><button type="button">Configurar situações</button></a>
+  <form method="post" action="/conta/tv-nova-chave" style="margin:0" onsubmit="return confirm('Gerar nova chave? A TV atual vai perder o acesso até abrir o link novo.')"><button style="background:#c62828">Gerar nova chave</button></form></div></div>` : ''}
+
   <div class="box"><h2>🔑 Trocar minha senha</h2><form method="post" action="/conta/senha"><div class="row">
     <div><label>Senha atual</label><input name="atual" type="password" required></div><div><label>Nova senha</label><input name="nova" type="password" minlength="8" required></div><div><label>Repita a nova</label><input name="nova2" type="password" minlength="8" required></div></div>
     <button>Trocar senha</button></form></div>
@@ -184,6 +204,7 @@ function montar(app) {
     if (!ativo()) { req.usuario = null; return next(); }
     const u = lerCookie(req);
     if (u) { req.usuario = u; return next(); }
+    if (acessoTv(req, res)) { req.usuario = null; return next(); }
     const querHtml = req.method === 'GET' && (req.headers.accept || '').includes('text/html');
     if (querHtml) return res.redirect('/login?next=' + encodeURIComponent(req.originalUrl));
     res.status(401).json({ ok: false, erro: 'Sessão expirada — faça login novamente', login: '/login' });
@@ -191,7 +212,7 @@ function montar(app) {
 
   app.get('/conta/eu', (req, res) => res.json(req.usuario ? { ativo: true, email: req.usuario.email, nome: req.usuario.nome, admin: !!req.usuario.admin } : { ativo: false }));
   const exigeLogin = (req, res, next) => req.usuario ? next() : res.redirect('/');
-  app.get('/conta', exigeLogin, (req, res) => res.send(paginaConta(req.usuario, req.query.ok ? { tipo: 'ok', texto: req.query.ok } : req.query.erro ? { tipo: 'err', texto: req.query.erro } : null)));
+  app.get('/conta', exigeLogin, (req, res) => res.send(paginaConta(req.usuario, req.query.ok ? { tipo: 'ok', texto: req.query.ok } : req.query.erro ? { tipo: 'err', texto: req.query.erro } : null, `${req.protocol}://${req.get('host')}`)));
   const volta = (res, tipo, texto) => res.redirect('/conta?' + tipo + '=' + encodeURIComponent(texto));
 
   app.post('/conta/usuarios', exigeLogin, form, (req, res) => {
@@ -208,6 +229,10 @@ function montar(app) {
     const email = normEmail(req.body.email);
     if (email === req.usuario.email) return volta(res, 'erro', 'Você não pode remover a si mesmo.');
     salvarUsuarios(lerUsuarios().filter(x => x.email !== email)); volta(res, 'ok', `Usuário ${email} removido.`);
+  });
+  app.post('/conta/tv-nova-chave', exigeLogin, (req, res) => {
+    if (!req.usuario.admin) return volta(res, 'erro', 'Só o administrador.');
+    chaveTv(true); volta(res, 'ok', 'Nova chave da TV gerada. Abra o link novo na TV.');
   });
   app.post('/conta/senha', exigeLogin, form, (req, res) => {
     const { atual, nova, nova2 } = req.body;
