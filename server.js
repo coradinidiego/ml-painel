@@ -1510,6 +1510,72 @@ setInterval(() => autoResponderAvaliacoes().catch(() => {}), 15 * 60 * 1000);
 setTimeout(() => autoResponderAvaliacoes().catch(() => {}), 90 * 1000);
 app.get('/shopee/auto-avaliacoes', (req, res) => res.json(autoAval[lojaDe(req)] || {}));
 
+// ─── Impulsionar automático (Shopee) ─────────────────────────────────────────
+// A Shopee deixa 5 produtos impulsionados por vez, por 4h. Alterna as rodadas:
+//   rodada "top"  → os 5 mais vendidos (15 dias)
+//   rodada "fila" → os próximos 5 do fim da lista (menos vendidos), andando até zerar e recomeçar
+// Só produtos ativos com estoque. Verifica a cada 10 min e preenche as vagas livres.
+const ARQ_BOOST = path.join(DATA, 'shopee_boost_auto.json');
+let boostSt = (() => { try { return JSON.parse(fs.readFileSync(ARQ_BOOST)); } catch (e) { return {}; } })();
+const salvarBoost = () => { try { fs.writeFileSync(ARQ_BOOST, JSON.stringify(boostSt)); } catch (e) {} };
+function estoqueShp(p) { return p._variacoes?.length ? p._variacoes.reduce((a, v) => a + (v.estoque || 0), 0) : (p.stock_info_v2?.summary_info?.total_available_stock ?? 0); }
+async function cicloBoost(k) {
+  const sp = shopee.loja(k), C = SHP[k].cache;
+  if (!sp.getTokens().access_token || !C?.produtos?.length) return;
+  const st = boostSt[k] ||= { ativo: true, proxima: 'top', fila: 0, historico: [] };
+  if (st.ativo === false) return;
+  const atuais = await sp.impulsionados();
+  const ocupados = new Set(atuais.map(x => String(x.item_id)));
+  const livres = 5 - atuais.length;
+  if (livres <= 0) return;
+  // vendas por item (15 dias)
+  const vend = {};
+  for (const o of C.pedidos || []) if (!['CANCELLED', 'UNPAID', 'IN_CANCEL'].includes(o.order_status))
+    for (const i of o.item_list || []) vend[i.item_id] = (vend[i.item_id] || 0) + (i.model_quantity_purchased || 1);
+  const elegiveis = C.produtos.filter(p => estoqueShp(p) > 0);
+  const porVenda = [...elegiveis].sort((a, b) => (vend[b.item_id] || 0) - (vend[a.item_id] || 0));
+  const top = porVenda.slice(0, 5);
+  const topIds = new Set(top.map(p => String(p.item_id)));
+  const fila = porVenda.filter(p => !topIds.has(String(p.item_id))).reverse();   // do menos vendido para cima
+  let escolhidos = [], tipo = st.proxima;
+  if (tipo === 'top') escolhidos = top.filter(p => !ocupados.has(String(p.item_id))).slice(0, livres);
+  if (tipo === 'fila' || !escolhidos.length) {
+    tipo = 'fila';
+    if (st.fila >= fila.length) st.fila = 0;
+    while (escolhidos.length < livres && st.fila < fila.length) {
+      const p = fila[st.fila++];
+      if (!ocupados.has(String(p.item_id))) escolhidos.push(p);
+    }
+    if (st.fila >= fila.length) { st.fila = 0; st.voltas = (st.voltas || 0) + 1; }
+  }
+  if (!escolhidos.length) return;
+  const r = await sp.impulsionar(escolhidos.map(p => p.item_id));
+  const okSet = new Set(r.ok.map(String));
+  const feitos = escolhidos.filter(p => okSet.has(String(p.item_id)));
+  st.proxima = tipo === 'top' ? 'fila' : 'top';
+  st.ultimo = { em: new Date().toISOString(), tipo, itens: feitos.map(p => ({ id: p.item_id, nome: p.item_name, vendas: vend[p.item_id] || 0 })), falhas: r.falhas.slice(0, 5), filaPos: st.fila, filaTotal: fila.length };
+  st.historico = [st.ultimo, ...(st.historico || [])].slice(0, 20);
+  salvarBoost();
+  console.log('[boost] ' + k + ' ' + tipo + ': ' + feitos.length + ' impulsionados, ' + r.falhas.length + ' falhas');
+  if (feitos.length) {
+    try {
+      const esc = t => String(t ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      await require('./telegram').sendTelegram('🚀 <b>Shopee impulsionados - ' + esc(sp.nome) + '</b>\n' + (tipo === 'top' ? '🏆 Rodada: mais vendidos' : '🔁 Rodada: fim da lista (' + (st.fila || fila.length) + '/' + fila.length + ')') + '\n\n' +
+        feitos.map(p => '• ' + esc(p.item_name.slice(0, 70)) + (vend[p.item_id] ? ' <i>(' + vend[p.item_id] + ' vendidos)</i>' : '')).join('\n'));
+    } catch (e) {}
+  }
+}
+async function boostTodas() { for (const k of Object.keys(SHP)) await cicloBoost(k).catch(e => console.log('[boost] ' + k + ' erro: ' + e.message)); }
+setInterval(boostTodas, 10 * 60 * 1000);
+setTimeout(boostTodas, 3 * 60 * 1000);
+app.get('/shopee/boost', (req, res) => res.json(boostSt[lojaDe(req)] || { ativo: true }));
+app.post('/shopee/boost/ativo', (req, res) => {
+  const k = lojaDe(req); const st = boostSt[k] ||= { ativo: true, proxima: 'top', fila: 0 };
+  st.ativo = !!req.body?.ativo; salvarBoost();
+  if (st.ativo) cicloBoost(k).catch(() => {});
+  res.json({ ok: true, ativo: st.ativo });
+});
+
 app.post('/shopee/reply-rating', async (req, res) => {
   try {
     const { rating_id, comment } = req.body;

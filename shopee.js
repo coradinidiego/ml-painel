@@ -281,6 +281,16 @@ async function responderAvaliacoesLote(ids, texto) {
   return { ok, falhas };
 }
 
+// ─── Impulsionar (boost) ─────────────────────────────────────────────────────
+async function impulsionados() {
+  const d = await shopeeGet('/api/v2/product/get_boosted_list');
+  return d.response?.item_list || [];      // [{ item_id, cool_down_second }]
+}
+async function impulsionar(itemIds) {
+  const d = await shopeePost('/api/v2/product/boost_item', { item_id_list: itemIds.slice(0, 5).map(Number) });
+  return { ok: d.response?.success_list?.item_id_list || [], falhas: d.response?.failure_list || [] };
+}
+
 async function replyRating(ratingId, comment) {
   return shopeePost('/api/v2/product/reply_comment', { comment_list: [{ comment_id: Number(ratingId), comment }] });
 }
@@ -290,7 +300,7 @@ return { CHAVE, nome: L.nome, ml: L.ml, PARTNER_ID, appProprio, REDIRECT_URL, SA
   getAuthUrl, getToken, refreshToken,
   saveTokens, getTokens,
   listarProdutos, listarPedidos, listarAvaliacoes, replyRating, shopeeGet,
-  promocoesPorItem, variacoes, responderAvaliacoesLote, listarConversas, mensagens, enviarMensagem,
+  promocoesPorItem, variacoes, responderAvaliacoesLote, impulsionados, impulsionar, listarConversas, mensagens, enviarMensagem,
 };
 }
 

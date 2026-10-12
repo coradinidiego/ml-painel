@@ -222,4 +222,4 @@ processarRespostas();
 
 console.log('Bot Telegram ativo! Verificando perguntas a cada 5 minutos.');
 
-module.exports = { verificarPerguntas };
+module.exports = { verificarPerguntas, sendTelegram };
