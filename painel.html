@@ -505,7 +505,7 @@ function renderPerdendo(from){
   const mx=parseFloat(el('fp')?.value)||0;
   let f=q?d.perdendo.filter(it=>(it.title||'').toLowerCase().includes(q)||(it.id||'').toLowerCase().includes(q)||(it._sku||it.seller_sku||'').toLowerCase().includes(q)||(it.winner_nome||'').toLowerCase().includes(q)):[...d.perdendo];
   if(mx>0)f=f.filter(it=>(it.diff||0)<=mx);
-  const ml_=el('fl')?.value; if(ml_!==''&&ml_!=null)f=f.filter(it=>it.lucro_ptw_pct!=null&&it.lucro_ptw_pct>=parseFloat(ml_));
+  const ml_=el('fl')?.value; if(ml_!==''&&ml_!=null)f=f.filter(it=>{const v=it.lucro_melhor_pct??it.lucro_ptw_pct;return v!=null&&v>=parseFloat(ml_);});
   if(!f.length){b.innerHTML='<div class="loading" style="color:green">✓ Nenhum resultado!</div>';return;}
   b.innerHTML=f.map(it=>{
     const thumb=it.thumbnail?'<img src="'+it.thumbnail+'" />':'📦';
@@ -532,8 +532,9 @@ function calcTip(c,titulo){
     l('Custo do produto <small>('+escH(c.custoFonte)+')</small>',m(c.custo),1)+
     (c.embalagem?l('Embalagem',m(c.embalagem),1):'')+
     l('Imposto ('+p(c.impostoPct)+')',m(c.imposto),1)+
-    (c.rebate?'<div class="ct-l" style="color:#5ee08f"><span>Redução de tarifa ML <small>('+escH(c.campanha)+')</small></span><span>+'+m(c.rebate)+'</span></div>':'')+
+    (c.rebate?'<div class="ct-l" style="color:#5ee08f"><span>Redução de tarifa ML <small>('+escH(c.campanha)+(c.campanhaMeliPct?' · ML banca '+p(c.campanhaMeliPct):'')+')</small></span><span>+'+m(c.rebate)+'</span></div>':'')+
     '<div class="ct-t '+(c.lucro<0?'neg':c.pct<10?'mid':'pos')+'"><span>Margem</span><span>'+m(c.lucro)+' ('+p(c.pct)+')</span></div>'+
+    (c.rebate&&c.campanhaStatus&&c.campanhaStatus!=='ativa'?'<div class="ct-n" style="color:#5ee08f">Campanha '+escH(c.campanhaStatus)+' para este anúncio: entre nela em Promoções para valer este preço com a redução.</div>':'')+
     (c.perdeCampanha?'<div class="ct-n" style="color:#ffb547">Neste preço o anúncio sai da campanha “'+escH(c.campanhaNome)+'” e perde a redução de tarifa do ML.</div>':'')+
     '<div class="ct-n">Envio e tarifa informados pelo Mercado Livre para este anúncio'+(c.tipoAnuncio?' ('+escH(c.tipoAnuncio)+')':'')+(c.pesoG?' · peso faturável '+c.pesoG+' g':'')+'.</div>'+
   '</div>';
@@ -543,7 +544,9 @@ function lucroHtml(it){
   const cor=v=>v<0?'#c62828':v<10?'#e67e00':'#2e7d32';
   if(it.lucro_ptw_pct==null) return it.margem_obs?'<div style="font-size:11px;color:#999;margin-top:2px">Lucro: '+it.margem_obs+'</div>':'';
   const atual=it.lucro_atual_pct!=null?'<span class="ctw" style="color:'+cor(it.lucro_atual_pct)+'">'+pc(it.lucro_atual_pct)+calcTip(it.calc_atual,'Hoje, no seu preço')+'</span> → ':'';
-  return '<div style="font-size:12px;margin-top:3px;white-space:nowrap">Lucro: '+atual+'<b class="ctw" style="color:'+cor(it.lucro_ptw_pct)+'">'+pc(it.lucro_ptw_pct)+calcTip(it.calc_ptw,'No preço para ganhar')+'</b></div>';
+  const cc=it.calc_campanha;
+  const camp=cc?'<div style="font-size:12px;margin-top:2px;white-space:nowrap">🎯 Com campanha <b>'+String(cc.campanha||'').replace(/[&<>"]/g,'')+'</b> ('+fmt(cc.preco)+'): <b class="ctw" style="color:'+cor(cc.pct)+'">'+pc(cc.pct)+calcTip(cc,'Na campanha com redução do ML ('+fmt(cc.preco)+')')+'</b></div>':'';
+  return '<div style="font-size:12px;margin-top:3px;white-space:nowrap">Lucro: '+atual+'<b class="ctw" style="color:'+cor(it.lucro_ptw_pct)+'">'+pc(it.lucro_ptw_pct)+calcTip(it.calc_ptw,'No preço para ganhar'+(it.calc_ptw&&it.calc_ptw.rebate?' (com redução do ML)':''))+'</b></div>'+camp;
 }
 
 function renderConcorrentes(){

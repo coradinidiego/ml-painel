@@ -147,9 +147,12 @@ async function freteML(ml, idx, uid, itemId) {
   } catch (e) { return null; }
 }
 
-// Campanha com co-participação do ML (rebate): o ML banca meli_percentage% do preço original
+// Campanhas com co-participação do ML (rebate): o ML banca meli_percentage% do preço original.
+// Considera tanto a campanha em que o anúncio já está (started) quanto as que ele pode entrar
+// (candidate/pending) — ex.: PRICE_MATCHING / SMART, em que o ML sugere o preço e banca parte da tarifa.
 const _promo = new Map();
-async function rebateML(ml, idx, itemId, precoAtual) {
+const STATUS_PROMO = { started: 'ativa', pending: 'programada', candidate: 'disponível' };
+async function campanhasML(ml, idx, itemId) {
   const c = _promo.get(itemId);
   let lista = c && Date.now() - c.ts < 3600e3 ? c.v : null;
   if (!lista) {
@@ -157,12 +160,14 @@ async function rebateML(ml, idx, itemId, precoAtual) {
     if (!Array.isArray(lista)) lista = [];
     _promo.set(itemId, { v: lista, ts: Date.now() });
   }
-  const ativas = lista.filter(p => p.status === 'started' && num(p.meli_percentage) > 0 && num(p.original_price) > 0);
-  // a campanha que está valendo é a que tem o preço atual do anúncio
-  const p = ativas.find(x => Math.abs(num(x.price) - precoAtual) < 0.05) || null;
-  if (!p) return null;
-  return { valor: Math.round(num(p.original_price) * num(p.meli_percentage)) / 100, meliPct: num(p.meli_percentage),
-           preco: num(p.price), nome: p.name || p.type, tipo: p.type };
+  return lista.filter(p => STATUS_PROMO[p.status] && num(p.meli_percentage) > 0)
+    .map(p => {
+      const preco = num(p.price) || num(p.suggested_discounted_price) || num(p.max_discounted_price);
+      const base = num(p.original_price) || 0;
+      return { preco, valor: Math.round(base * num(p.meli_percentage)) / 100, meliPct: num(p.meli_percentage),
+               nome: p.name || p.type, tipo: p.type, status: STATUS_PROMO[p.status], base };
+    })
+    .filter(p => p.preco > 0 && p.base > 0);
 }
 
 /**
@@ -174,7 +179,7 @@ async function calcularMargens(ml, idx, uid, itens) {
   const erp = await custosErp(idx);
   for (const it of itens) {
     // limpa o cálculo anterior (para o recálculo manual não deixar valores velhos)
-    for (const k of ['margem_obs', 'custo_fonte', 'custo_produto', 'lucro_atual_pct', 'lucro_ptw_pct', 'lucro_ptw', 'tarifa_ptw', 'frete_ptw', 'calc_atual', 'calc_ptw']) delete it[k];
+    for (const k of ['margem_obs', 'custo_fonte', 'custo_produto', 'lucro_atual_pct', 'lucro_ptw_pct', 'lucro_ptw', 'tarifa_ptw', 'frete_ptw', 'calc_atual', 'calc_ptw', 'calc_campanha', 'lucro_campanha_pct', 'lucro_melhor_pct']) delete it[k];
     try {
       const cf = custoComFonte(idx, it._sku || it.seller_sku, erp);
       if (!cf) { it.margem_obs = 'sem custo no ' + (idx === 2 ? 'Tiny' : 'Bling') + ' nem na planilha'; continue; }
@@ -182,22 +187,35 @@ async function calcularMargens(ml, idx, uid, itens) {
       if (!it.listing_type_id || !it.category_id) { it.margem_obs = 'sem dados do anúncio'; continue; }
       const freteBase = await freteML(ml, idx, uid, it.id);
       const r2 = x => Math.round(x * 100) / 100;
-      const rebate = await rebateML(ml, idx, it.id, it.current_price);
-      const calc = async preco => {
+      const campanhas = await campanhasML(ml, idx, it.id);
+      const ativa = campanhas.find(p => p.status === 'ativa' && Math.abs(p.preco - it.current_price) < 0.05) || null;
+      const calc = async (preco, camp) => {
         if (!(preco > 0)) return null;
         const t = await tarifaML(ml, idx, preco, it.listing_type_id, it.category_id);
         if (!t) return null;
         const frete = freteBase?.valor || 0;   // custo de envio do vendedor (o ML cobra também abaixo de R$ 79, por peso/faixa de preço)
         const imposto = preco * imp;
-        const reb = rebate && Math.abs(rebate.preco - preco) < 0.05 ? rebate.valor : 0;   // só vale no preço da campanha
+        // rebate só vale no preço da campanha
+        const c = camp || campanhas.find(p => Math.abs(p.preco - preco) < 0.05) || null;
+        const reb = c ? c.valor : 0;
         const lucro = preco - custo - t.valor - frete - emb - imposto + reb;
-        return { preco: r2(preco), frete: r2(frete), rebate: r2(reb), campanha: reb ? rebate.nome : null,
-                 perdeCampanha: !!(rebate && !reb), campanhaNome: rebate?.nome || null, pesoG: freteBase?.pesoG || null, tarifa: r2(t.valor), tarifaPct: t.pct, tarifaFixa: t.fixa, tipoAnuncio: t.tipo,
+        return { preco: r2(preco), frete: r2(frete), rebate: r2(reb), campanha: c ? c.nome : null, campanhaStatus: c ? c.status : null, campanhaMeliPct: c ? c.meliPct : null,
+                 perdeCampanha: !!(ativa && !c), campanhaNome: ativa?.nome || null, pesoG: freteBase?.pesoG || null, tarifa: r2(t.valor), tarifaPct: t.pct, tarifaFixa: t.fixa, tipoAnuncio: t.tipo,
                  custo: r2(custo), custoFonte: cf.fonte, embalagem: r2(emb), imposto: r2(imposto), impostoPct: Math.round(imp * 1000) / 10,
                  lucro: r2(lucro), pct: Math.round(lucro / preco * 1000) / 10 };
       };
       const atual = await calc(it.current_price);
       const ganhar = await calc(it.price_to_win);
+      // Melhor campanha com rebate que também ganha o catálogo (preço ≤ preço para ganhar)
+      let melhor = null;
+      if (it.price_to_win > 0) for (const c of campanhas) {
+        if (c.preco > it.price_to_win + 0.05 || Math.abs(c.preco - it.price_to_win) < 0.05) continue;
+        const r = await calc(c.preco, c);
+        if (r && (!melhor || r.lucro > melhor.lucro)) melhor = r;
+      }
+      if (melhor && (!ganhar || melhor.lucro > ganhar.lucro)) { it.calc_campanha = melhor; it.lucro_campanha_pct = melhor.pct; }
+      it.lucro_melhor_pct = Math.max(ganhar?.pct ?? -Infinity, it.lucro_campanha_pct ?? -Infinity);
+      if (!isFinite(it.lucro_melhor_pct)) delete it.lucro_melhor_pct;
       it.custo_produto = custo;
       if (atual) { it.lucro_atual_pct = atual.pct; it.calc_atual = atual; }
       if (ganhar) { it.lucro_ptw_pct = ganhar.pct; it.lucro_ptw = ganhar.lucro; it.tarifa_ptw = ganhar.tarifa; it.frete_ptw = ganhar.frete; it.calc_ptw = ganhar; }
