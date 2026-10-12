@@ -252,7 +252,7 @@ async function carregarConta(idx) {
             }
             const v = await vendedorML(idx, sellerId);
             if (v) { it.winner_nome = v.nome; it.winner_loja = v.loja; }
-            if (sellerId && meus.has(String(sellerId))) it.winner_conta = meus.get(String(sellerId));
+            if (sellerId && meus.has(String(sellerId))) it.winner_conta = String(sellerId) === String(uid) ? 'outro anúncio seu nesta conta' : meus.get(String(sellerId));
           } catch(e3) {}
           // ganhador é outra conta minha → não é concorrência
           if (it.winner_conta) grupo.push(it); else perdendo.push(it);
