@@ -1442,6 +1442,20 @@ app.get('/estoque/:idx', async (req, res) => {
   }
 });
 
+// Responde em lote as avaliações sem resposta de N estrelas (opcionalmente só as sem texto do cliente)
+app.post('/shopee/avaliacoes/responder-lote', async (req, res) => {
+  const { texto, estrelas = 5, somenteSemTexto = true, max = 1000, simular = false } = req.body || {};
+  if (!String(texto || '').trim()) return res.status(400).json({ ok: false, erro: 'Informe o texto.' });
+  try {
+    const todas = await shopee.listarAvaliacoes(max);
+    const alvo = todas.filter(r => r.rating_star === Number(estrelas) && !r.comment && (!somenteSemTexto || !(r.comment_list?.[0] || '').trim()));
+    if (simular) return res.json({ ok: true, lidas: todas.length, alvo: alvo.length });
+    const r = await shopee.responderAvaliacoesLote(alvo.map(x => x.rating_id), String(texto).trim().slice(0, 500));
+    if (shopeeCache) { const set = new Set(r.ok.map(String)); for (const a of shopeeCache.avaliacoes) if (set.has(String(a.rating_id))) a.comment = String(texto).trim(); }
+    res.json({ ok: true, lidas: todas.length, alvo: alvo.length, respondidas: r.ok.length, falhas: r.falhas.slice(0, 20), totalFalhas: r.falhas.length });
+  } catch (e) { res.status(500).json({ ok: false, erro: e.message }); }
+});
+
 app.post('/shopee/reply-rating', async (req, res) => {
   try {
     const { rating_id, comment } = req.body;

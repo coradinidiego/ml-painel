@@ -253,6 +253,22 @@ async function enviarMensagem(toId, texto) {
   return shopeePost('/api/v2/sellerchat/send_message', { to_id: Number(toId), message_type: 'text', content: { text: String(texto) } });
 }
 
+/** Responde várias avaliações de uma vez (até 100 por chamada). Retorna { ok:[ids], falhas:[{id,erro}] }. */
+async function responderAvaliacoesLote(ids, texto) {
+  const ok = [], falhas = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const lote = ids.slice(i, i + 100);
+    try {
+      const d = await shopeePost('/api/v2/product/reply_comment', { comment_list: lote.map(id => ({ comment_id: Number(id), comment: texto })) });
+      for (const r of d.response?.result_list || []) {
+        if (r.fail_error || r.fail_message) falhas.push({ id: r.comment_id, erro: (r.fail_error || '') + ' ' + (r.fail_message || '') });
+        else ok.push(r.comment_id);
+      }
+    } catch (e) { lote.forEach(id => falhas.push({ id, erro: e.message })); }
+  }
+  return { ok, falhas };
+}
+
 async function replyRating(ratingId, comment) {
   return shopeePost('/api/v2/product/reply_comment', { comment_list: [{ comment_id: Number(ratingId), comment }] });
 }
@@ -261,5 +277,5 @@ module.exports = { SANDBOX, BASE_URL,
   getAuthUrl, getToken, refreshToken,
   saveTokens, getTokens,
   listarProdutos, listarPedidos, listarAvaliacoes, replyRating, shopeeGet,
-  promocoesPorItem, variacoes, listarConversas, mensagens, enviarMensagem,
+  promocoesPorItem, variacoes, responderAvaliacoesLote, listarConversas, mensagens, enviarMensagem,
 };
