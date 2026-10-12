@@ -102,30 +102,35 @@ async function verificarPerguntas() {
   }
 }
 
-// Chat da Shopee (Zagodini): avisa conversas em que o cliente escreveu e ainda não respondemos
+// Chat da Shopee (todas as lojas conectadas): avisa conversas em que o cliente escreveu e ainda não respondemos
 async function verificarChatShopee() {
   let shopee;
-  try { shopee = require('./shopee'); if (!shopee.getTokens().access_token) return; } catch (e) { return; }
-  try {
-    const conv = await shopee.listarConversas(2, 100);
-    const pend = conv.filter(c => c.pendente);
-    const abertas = new Set(pend.map(c => c.id));
-    for (const id of Object.keys(avisos.shp)) if (!abertas.has(id)) delete avisos.shp[id];
-    for (const c of pend) {
-      const a = avisos.shp[c.id];
-      const novaMsg = !a || a.msg !== c.ultimaMsgId;          // cliente mandou outra mensagem → avisa de novo
-      if (!novaMsg && !precisaLembrete(a)) continue;
-      const lembrete = !novaMsg;
-      const msg = (lembrete ? '⏰ <b>Lembrete: chat Shopee sem resposta há '+minutos(c.quando)+' min - Zagodini</b>' : '🛍️ <b>Nova mensagem no chat Shopee - Zagodini</b>')+'\n\n'+
-        '👤 <b>Cliente:</b> '+esc(c.cliente)+'\n'+
-        '💬 <b>Mensagem:</b> '+esc(c.texto || '['+c.tipo+']')+'\n\n'+
-        '<i>Responda esta mensagem para enviar a resposta ao cliente na Shopee.</i>\n'+
-        '🔑 <code>SCHAT:'+c.id+'|TO:'+c.cliente_id+'</code>';
-      await sendTelegram(msg);
-      avisos.shp[c.id] = { msg: c.ultimaMsgId, em: Date.now(), lembretes: lembrete ? a.lembretes + 1 : 0 };
-      salvarNotificadas();
-    }
-  } catch (e) { console.log('Erro chat Shopee (Telegram): ' + e.message); }
+  try { shopee = require('./shopee'); } catch (e) { return; }
+  for (const k of Object.keys(shopee.LOJAS)) {
+    const sp = shopee.loja(k);
+    if (!sp.getTokens().access_token) continue;
+    try {
+      const conv = await sp.listarConversas(2, 100);
+      const pend = conv.filter(c => c.pendente);
+      const abertas = new Set(pend.map(c => k + ':' + c.id));
+      for (const id of Object.keys(avisos.shp)) if (id.startsWith(k + ':') && !abertas.has(id)) delete avisos.shp[id];
+      for (const c of pend) {
+        const chave = k + ':' + c.id;
+        const a = avisos.shp[chave];
+        const novaMsg = !a || a.msg !== c.ultimaMsgId;          // cliente mandou outra mensagem → avisa de novo
+        if (!novaMsg && !precisaLembrete(a)) continue;
+        const lembrete = !novaMsg;
+        const msg = (lembrete ? '⏰ <b>Lembrete: chat Shopee sem resposta há '+minutos(c.quando)+' min - '+esc(sp.nome)+'</b>' : '🛍️ <b>Nova mensagem no chat Shopee - '+esc(sp.nome)+'</b>')+'\n\n'+
+          '👤 <b>Cliente:</b> '+esc(c.cliente)+'\n'+
+          '💬 <b>Mensagem:</b> '+esc(c.texto || '['+c.tipo+']')+'\n\n'+
+          '<i>Responda esta mensagem para enviar a resposta ao cliente na Shopee.</i>\n'+
+          '🔑 <code>SCHAT:'+k+':'+c.id+'|TO:'+c.cliente_id+'</code>';
+        await sendTelegram(msg);
+        avisos.shp[chave] = { msg: c.ultimaMsgId, em: Date.now(), lembretes: lembrete ? a.lembretes + 1 : 0 };
+        salvarNotificadas();
+      }
+    } catch (e) { console.log('Erro chat Shopee ' + k + ' (Telegram): ' + e.message); }
+  }
 }
 
 let offset = 0;
@@ -141,11 +146,12 @@ async function processarRespostas() {
       
       const texto = msg.reply_to_message.text || '';
       // Resposta a um chat da Shopee
-      const sm = texto.match(/SCHAT:(\d+)\|TO:(\d+)/);
+      const sm = texto.match(/SCHAT:(?:([a-z]+):)?(\d+)\|TO:(\d+)/);
       if (sm && msg.text) {
+        const lj = sm[1] || 'zagodini';
         try {
-          await require('./shopee').enviarMensagem(sm[2], msg.text);
-          delete avisos.shp[sm[1]]; salvarNotificadas();
+          await require('./shopee').loja(lj).enviarMensagem(sm[3], msg.text);
+          delete avisos.shp[lj + ':' + sm[2]]; delete avisos.shp[sm[2]]; salvarNotificadas();
           await sendTelegram('✅ <b>Mensagem enviada ao cliente na Shopee!</b>\n\n<i>'+esc(msg.text)+'</i>');
         } catch (e) { await sendTelegram('❌ Erro ao enviar na Shopee: '+esc(e.message)); }
         continue;

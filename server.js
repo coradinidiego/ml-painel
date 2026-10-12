@@ -31,34 +31,36 @@ app.use('/apuracao-tiny', require('./tiny_apuracao').router); // Apuração LUFE
 app.use('/tv', require('./tv').router); // Painel da TV (expedição)
 
 // ─── Cache Shopee ──────────────────────────────────────────────────────────
-let shopeeCache = null;
-let shopeeStatus = 'aguardando';
+// Um estado por loja Shopee (zagodini, mae, lufe)
+const SHP = {};
+for (const k of Object.keys(shopee.LOJAS)) SHP[k] = { cache: null, status: 'aguardando', erros: {} };
+const lojaDe = req => { const k = String(req.query.loja || req.body?.loja || 'zagodini'); return SHP[k] ? k : 'zagodini'; };
 
-let shopeeErros = {};
-async function carregarShopee() {
-  const tokens = shopee.getTokens();
-  if (!tokens.access_token) { shopeeStatus = 'sem_auth'; return; }
-  shopeeStatus = 'carregando';
+async function carregarShopee(chave = 'zagodini') {
+  const shopee_ = shopee.loja(chave), E = SHP[chave];
+  const tokens = shopee_.getTokens();
+  if (!tokens.access_token) { E.status = 'sem_auth'; return; }
+  E.status = 'carregando';
   // cada parte é independente: se uma falhar, as outras ainda aparecem
   const erros = {};
-  const parte = async (nome, fn) => { try { return await fn(); } catch (e) { erros[nome] = e.message; console.log('Shopee ' + nome + ': ' + e.message); return null; } };
-  let produtos = await parte('produtos', () => shopee.listarProdutos());
+  const parte = async (nome, fn) => { try { return await fn(); } catch (e) { erros[nome] = e.message; console.log('Shopee ' + chave + ' ' + nome + ': ' + e.message); return null; } };
+  let produtos = await parte('produtos', () => shopee_.listarProdutos());
   // token expirado (vale 4h): renova e tenta de novo
   if (produtos === null && /invalid_acceess_token|invalid_access_token|access_token/i.test(erros.produtos || '')) {
-    await shopee.refreshToken().catch(e => { erros.token = e.message; });
+    await shopee_.refreshToken().catch(e => { erros.token = e.message; });
     delete erros.produtos;
-    produtos = await parte('produtos', () => shopee.listarProdutos());
+    produtos = await parte('produtos', () => shopee_.listarProdutos());
   }
   // Promoções e variações (para a aba "Sem promoção")
   if (produtos?.length) await parte('promocoes', async () => {
-    const promos = await shopee.promocoesPorItem(produtos.map(p => p.item_id));
+    const promos = await shopee_.promocoesPorItem(produtos.map(p => p.item_id));
     for (const p of produtos) {
       const ps = promos[p.item_id] || [];
       p._promoAtiva = ps.filter(x => x.situacao === 'ongoing');
       p._promoFutura = ps.filter(x => x.situacao === 'upcoming');
       if (p.has_model) {
         try {
-          p._variacoes = await shopee.variacoes(p.item_id);
+          p._variacoes = await shopee_.variacoes(p.item_id);
           const comPromo = new Set(p._promoAtiva.map(x => String(x.modelo)));
           for (const v of p._variacoes) v.emPromo = comPromo.has(String(v.model_id));
           p._varSemPromo = p._variacoes.filter(v => !v.emPromo).length;
@@ -67,15 +69,16 @@ async function carregarShopee() {
       p._semPromo = p._promoAtiva.length === 0;
     }
   });
-  const pedidos = await parte('pedidos', () => shopee.listarPedidos());
-  const avaliacoes = await parte('avaliacoes', () => shopee.listarAvaliacoes());
-  const conversas = await parte('chat', () => shopee.listarConversas());
-  shopeeErros = erros;
-  if (produtos === null && pedidos === null && avaliacoes === null) { shopeeStatus = 'erro'; return; }
-  shopeeCache = { produtos: produtos || [], pedidos: pedidos || [], avaliacoes: avaliacoes || [], conversas: conversas || [], erros,
+  const pedidos = await parte('pedidos', () => shopee_.listarPedidos());
+  const avaliacoes = await parte('avaliacoes', () => shopee_.listarAvaliacoes());
+  const conversas = await parte('chat', () => shopee_.listarConversas());
+  E.erros = erros;
+  if (produtos === null && pedidos === null && avaliacoes === null) { E.status = 'erro'; return; }
+  E.cache = { produtos: produtos || [], pedidos: pedidos || [], avaliacoes: avaliacoes || [], conversas: conversas || [], erros,
                   ultimaAtualizacao: new Date().toLocaleTimeString('pt-BR') };
-  shopeeStatus = 'pronto';
-  console.log(new Date().toLocaleTimeString('pt-BR') + ' - Shopee: carregado! ' + (shopeeCache.produtos.length) + ' produtos, ' + shopeeCache.pedidos.length + ' pedidos');
+  E.cache.loja = chave; E.cache.nome = shopee_.nome; E.cache.shopId = tokens.shop_id;
+  E.status = 'pronto';
+  console.log(new Date().toLocaleTimeString('pt-BR') + ' - Shopee ' + chave + ': carregado! ' + E.cache.produtos.length + ' produtos, ' + E.cache.pedidos.length + ' pedidos');
 }
 
 const BASE = 'https://api.mercadolibre.com';
@@ -411,66 +414,79 @@ app.post('/custos/atualizar/:idx', async (req, res) => {
   finally { _atualizandoCustos[idx] = false; }
 });
 
-// ─── Rotas Shopee ──────────────────────────────────────────────────────────
+// ─── Rotas Shopee (todas aceitam ?loja=zagodini|mae|lufe; padrão zagodini) ──
 app.get('/shopee/auth', (req, res) => {
-  res.redirect(shopee.getAuthUrl());
+  res.redirect(shopee.loja(lojaDe(req)).getAuthUrl());
 });
 
 app.get('/shopee/callback', async (req, res) => {
   const { code, shop_id } = req.query;
-  if (!code || !shop_id) return res.send('<h2>❌ Parâmetros inválidos</h2>');
+  const chave = lojaDe(req), sp = shopee.loja(chave);
+  const pg = (t, c) => '<div style="font-family:system-ui;padding:2rem"><h2>' + t + '</h2>' + c + '<p><a href="/painel.html">Voltar ao painel</a></p></div>';
+  if (!code || !shop_id) return res.send(pg('❌ Parâmetros inválidos', ''));
   try {
-    const data = await shopee.getToken(code, parseInt(shop_id));
+    // evita conectar a mesma loja em duas contas do painel por engano
+    for (const k of Object.keys(SHP)) if (k !== chave && String(shopee.loja(k).getTokens().shop_id) === String(parseInt(shop_id)))
+      return res.status(400).send(pg('⚠️ Esta loja Shopee já está conectada em ' + shopee.loja(k).nome, '<p>Você entrou na Shopee com a conta errada? Saia da Shopee, entre com a conta de <b>' + sp.nome + '</b> e autorize de novo.</p>'));
+    const data = await sp.getToken(code, parseInt(shop_id));
     if (!data.access_token) {
-      console.error('[shopee/callback] sem token:', JSON.stringify(data));
-      return res.status(400).send('<div style="font-family:system-ui;padding:2rem"><h2>❌ A Shopee não liberou o acesso</h2><p>' + String(data.message || data.error || 'resposta sem token').replace(/</g, '&lt;') + '</p><p><a href="/painel.html">Voltar ao painel</a></p></div>');
+      console.error('[shopee/callback]', chave, 'sem token:', JSON.stringify(data));
+      return res.status(400).send(pg('❌ A Shopee não liberou o acesso', '<p>' + String(data.message || data.error || 'resposta sem token').replace(/</g, '&lt;') + '</p>'));
     }
-    shopee.saveTokens({ access_token: data.access_token, refresh_token: data.refresh_token, shop_id: parseInt(shop_id) });
-    carregarShopee();
-    res.send('<div style="font-family:system-ui;padding:2rem"><h2>✅ Shopee autorizada com sucesso!</h2><p>Loja ' + parseInt(shop_id) + ' conectada' + (shopee.SANDBOX ? ' (ambiente de teste)' : '') + '. Os dados aparecem no painel em instantes.</p><p><a href="/painel.html">Voltar ao painel</a></p></div>');
-    carregarShopee();
+    sp.saveTokens({ access_token: data.access_token, refresh_token: data.refresh_token, shop_id: parseInt(shop_id) });
+    carregarShopee(chave);
+    res.send(pg('✅ Shopee autorizada: ' + sp.nome, '<p>Loja ' + parseInt(shop_id) + ' conectada' + (sp.SANDBOX ? ' (ambiente de teste)' : '') + '. Os dados aparecem no painel em 1 a 2 minutos.</p>'));
   } catch (e) {
     const det = e.response?.data ? JSON.stringify(e.response.data) : e.message;
-    console.error('[shopee/callback] erro:', det);
-    res.status(500).send('<div style="font-family:system-ui;padding:2rem"><h2>❌ Erro ao autorizar a Shopee</h2><pre style="white-space:pre-wrap">' + String(det).replace(/</g, '&lt;') + '</pre><p><a href="/painel.html">Voltar ao painel</a></p></div>');
+    console.error('[shopee/callback]', chave, 'erro:', det);
+    res.status(500).send(pg('❌ Erro ao autorizar a Shopee (' + sp.nome + ')', '<pre style="white-space:pre-wrap">' + String(det).replace(/</g, '&lt;') + '</pre>'));
   }
 });
 
 app.get('/shopee/config', (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
-  const t = shopee.getTokens();
-  res.json({ ambiente: shopee.SANDBOX ? 'sandbox (teste)' : 'produção', host: shopee.BASE_URL,
-    partnerId: process.env.SHOPEE_PARTNER_ID || null, chaveConfigurada: !!process.env.SHOPEE_PARTNER_KEY,
-    redirect: process.env.SHOPEE_REDIRECT_URL || null, autorizada: !!t.access_token, shopId: t.shop_id || null, status: shopeeStatus, erros: shopeeErros });
+  const info = k => { const sp = shopee.loja(k), t = sp.getTokens();
+    return { loja: k, nome: sp.nome, ambiente: sp.SANDBOX ? 'sandbox (teste)' : 'produção', partnerId: sp.PARTNER_ID || null, appProprio: sp.appProprio,
+             redirect: sp.REDIRECT_URL || null, autorizada: !!t.access_token, shopId: t.shop_id || null, status: SHP[k].status, erros: SHP[k].erros }; };
+  res.json(req.query.loja ? info(lojaDe(req)) : Object.keys(SHP).map(info));
+});
+
+// status resumido de todas as lojas (para as bolinhas do topo)
+app.get('/shopee/status', (req, res) => {
+  res.json(Object.fromEntries(Object.keys(SHP).map(k => [k, { status: SHP[k].status, pendChat: (SHP[k].cache?.conversas || []).filter(c => c.pendente).length }])));
 });
 
 app.get('/shopee/dados', (req, res) => {
-  res.json({ status: shopeeStatus, dados: shopeeCache, erros: shopeeErros });
+  const E = SHP[lojaDe(req)];
+  res.json({ status: E.status, dados: E.cache, erros: E.erros });
 });
 
 // Chat Shopee: conversas, mensagens de uma conversa e resposta
 app.get('/shopee/chat', async (req, res) => {
-  try { const c = await shopee.listarConversas(); if (shopeeCache) shopeeCache.conversas = c; res.json({ ok: true, conversas: c }); }
+  const k = lojaDe(req);
+  try { const c = await shopee.loja(k).listarConversas(); if (SHP[k].cache) SHP[k].cache.conversas = c; res.json({ ok: true, conversas: c }); }
   catch (e) { res.status(500).json({ ok: false, erro: e.message }); }
 });
 app.get('/shopee/chat/:id', async (req, res) => {
-  try { res.json({ ok: true, mensagens: await shopee.mensagens(req.params.id) }); }
+  try { res.json({ ok: true, mensagens: await shopee.loja(lojaDe(req)).mensagens(req.params.id) }); }
   catch (e) { res.status(500).json({ ok: false, erro: e.message }); }
 });
 app.post('/shopee/chat/:id/responder', async (req, res) => {
+  const k = lojaDe(req);
   const { to_id, texto } = req.body || {};
   if (!to_id || !String(texto || '').trim()) return res.status(400).json({ ok: false, erro: 'Escreva a mensagem.' });
   try {
-    await shopee.enviarMensagem(to_id, String(texto).trim().slice(0, 1000));
-    const c = shopeeCache?.conversas?.find(x => x.id === req.params.id);
+    await shopee.loja(k).enviarMensagem(to_id, String(texto).trim().slice(0, 1000));
+    const c = SHP[k].cache?.conversas?.find(x => x.id === req.params.id);
     if (c) { c.pendente = false; c.texto = String(texto).trim(); c.quando = Date.now(); }
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ ok: false, erro: e.message }); }
 });
 
 app.get('/shopee/recarregar', (req, res) => {
-  shopeeStatus = 'aguardando';
-  carregarShopee();
+  const k = lojaDe(req);
+  SHP[k].status = 'aguardando';
+  carregarShopee(k);
   res.json({ ok: true });
 });
 
@@ -1313,7 +1329,8 @@ app.get('/debug/shopee-raw', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   const { path: p, ...extra } = req.query;
   if (!/^\/api\/v2\/(shop|product|order|logistics|sellerchat|discount|shop_flash_sale|bundle_deal|add_on_deal|voucher|ads|account_health)\//.test(String(p || ''))) return res.status(400).json({ erro: 'path não permitido' });
-  try { res.json(await shopee.shopeeGet(String(p), extra)); } catch (e) { res.status(500).json({ erro: e.message }); }
+  const { loja: lj, ...ex2 } = extra;
+  try { res.json(await shopee.loja(SHP[lj] ? lj : 'zagodini').shopeeGet(String(p), ex2)); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
 
 // Diagnóstico (admin): de onde vem o custo de um SKU. /debug/custo/2?sku=7898501766807&recarregar=1
@@ -1442,52 +1459,61 @@ app.get('/estoque/:idx', async (req, res) => {
   }
 });
 
+// Texto padrão de resposta das avaliações, assinado por loja
+const SHP_ASSINA = { zagodini: 'Comercial Zagodini', mae: 'Com Amor de Mãe', lufe: 'Lufe Casa & Decoração' };
+const textoAval = k => 'Ficamos felizes pela sua avaliação e agradecemos sua compra. Esperamos lhe atender novamente. Att. ' + (SHP_ASSINA[k] || shopee.loja(k).nome);
+app.get('/shopee/texto-avaliacao', (req, res) => res.json({ texto: textoAval(lojaDe(req)) }));
+
 // Responde em lote as avaliações sem resposta de N estrelas (opcionalmente só as sem texto do cliente)
 app.post('/shopee/avaliacoes/responder-lote', async (req, res) => {
-  const { texto, estrelas = 5, somenteSemTexto = true, max = 1000, simular = false } = req.body || {};
-  if (!String(texto || '').trim()) return res.status(400).json({ ok: false, erro: 'Informe o texto.' });
+  const k = lojaDe(req), sp = shopee.loja(k);
+  const { estrelas = 5, somenteSemTexto = true, max = 1000, simular = false } = req.body || {};
+  const texto = String(req.body?.texto || textoAval(k)).trim();
   try {
-    const todas = await shopee.listarAvaliacoes(max);
+    const todas = await sp.listarAvaliacoes(max);
     const est = [].concat(estrelas).map(Number);
     const alvo = todas.filter(r => est.includes(r.rating_star) && !r.comment && (!somenteSemTexto || !(r.comment_list?.[0] || '').trim()));
-    if (simular) return res.json({ ok: true, lidas: todas.length, alvo: alvo.length });
-    const r = await shopee.responderAvaliacoesLote(alvo.map(x => x.rating_id), String(texto).trim().slice(0, 500));
-    if (shopeeCache) { const set = new Set(r.ok.map(String)); for (const a of shopeeCache.avaliacoes) if (set.has(String(a.rating_id))) a.comment = String(texto).trim(); }
+    if (simular) return res.json({ ok: true, lidas: todas.length, alvo: alvo.length, texto });
+    const r = await sp.responderAvaliacoesLote(alvo.map(x => x.rating_id), texto.slice(0, 500));
+    const C = SHP[k].cache;
+    if (C) { const set = new Set(r.ok.map(String)); for (const a of C.avaliacoes) if (set.has(String(a.rating_id))) a.comment = texto; }
     res.json({ ok: true, lidas: todas.length, alvo: alvo.length, respondidas: r.ok.length, falhas: r.falhas.slice(0, 20), totalFalhas: r.falhas.length });
   } catch (e) { res.status(500).json({ ok: false, erro: e.message }); }
 });
 
-// Resposta automática diária das avaliações 4★ e 5★ (uma vez por dia, a partir das 9h de Brasília)
-const SHP_TXT_AVAL = 'Ficamos felizes pela sua avaliação e agradecemos sua compra. Esperamos lhe atender novamente. Att. Comercial Zagodini';
+// Resposta automática diária das avaliações 4★ e 5★ (uma vez por dia por loja, a partir das 9h de Brasília)
 const ARQ_AUTO_AVAL = path.join(DATA, 'shopee_auto_avaliacoes.json');
-let autoAval = (() => { try { return JSON.parse(fs.readFileSync(ARQ_AUTO_AVAL)); } catch (e) { return {}; } })();
+let autoAval = (() => { try { const v = JSON.parse(fs.readFileSync(ARQ_AUTO_AVAL)); return v.ultimoDia !== undefined ? { zagodini: v } : v; } catch (e) { return {}; } })();
 async function autoResponderAvaliacoes(forcar) {
   const agora = new Date(), dia = agora.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
   const hora = Number(agora.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false }));
-  if (!forcar && (autoAval.ultimoDia === dia || hora < 9)) return;
-  if (!shopee.getTokens().access_token) return;
-  autoAval.ultimoDia = dia;
-  try {
-    const todas = await shopee.listarAvaliacoes(1000);
-    const alvo = todas.filter(r => (r.rating_star === 4 || r.rating_star === 5) && !r.comment);
-    const r = alvo.length ? await shopee.responderAvaliacoesLote(alvo.map(x => x.rating_id), SHP_TXT_AVAL) : { ok: [], falhas: [] };
-    autoAval.ultimo = { em: agora.toISOString(), respondidas: r.ok.length, falhas: r.falhas.length, erroExemplo: r.falhas[0]?.erro || null };
-    console.log('[auto-avaliacoes] ' + r.ok.length + ' respondidas, ' + r.falhas.length + ' falhas');
-  } catch (e) {
-    autoAval.ultimo = { em: agora.toISOString(), erro: e.message };
-    autoAval.ultimoDia = null;   // tenta de novo na próxima verificação
-    console.log('[auto-avaliacoes] erro: ' + e.message);
+  for (const k of Object.keys(SHP)) {
+    const sp = shopee.loja(k), st = autoAval[k] ||= {};
+    if (!forcar && (st.ultimoDia === dia || hora < 9)) continue;
+    if (!sp.getTokens().access_token) continue;
+    st.ultimoDia = dia;
+    try {
+      const todas = await sp.listarAvaliacoes(1000);
+      const alvo = todas.filter(r => (r.rating_star === 4 || r.rating_star === 5) && !r.comment);
+      const r = alvo.length ? await sp.responderAvaliacoesLote(alvo.map(x => x.rating_id), textoAval(k)) : { ok: [], falhas: [] };
+      st.ultimo = { em: agora.toISOString(), respondidas: r.ok.length, falhas: r.falhas.length, erroExemplo: r.falhas[0]?.erro || null };
+      console.log('[auto-avaliacoes] ' + k + ': ' + r.ok.length + ' respondidas, ' + r.falhas.length + ' falhas');
+    } catch (e) {
+      st.ultimo = { em: agora.toISOString(), erro: e.message };
+      st.ultimoDia = null;   // tenta de novo na próxima verificação
+      console.log('[auto-avaliacoes] ' + k + ' erro: ' + e.message);
+    }
   }
   try { fs.writeFileSync(ARQ_AUTO_AVAL, JSON.stringify(autoAval)); } catch (e) {}
 }
 setInterval(() => autoResponderAvaliacoes().catch(() => {}), 15 * 60 * 1000);
 setTimeout(() => autoResponderAvaliacoes().catch(() => {}), 90 * 1000);
-app.get('/shopee/auto-avaliacoes', (req, res) => res.json(autoAval));
+app.get('/shopee/auto-avaliacoes', (req, res) => res.json(autoAval[lojaDe(req)] || {}));
 
 app.post('/shopee/reply-rating', async (req, res) => {
   try {
     const { rating_id, comment } = req.body;
-    const result = await shopee.replyRating(rating_id, comment);
+    const result = await shopee.loja(lojaDe(req)).replyRating(rating_id, comment);
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1506,12 +1532,14 @@ app.listen(PORT, async () => {
   console.log('Servidor rodando na porta ' + PORT + ' — dados em ' + DATA);
   await renovarTodos();
   carregarTodas();
-  carregarShopee();
+  for (const k of Object.keys(SHP)) await carregarShopee(k);
   setInterval(async () => {
     await renovarTodos();
     carregarTodas();
-    await shopee.refreshToken().catch(() => {});
-    carregarShopee();
+    for (const k of Object.keys(SHP)) {
+      if (shopee.loja(k).getTokens().refresh_token) await shopee.loja(k).refreshToken().catch(() => {});
+      await carregarShopee(k);
+    }
     for (const i of [0,1,2]) await bling.refreshToken(i).catch(() => {});
   }, 30 * 60 * 1000);
 });

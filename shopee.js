@@ -6,9 +6,6 @@ const crypto = require('crypto');
 const axios = require('axios');
 const fs = require('fs');
 
-const PARTNER_ID  = parseInt(process.env.SHOPEE_PARTNER_ID);
-const PARTNER_KEY = process.env.SHOPEE_PARTNER_KEY;
-const REDIRECT_URL = process.env.SHOPEE_REDIRECT_URL;
 // Ambiente: produção por padrão. Para usar o sandbox (lojas de teste da Shopee), defina SHOPEE_SANDBOX=true no Railway.
 const SANDBOX = String(process.env.SHOPEE_SANDBOX || '').toLowerCase() === 'true';
 
@@ -16,7 +13,22 @@ const BASE_URL = SANDBOX
   ? 'https://partner.test-stable.shopeemobile.com'
   : 'https://partner.shopeemobile.com';
 
-const TOKEN_FILE = './shopee_tokens.json';
+
+// Lojas Shopee. Cada uma pode ter o próprio app (SHOPEE_<LOJA>_PARTNER_ID/KEY); sem isso usa o app da Zagodini.
+const LOJAS = {
+  zagodini: { nome: 'Comercial Zagodini', ml: 0, tokens: './shopee_tokens.json',      env: '' },
+  mae:      { nome: 'Com Amor de Mãe',    ml: 1, tokens: './shopee_tokens_mae.json',  env: 'MAE_' },
+  lufe:     { nome: 'Lufe Casa & Decoração', ml: 2, tokens: './shopee_tokens_lufe.json', env: 'LUFE_' },
+};
+
+function criar(CHAVE) {
+const L = LOJAS[CHAVE];
+if (!L) throw new Error('Loja Shopee desconhecida: ' + CHAVE);
+const PARTNER_ID  = parseInt(process.env['SHOPEE_' + L.env + 'PARTNER_ID'] || process.env.SHOPEE_PARTNER_ID);
+const PARTNER_KEY = process.env['SHOPEE_' + L.env + 'PARTNER_KEY'] || process.env.SHOPEE_PARTNER_KEY;
+const appProprio = !!(L.env && process.env['SHOPEE_' + L.env + 'PARTNER_ID']);
+const REDIRECT_URL = (process.env.SHOPEE_REDIRECT_URL || '') + (CHAVE === 'zagodini' ? '' : '?loja=' + CHAVE);
+const TOKEN_FILE = L.tokens;
 
 // ─── Utilitários ─────────────────────────────────────────────────────────────
 
@@ -79,7 +91,7 @@ async function refreshToken() {
   }, { params });
   if (r.data.access_token) {
     saveTokens({ ...tokens, access_token: r.data.access_token, refresh_token: r.data.refresh_token });
-    console.log(new Date().toLocaleTimeString('pt-BR') + ' - Shopee: token renovado!');
+    console.log(new Date().toLocaleTimeString('pt-BR') + ' - Shopee ' + CHAVE + ': token renovado!');
   }
   return r.data;
 }
@@ -273,9 +285,17 @@ async function replyRating(ratingId, comment) {
   return shopeePost('/api/v2/product/reply_comment', { comment_list: [{ comment_id: Number(ratingId), comment }] });
 }
 
-module.exports = { SANDBOX, BASE_URL,
+
+return { CHAVE, nome: L.nome, ml: L.ml, PARTNER_ID, appProprio, REDIRECT_URL, SANDBOX, BASE_URL, 
   getAuthUrl, getToken, refreshToken,
   saveTokens, getTokens,
   listarProdutos, listarPedidos, listarAvaliacoes, replyRating, shopeeGet,
   promocoesPorItem, variacoes, responderAvaliacoesLote, listarConversas, mensagens, enviarMensagem,
 };
+}
+
+const _lojas = {};
+function loja(chave = 'zagodini') { return _lojas[chave] ||= criar(chave); }
+
+// compatibilidade: require('./shopee').xxx continua sendo a Zagodini
+module.exports = { ...loja('zagodini'), loja, LOJAS };
