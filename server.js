@@ -1269,6 +1269,14 @@ app.get('/debug/ml-raw/:idx', async (req, res) => {
   catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
 
+// Diagnóstico (admin): GET cru na API da Shopee. Ex.: /debug/shopee-raw?path=/api/v2/shop/get_shop_info&x=1
+app.get('/debug/shopee-raw', async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const { path: p, ...extra } = req.query;
+  if (!/^\/api\/v2\/(shop|product|order|logistics|sellerchat|discount|shop_flash_sale|bundle_deal|add_on_deal|voucher|ads|account_health)\//.test(String(p || ''))) return res.status(400).json({ erro: 'path não permitido' });
+  try { res.json(await shopee.shopeeGet(String(p), extra)); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
+
 // Diagnóstico (admin): de onde vem o custo de um SKU. /debug/custo/2?sku=7898501766807&recarregar=1
 app.get('/debug/custo/:idx', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
