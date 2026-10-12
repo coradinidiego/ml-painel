@@ -172,7 +172,7 @@ body{background:#f0f2f5;color:#111}
       <div class="cards">
         <div class="card a" onclick="showShpTab('sempromo')"><div class="icon">🏷️</div><div class="num" id="sk-sempromo">-</div><div class="lbl">Sem promoção</div></div>
         <div class="card r" onclick="showShpTab('chat')"><div class="icon">💬</div><div class="num" id="sk-chat">-</div><div class="lbl">Chats sem resposta</div></div>
-        <div class="card b" onclick="showShpTab('pedidos')"><div class="icon">📦</div><div class="num" id="sk-enviar">-</div><div class="lbl">Pedidos a enviar</div></div>
+        <div class="card b" onclick="el('shp-fped').value='AENVIAR';renderShpPedidos();showShpTab('pedidos')"><div class="icon">📦</div><div class="num" id="sk-enviar">-</div><div class="lbl">Pedidos a enviar</div></div>
         <div class="card r" onclick="showShpTab('pedidos')"><div class="icon">⏰</div><div class="num" id="sk-atraso">-</div><div class="lbl">Envio vence hoje/atrasado</div></div>
         <div class="card g" onclick="showShpTab('pedidos')"><div class="icon">🛒</div><div class="num" id="sk-hoje">-</div><div class="lbl">Pedidos hoje</div></div>
         <div class="card p" onclick="showShpTab('pedidos')"><div class="icon">💰</div><div class="num" id="sk-fat">-</div><div class="lbl">Vendido 15 dias</div></div>
@@ -216,7 +216,7 @@ body{background:#f0f2f5;color:#111}
       <div class="section"><div class="sec-head">📦 Produtos ativos <span class="cnt" id="shp-c-produtos">-</span></div><div id="shp-b-produtos"><div class="loading">Carregando...</div></div></div>
     </div>
     <div id="shp-tab-pedidos" class="tab-content">
-      <div class="sf"><select class="sselect" id="shp-fped" onchange="renderShpPedidos()"><option value="">Todos</option><option value="READY_TO_SHIP">A enviar</option><option value="PROCESSED">Em processamento</option><option value="SHIPPED">Enviados</option><option value="UNPAID">Aguardando pgto</option><option value="CANCELLED">Cancelados</option></select></div>
+      <div class="sf"><select class="sselect" id="shp-fped" onchange="renderShpPedidos()"><option value="">Todos</option><option value="AENVIAR">A enviar (todos)</option><option value="READY_TO_SHIP">📦 Organizar envio</option><option value="PROCESSED">🏷️ Etiqueta gerada (aguardando coleta)</option><option value="SHIPPED">Enviados</option><option value="UNPAID">Aguardando pgto</option><option value="CANCELLED">Cancelados</option></select></div>
       <div class="section"><div class="sec-head">🛒 Pedidos (últimos 15 dias) <span class="cnt" id="shp-c-pedidos">-</span></div><div id="shp-b-pedidos"><div class="loading">Carregando...</div></div></div>
     </div>
     <div id="shp-tab-avaliacoes" class="tab-content">
@@ -464,7 +464,7 @@ function renderShopee(forcar){
   const comEst=semPromo.filter(p=>shpEstoque(p)>0);
   const pend=d.conversas.filter(c=>c.pendente);
   const hoje=new Date();hoje.setHours(0,0,0,0);const fimHoje=hoje.getTime()/1000+86400;
-  const aEnviar=d.pedidos.filter(o=>o.order_status==='READY_TO_SHIP');
+  const aEnviar=d.pedidos.filter(o=>o.order_status==='READY_TO_SHIP'||o.order_status==='PROCESSED');
   const atraso=aEnviar.filter(o=>o.ship_by_date&&o.ship_by_date<fimHoje);
   const validos=d.pedidos.filter(o=>!['CANCELLED','UNPAID','IN_CANCEL'].includes(o.order_status));
   const nota=d.avaliacoes.length?(d.avaliacoes.reduce((a,r)=>a+(r.rating_star||0),0)/d.avaliacoes.length):0;
@@ -485,7 +485,7 @@ function renderShopee(forcar){
   set('shp-upd','Atualizado: '+d.ultimaAtualizacao);
   renderShpSemPromo();renderShpChat();renderShpProdutos();renderShpPedidos();renderShpAvaliacoes();
 }
-const SHP_STATUS={UNPAID:'💳 Aguardando pgto',READY_TO_SHIP:'📦 A enviar',PROCESSED:'🏷️ Etiqueta gerada',RETRY_SHIP:'🔁 Reenviar',SHIPPED:'🚛 Enviado',TO_CONFIRM_RECEIVE:'📬 Aguardando confirmação',COMPLETED:'✅ Concluído',IN_CANCEL:'⚠️ Cancelando',CANCELLED:'❌ Cancelado',TO_RETURN:'↩️ Devolução',INVOICE_PENDING:'🧾 NF pendente'};
+const SHP_STATUS={UNPAID:'💳 Aguardando pgto',READY_TO_SHIP:'📦 Organizar envio',PROCESSED:'🏷️ Etiqueta gerada (aguardando coleta)',RETRY_SHIP:'🔁 Reenviar',SHIPPED:'🚛 Enviado',TO_CONFIRM_RECEIVE:'📬 Aguardando confirmação',COMPLETED:'✅ Concluído',IN_CANCEL:'⚠️ Cancelando',CANCELLED:'❌ Cancelado',TO_RETURN:'↩️ Devolução',INVOICE_PENDING:'🧾 NF pendente'};
 
 function renderShpSemPromo(){
   const b=el('shp-b-sempromo');
@@ -567,14 +567,14 @@ function renderShpProdutos(){
 function renderShpPedidos(){
   if(!_shpDados){el('shp-b-pedidos').innerHTML='<div class="loading">Aguarde...</div>';return;}
   const fs=el('shp-fped')?.value||'';
-  const L=_shpDados.pedidos.filter(o=>!fs||o.order_status===fs);
+  const L=_shpDados.pedidos.filter(o=>!fs||o.order_status===fs||(fs==='AENVIAR'&&(o.order_status==='READY_TO_SHIP'||o.order_status==='PROCESSED')));
   set('shp-c-pedidos',L.length);
   if(!L.length){el('shp-b-pedidos').innerHTML='<div class="loading" style="color:green">✓ Nenhum pedido.</div>';return;}
   const fimHoje=(()=>{const h=new Date();h.setHours(24,0,0,0);return h.getTime()/1000;})();
   el('shp-b-pedidos').innerHTML=L.map(o=>{
     const st=SHP_STATUS[o.order_status]||o.order_status;
     const itens=(o.item_list||[]).map(i=>(i.model_quantity_purchased||1)+'× '+shpEsc((i.item_name||'').slice(0,50))).join(' · ');
-    const prazo=o.order_status==='READY_TO_SHIP'&&o.ship_by_date?' · <span style="color:'+(o.ship_by_date<fimHoje?'#C62828':'#666')+'">enviar até '+shpData(o.ship_by_date)+'</span>':'';
+    const prazo=(o.order_status==='READY_TO_SHIP'||o.order_status==='PROCESSED')&&o.ship_by_date?' · <span style="color:'+(o.ship_by_date<fimHoje?'#C62828':'#666')+'">enviar até '+shpData(o.ship_by_date)+'</span>':'';
     return '<div class="item-row"><div class="thumb" style="font-size:16px">🛒</div><div class="iinfo"><div class="ititle">'+shpEsc(o.order_sn)+'</div><div class="imeta">'+shpData(o.create_time)+' · '+shpEsc(o.buyer_username||'')+prazo+'</div><div class="imeta">'+itens+'</div></div><div class="prices"><div class="mp">'+fmt(o.total_amount||0)+'</div><div class="pv">'+st+'</div></div></div>';
   }).join('');
 }
