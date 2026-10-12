@@ -220,7 +220,7 @@ body{background:#f0f2f5;color:#111}
       <div class="section"><div class="sec-head">🛒 Pedidos (últimos 15 dias) <span class="cnt" id="shp-c-pedidos">-</span></div><div id="shp-b-pedidos"><div class="loading">Carregando...</div></div></div>
     </div>
     <div id="shp-tab-avaliacoes" class="tab-content">
-      <div class="sf"><button class="btn" onclick="responder5Lote()" title="Responde todas as avaliações 5 estrelas sem texto do cliente e ainda sem resposta">⭐ Responder 5★ sem texto</button><span id="av-lote-msg" style="font-size:12px;color:#666;align-self:center"></span></div>
+      <div class="sf"><button class="btn" onclick="responder5Lote()" title="Responde todas as avaliações de 4 e 5 estrelas ainda sem resposta com o texto padrão">⭐ Responder 4★ e 5★</button><span id="av-lote-msg" style="font-size:12px;color:#666;align-self:center"></span></div>
       <div class="section"><div class="sec-head">⭐ Avaliações <span class="cnt" id="shp-c-avaliacoes">-</span></div><div id="shp-b-avaliacoes"><div class="loading">Carregando...</div></div></div>
     </div>
     <div class="footer"><span id="shp-upd">-</span><button class="btn" onclick="fetch('/shopee/recarregar').then(()=>set('shp-upd','Atualizando… (leva 1 a 2 minutos)'))">↺ Atualizar Shopee</button></div>
@@ -596,12 +596,12 @@ const SHP_TXT_5='Ficamos felizes pela sua avaliação e agradecemos sua compra. 
 async function responder5Lote(){
   const m=el('av-lote-msg');m.textContent='Verificando…';
   try{
-    const sim=await fetch('/shopee/avaliacoes/responder-lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:SHP_TXT_5,simular:true})}).then(r=>r.json());
+    const sim=await fetch('/shopee/avaliacoes/responder-lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:SHP_TXT_5,estrelas:[4,5],somenteSemTexto:false,simular:true})}).then(r=>r.json());
     if(!sim.ok)throw new Error(sim.erro);
-    if(!sim.alvo){m.textContent='✓ Nenhuma avaliação 5★ sem texto pendente.';return;}
-    if(!confirm('Responder '+sim.alvo+' avaliações 5★ sem texto com:\n\n"'+SHP_TXT_5+'"?')){m.textContent='';return;}
+    if(!sim.alvo){m.textContent='✓ Nenhuma avaliação 4★ ou 5★ sem resposta.';return;}
+    if(!confirm('Responder '+sim.alvo+' avaliações 4★ e 5★ com:\n\n"'+SHP_TXT_5+'"?')){m.textContent='';return;}
     m.textContent='Respondendo '+sim.alvo+'…';
-    const r=await fetch('/shopee/avaliacoes/responder-lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:SHP_TXT_5})}).then(r=>r.json());
+    const r=await fetch('/shopee/avaliacoes/responder-lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:SHP_TXT_5,estrelas:[4,5],somenteSemTexto:false})}).then(r=>r.json());
     if(!r.ok)throw new Error(r.erro);
     m.textContent='✓ '+r.respondidas+' respondidas'+(r.totalFalhas?' · '+r.totalFalhas+' falharam':'');
     renderShpAvaliacoes();

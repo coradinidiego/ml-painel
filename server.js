@@ -1448,7 +1448,8 @@ app.post('/shopee/avaliacoes/responder-lote', async (req, res) => {
   if (!String(texto || '').trim()) return res.status(400).json({ ok: false, erro: 'Informe o texto.' });
   try {
     const todas = await shopee.listarAvaliacoes(max);
-    const alvo = todas.filter(r => r.rating_star === Number(estrelas) && !r.comment && (!somenteSemTexto || !(r.comment_list?.[0] || '').trim()));
+    const est = [].concat(estrelas).map(Number);
+    const alvo = todas.filter(r => est.includes(r.rating_star) && !r.comment && (!somenteSemTexto || !(r.comment_list?.[0] || '').trim()));
     if (simular) return res.json({ ok: true, lidas: todas.length, alvo: alvo.length });
     const r = await shopee.responderAvaliacoesLote(alvo.map(x => x.rating_id), String(texto).trim().slice(0, 500));
     if (shopeeCache) { const set = new Set(r.ok.map(String)); for (const a of shopeeCache.avaliacoes) if (set.has(String(a.rating_id))) a.comment = String(texto).trim(); }
