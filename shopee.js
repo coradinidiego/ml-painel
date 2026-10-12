@@ -225,8 +225,10 @@ async function listarConversas(dias = 30, max = 300) {
       out.push({
         id: String(c.conversation_id), cliente_id: c.to_id, cliente: c.to_name, avatar: c.to_avatar,
         naoLidas: c.unread_count || 0, quando: ts, tipo: c.latest_message_type,
-        texto: c.latest_message_content?.text || (c.latest_message_type && c.latest_message_type !== 'text' ? '[' + c.latest_message_type + ']' : ''),
-        pendente: String(c.latest_message_from_id) === String(c.to_id),
+        texto: c.latest_message_content?.text || ({ product: '[cliente abriu o chat por um produto]', item: '[cliente abriu o chat por um produto]', return_refund_card: '[pedido de devolução/reembolso]', order: '[cartão de pedido]', image: '[imagem]', sticker: '[figurinha]', video: '[vídeo]' }[c.latest_message_type] || (c.latest_message_type && c.latest_message_type !== 'text' ? '[' + c.latest_message_type + ']' : '')),
+        // última mensagem é do cliente; só o "cartão do produto" (cliente abriu o chat e não escreveu) não conta
+        pendente: String(c.latest_message_from_id) === String(c.to_id) && !['product', 'item'].includes(c.latest_message_type),
+        soAbriu: String(c.latest_message_from_id) === String(c.to_id) && ['product', 'item'].includes(c.latest_message_type),
       });
     }
     const pr = d.response?.page_result;
