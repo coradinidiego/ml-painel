@@ -1324,6 +1324,31 @@ app.get('/debug/ml-raw/:idx', async (req, res) => {
   catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
 
+// ─── Amazon SP-API ─────────────────────────────────────────────────────────
+const amazon = require('./amazon');
+// Situação da conexão de cada loja (admin)
+app.get('/amazon/config', async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const out = [];
+  for (const k of Object.keys(amazon.LOJAS)) {
+    const a = amazon.loja(k), it = { loja: k, nome: a.nome, configurada: a.configurada() };
+    if (it.configurada && req.query.testar) {
+      try { const p = await a.participacoes(); it.ok = true; it.marketplaces = p.map(x => x.marketplace?.name + ' (' + x.marketplace?.id + ')' + (x.participation?.isParticipating ? '' : ' — inativo')); }
+      catch (e) { it.ok = false; it.erro = e.message; }
+    }
+    out.push(it);
+  }
+  res.json(out);
+});
+// Diagnóstico (admin): GET cru na SP-API. /debug/amazon-raw?loja=lufe&path=/orders/v0/orders&CreatedAfter=...
+app.get('/debug/amazon-raw', async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const { loja: lj = 'lufe', path: p, ...extra } = req.query;
+  if (!amazon.LOJAS[lj] || !/^\/[a-zA-Z]/.test(String(p || ''))) return res.status(400).json({ erro: 'loja/path inválido' });
+  if (/orders\/v0\/orders/.test(p) && !extra.MarketplaceIds) extra.MarketplaceIds = amazon.MARKETPLACE_BR;
+  try { res.json(await amazon.loja(lj).get(String(p), extra)); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
+
 // Diagnóstico (admin): GET cru na API da Shopee. Ex.: /debug/shopee-raw?path=/api/v2/shop/get_shop_info&x=1
 app.get('/debug/shopee-raw', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
