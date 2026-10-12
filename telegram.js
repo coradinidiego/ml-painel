@@ -19,7 +19,7 @@ let avisos = { ml: {}, shp: {} };
 try {
   const v = JSON.parse(fs.readFileSync('notificadas.json'));
   if (Array.isArray(v)) v.forEach(id => avisos.ml[id] = { em: Date.now(), lembretes: 0 });   // formato antigo
-  else avisos = { ml: v.ml || {}, shp: v.shp || {} };
+  else avisos = { ml: v.ml || {}, shp: v.shp || {}, lembretes: v.lembretes || {} };
 } catch (e) {}
 function salvarNotificadas() {
   try { fs.writeFileSync('notificadas.json', JSON.stringify(avisos)); } catch (e) {}
@@ -191,6 +191,29 @@ async function processarRespostas() {
 // Verificar perguntas a cada 5 minutos
 verificarPerguntas();
 setInterval(verificarPerguntas, 5 * 60 * 1000);
+// Lembretes de pendências: enviados uma vez, no dia marcado, a partir das 9h (Brasília)
+const LEMBRETES = [
+  { id: 'tv-validar', dia: '2026-10-13', msg: '📺 <b>Hoje: validar o painel da TV</b>\nConfira se os números de Emitir NF / A empacotar / Empacotados batem com a expedição e revise as situações do Bling em /tv/config.' },
+  { id: 'shopee-aprov-1', dia: '2026-10-15', msg: '🛍️ <b>Shopee Open Platform</b>\nVeja se chegou o e-mail de aprovação do cadastro de desenvolvedor da <b>Com Amor de Mãe</b> e da <b>Lufe</b>. Se sim, me chame para criar os apps e conectar.' },
+  { id: 'shopee-aprov-2', dia: '2026-10-20', msg: '🛍️ <b>Shopee Open Platform</b>\nAinda falta conectar a Shopee da Com Amor de Mãe e/ou Lufe? Confira o status em open.shopee.com (pode precisar abrir um ticket se a análise travou).' },
+  { id: 'railway-plano', dia: '2026-10-19', msg: '🚂 <b>Railway</b>\nConfira em Settings → Plans quando termina o período de teste e assine o plano Hobby antes, para o painel não sair do ar.' },
+  { id: 'shopee-chave-1', dia: '2026-11-19', msg: '🔑 <b>Chave da Shopee (Zagodini) vence em 26/11</b>\nEm open.shopee.com → App List → Zagodini, gere uma nova Live API Partner Key e troque SHOPEE_PARTNER_KEY no Railway.' },
+  { id: 'shopee-chave-2', dia: '2026-11-25', msg: '⚠️ <b>A chave da Shopee (Zagodini) vence AMANHÃ (26/11)</b>\nSe ainda não trocou, gere a nova Live API Partner Key no open.shopee.com e atualize SHOPEE_PARTNER_KEY no Railway.' },
+];
+async function verificarLembretes() {
+  const agora = new Date(), dia = agora.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const hora = Number(agora.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false }));
+  if (hora < 9) return;
+  avisos.lembretes = avisos.lembretes || {};
+  for (const l of LEMBRETES) {
+    if (avisos.lembretes[l.id] || l.dia > dia) continue;
+    await sendTelegram('📌 <b>Lembrete de pendência</b>\n\n' + l.msg);
+    avisos.lembretes[l.id] = Date.now();
+    salvarNotificadas();
+  }
+}
+setTimeout(() => { verificarLembretes(); setInterval(verificarLembretes, 15 * 60 * 1000); }, 2 * 60 * 1000);
+
 // Chat Shopee a cada 5 minutos (começa 1 min depois, para o token da Shopee estar pronto)
 setTimeout(() => { verificarChatShopee(); setInterval(verificarChatShopee, 5 * 60 * 1000); }, 60 * 1000);
 
