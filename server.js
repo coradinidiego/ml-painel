@@ -34,38 +34,29 @@ app.use('/tv', require('./tv').router); // Painel da TV (expedição)
 let shopeeCache = null;
 let shopeeStatus = 'aguardando';
 
+let shopeeErros = {};
 async function carregarShopee() {
   const tokens = shopee.getTokens();
   if (!tokens.access_token) { shopeeStatus = 'sem_auth'; return; }
   shopeeStatus = 'carregando';
-  try {
-    // Produtos
-    const prodList = await shopee.getProducts();
-    const itemIds = (prodList.response?.item || []).map(i => i.item_id);
-    let produtos = [];
-    if (itemIds.length > 0) {
-      const det = await shopee.getProductDetails(itemIds);
-      produtos = det.response?.item_list || [];
-    }
-    // Pedidos
-    const ordList = await shopee.getOrders();
-    const orderSns = (ordList.response?.order_list || []).map(o => o.order_sn);
-    let pedidos = [];
-    if (orderSns.length > 0) {
-      const ordDet = await shopee.getOrderDetails(orderSns);
-      pedidos = ordDet.response?.order_list || [];
-    }
-    // Avaliações
-    const ratList = await shopee.getRatings();
-    const avaliacoes = ratList.response?.rating_list || [];
-
-    shopeeCache = { produtos, pedidos, avaliacoes, ultimaAtualizacao: new Date().toLocaleTimeString('pt-BR') };
-    shopeeStatus = 'pronto';
-    console.log(new Date().toLocaleTimeString('pt-BR') + ' - Shopee: carregado!');
-  } catch (e) {
-    shopeeStatus = 'erro';
-    console.log('Shopee erro: ' + e.message);
+  // cada parte é independente: se uma falhar, as outras ainda aparecem
+  const erros = {};
+  const parte = async (nome, fn) => { try { return await fn(); } catch (e) { erros[nome] = e.message; console.log('Shopee ' + nome + ': ' + e.message); return null; } };
+  let produtos = await parte('produtos', () => shopee.listarProdutos());
+  // token expirado (vale 4h): renova e tenta de novo
+  if (produtos === null && /invalid_acceess_token|invalid_access_token|access_token/i.test(erros.produtos || '')) {
+    await shopee.refreshToken().catch(e => { erros.token = e.message; });
+    delete erros.produtos;
+    produtos = await parte('produtos', () => shopee.listarProdutos());
   }
+  const pedidos = await parte('pedidos', () => shopee.listarPedidos());
+  const avaliacoes = await parte('avaliacoes', () => shopee.listarAvaliacoes());
+  shopeeErros = erros;
+  if (produtos === null && pedidos === null && avaliacoes === null) { shopeeStatus = 'erro'; return; }
+  shopeeCache = { produtos: produtos || [], pedidos: pedidos || [], avaliacoes: avaliacoes || [], erros,
+                  ultimaAtualizacao: new Date().toLocaleTimeString('pt-BR') };
+  shopeeStatus = 'pronto';
+  console.log(new Date().toLocaleTimeString('pt-BR') + ' - Shopee: carregado! ' + (shopeeCache.produtos.length) + ' produtos, ' + shopeeCache.pedidos.length + ' pedidos');
 }
 
 const BASE = 'https://api.mercadolibre.com';
@@ -416,6 +407,7 @@ app.get('/shopee/callback', async (req, res) => {
       return res.status(400).send('<div style="font-family:system-ui;padding:2rem"><h2>❌ A Shopee não liberou o acesso</h2><p>' + String(data.message || data.error || 'resposta sem token').replace(/</g, '&lt;') + '</p><p><a href="/painel.html">Voltar ao painel</a></p></div>');
     }
     shopee.saveTokens({ access_token: data.access_token, refresh_token: data.refresh_token, shop_id: parseInt(shop_id) });
+    carregarShopee();
     res.send('<div style="font-family:system-ui;padding:2rem"><h2>✅ Shopee autorizada com sucesso!</h2><p>Loja ' + parseInt(shop_id) + ' conectada' + (shopee.SANDBOX ? ' (ambiente de teste)' : '') + '. Os dados aparecem no painel em instantes.</p><p><a href="/painel.html">Voltar ao painel</a></p></div>');
     carregarShopee();
   } catch (e) {
@@ -430,11 +422,11 @@ app.get('/shopee/config', (req, res) => {
   const t = shopee.getTokens();
   res.json({ ambiente: shopee.SANDBOX ? 'sandbox (teste)' : 'produção', host: shopee.BASE_URL,
     partnerId: process.env.SHOPEE_PARTNER_ID || null, chaveConfigurada: !!process.env.SHOPEE_PARTNER_KEY,
-    redirect: process.env.SHOPEE_REDIRECT_URL || null, autorizada: !!t.access_token, shopId: t.shop_id || null, status: shopeeStatus });
+    redirect: process.env.SHOPEE_REDIRECT_URL || null, autorizada: !!t.access_token, shopId: t.shop_id || null, status: shopeeStatus, erros: shopeeErros });
 });
 
 app.get('/shopee/dados', (req, res) => {
-  res.json({ status: shopeeStatus, dados: shopeeCache });
+  res.json({ status: shopeeStatus, dados: shopeeCache, erros: shopeeErros });
 });
 
 app.get('/shopee/recarregar', (req, res) => {

@@ -413,8 +413,8 @@ function renderShpProdutos(){
   el('shp-b-produtos').innerHTML=f.map(p=>{
     const img=p.image?.image_url_list?.[0]?'<img src="'+p.image.image_url_list[0]+'" />':'📦';
     const price=p.price_info?.[0]?.current_price||0;
-    const stock=p.stock_info_v2?.summary_info?.total_reserved_stock||0;
-    return '<div class="item-row"><div class="thumb">'+img+'</div><div class="iinfo"><div class="ititle">'+(p.item_name||'-')+'</div><div class="imeta">ID: '+p.item_id+'</div></div><div class="prices"><div class="mp">'+fmt(price/100000)+'</div><div class="pv">Estoque: '+stock+'</div></div></div>';
+    const stock=p.stock_info_v2?.summary_info?.total_available_stock??p.stock_info_v2?.summary_info?.total_reserved_stock??0;
+    return '<div class="item-row"><div class="thumb">'+img+'</div><div class="iinfo"><div class="ititle">'+(p.item_name||'-')+'</div><div class="imeta">ID: '+p.item_id+'</div></div><div class="prices"><div class="mp">'+fmt(price)+'</div><div class="pv">Estoque: '+stock+'</div></div></div>';
   }).join('');
 }
 
