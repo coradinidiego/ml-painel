@@ -176,6 +176,81 @@ async function listarAvaliacoes(max = 200) {
   return out;
 }
 
+// ─── Promoções ───────────────────────────────────────────────────────────────
+
+/** item_id -> lista de promoções em andamento (e programadas) do item. */
+async function promocoesPorItem(itemIds) {
+  const agora = Date.now() / 1000, mapa = {};
+  for (let i = 0; i < itemIds.length; i += 50) {
+    const d = await shopeeGet('/api/v2/product/get_item_promotion', { item_id_list: itemIds.slice(i, i + 50).join(',') });
+    for (const it of d.response?.success_list || []) {
+      mapa[it.item_id] = (it.promotion || []).map(p => ({
+        tipo: p.promotion_type, id: p.promotion_id, modelo: p.model_id || null,
+        preco: p.promotion_price_info?.[0]?.promotion_price ?? null,
+        inicio: p.start_time, fim: p.end_time,
+        situacao: p.promotion_staging || (p.start_time <= agora && agora < p.end_time ? 'ongoing' : p.start_time > agora ? 'upcoming' : 'ended'),
+      }));
+    }
+  }
+  return mapa;
+}
+
+/** Variações de um item (preço e estoque por variação). */
+async function variacoes(itemId) {
+  const d = await shopeeGet('/api/v2/product/get_model_list', { item_id: itemId });
+  const tiers = d.response?.tier_variation || [];
+  return (d.response?.model || []).map(m => ({
+    model_id: m.model_id, sku: m.model_sku,
+    nome: (m.tier_index || []).map((ix, t) => tiers[t]?.option_list?.[ix]?.option).filter(Boolean).join(' / '),
+    preco: m.price_info?.[0]?.current_price ?? null, original: m.price_info?.[0]?.original_price ?? null,
+    estoque: m.stock_info_v2?.summary_info?.total_available_stock ?? null,
+  }));
+}
+
+// ─── Chat ────────────────────────────────────────────────────────────────────
+
+/** Conversas recentes; `pendente` = a última mensagem é do cliente. */
+async function listarConversas(dias = 30, max = 300) {
+  const limite = Date.now() - dias * 864e5, out = [];
+  let next = '';
+  for (let pg = 0; pg < 10 && out.length < max; pg++) {
+    const params = { direction: 'older', type: 'all', page_size: 60 };
+    if (next) params.next_timestamp_nano = next;
+    const d = await shopeeGet('/api/v2/sellerchat/get_conversation_list', params);
+    const L = d.response?.conversations || [];
+    let velho = false;
+    for (const c of L) {
+      const ts = Math.floor(Number(c.last_message_timestamp) / 1e6);
+      if (ts < limite) { velho = true; break; }
+      out.push({
+        id: String(c.conversation_id), cliente_id: c.to_id, cliente: c.to_name, avatar: c.to_avatar,
+        naoLidas: c.unread_count || 0, quando: ts, tipo: c.latest_message_type,
+        texto: c.latest_message_content?.text || (c.latest_message_type && c.latest_message_type !== 'text' ? '[' + c.latest_message_type + ']' : ''),
+        pendente: String(c.latest_message_from_id) === String(c.to_id),
+      });
+    }
+    const pr = d.response?.page_result;
+    if (velho || !pr?.more || !L.length) break;
+    next = pr.next_cursor?.next_message_time_nano;
+    if (!next || next === '0') break;
+  }
+  return out;
+}
+
+async function mensagens(conversationId, n = 30) {
+  const d = await shopeeGet('/api/v2/sellerchat/get_message', { conversation_id: conversationId, page_size: n });
+  return (d.response?.messages || []).map(m => ({
+    id: m.message_id, de: m.from_id, para: m.to_id, tipo: m.message_type,
+    texto: m.content?.text || (m.content?.url ? '' : ''), url: m.content?.url || m.content?.thumb_url || null,
+    item: m.content?.item_id || null, pedido: m.content?.order_sn || null,
+    quando: Math.floor(Number(m.created_timestamp) * (String(m.created_timestamp).length > 11 ? 1 / 1e6 : 1000)),
+  })).sort((a, b) => a.quando - b.quando);
+}
+
+async function enviarMensagem(toId, texto) {
+  return shopeePost('/api/v2/sellerchat/send_message', { to_id: Number(toId), message_type: 'text', content: { text: String(texto) } });
+}
+
 async function replyRating(ratingId, comment) {
   return shopeePost('/api/v2/product/reply_comment', { comment_list: [{ comment_id: Number(ratingId), comment }] });
 }
@@ -184,4 +259,5 @@ module.exports = { SANDBOX, BASE_URL,
   getAuthUrl, getToken, refreshToken,
   saveTokens, getTokens,
   listarProdutos, listarPedidos, listarAvaliacoes, replyRating, shopeeGet,
+  promocoesPorItem, variacoes, listarConversas, mensagens, enviarMensagem,
 };

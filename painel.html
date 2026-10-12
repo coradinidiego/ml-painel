@@ -161,21 +161,68 @@ body{background:#f0f2f5;color:#111}
       🔐 Shopee ainda não autorizada. <a class="shp-btn" href="/shopee/auth">Autorizar loja agora</a>
     </div>
     <div class="tabs">
-      <button class="tab active" onclick="showShpTab('produtos',this)">📦 Produtos (<span id="stc-produtos">...</span>)</button>
+      <button class="tab active" onclick="showShpTab('inicio',this)">🏠 Início</button>
+      <button class="tab" onclick="showShpTab('sempromo',this)">🏷️ Sem promoção (<span id="stc-sempromo">...</span>)</button>
+      <button class="tab" onclick="showShpTab('chat',this)">💬 Chat <span class="badge" id="stc-chat" style="display:inline-block;background:#EE4D2D">...</span></button>
       <button class="tab" onclick="showShpTab('pedidos',this)">🛒 Pedidos (<span id="stc-pedidos">...</span>)</button>
       <button class="tab" onclick="showShpTab('avaliacoes',this)">⭐ Avaliações (<span id="stc-avaliacoes">...</span>)</button>
+      <button class="tab" onclick="showShpTab('produtos',this)">📦 Produtos (<span id="stc-produtos">...</span>)</button>
     </div>
-    <div id="shp-tab-produtos" class="tab-content active">
+    <div id="shp-tab-inicio" class="tab-content active">
+      <div class="cards">
+        <div class="card a" onclick="showShpTab('sempromo')"><div class="icon">🏷️</div><div class="num" id="sk-sempromo">-</div><div class="lbl">Sem promoção</div></div>
+        <div class="card r" onclick="showShpTab('chat')"><div class="icon">💬</div><div class="num" id="sk-chat">-</div><div class="lbl">Chats sem resposta</div></div>
+        <div class="card b" onclick="showShpTab('pedidos')"><div class="icon">📦</div><div class="num" id="sk-enviar">-</div><div class="lbl">Pedidos a enviar</div></div>
+        <div class="card r" onclick="showShpTab('pedidos')"><div class="icon">⏰</div><div class="num" id="sk-atraso">-</div><div class="lbl">Envio vence hoje/atrasado</div></div>
+        <div class="card g" onclick="showShpTab('pedidos')"><div class="icon">🛒</div><div class="num" id="sk-hoje">-</div><div class="lbl">Pedidos hoje</div></div>
+        <div class="card p" onclick="showShpTab('pedidos')"><div class="icon">💰</div><div class="num" id="sk-fat">-</div><div class="lbl">Vendido 15 dias</div></div>
+        <div class="card a" onclick="showShpTab('avaliacoes')"><div class="icon">⭐</div><div class="num" id="sk-nota">-</div><div class="lbl">Nota média (últ. 200)</div></div>
+        <div class="card c" onclick="showShpTab('produtos')"><div class="icon">🚫</div><div class="num" id="sk-semest">-</div><div class="lbl">Produtos sem estoque</div></div>
+      </div>
+      <div class="rgrid">
+        <div class="rbox"><h3>🛒 Pedidos (15 dias)</h3><div id="sk-status"></div></div>
+        <div class="rbox"><h3>📦 Produtos</h3>
+          <div class="rrow"><span>Ativos</span><span class="v" id="sk-ativos">-</span></div>
+          <div class="rrow"><span>Em promoção</span><span class="v" style="color:#43A047" id="sk-compromo">-</span></div>
+          <div class="rrow"><span>Sem promoção</span><span class="v" style="color:#E65100" id="sk-sempromo2">-</span></div>
+          <div class="rrow"><span>Promoção só programada</span><span class="v" style="color:#1E88E5" id="sk-futura">-</span></div>
+          <div class="rrow"><span>Avaliações sem resposta</span><span class="v" style="color:#E53935" id="sk-avsem">-</span></div>
+        </div>
+      </div>
+      <div id="shp-erros" style="font-size:12px;color:#c0392b;margin-top:8px"></div>
+    </div>
+    <div id="shp-tab-sempromo" class="tab-content">
+      <div class="sf">
+        <input class="sinput" type="text" placeholder="Buscar por nome, SKU ou ID..." oninput="renderShpSemPromo()" id="shp-bsp">
+        <select class="sselect" id="shp-fsp" onchange="renderShpSemPromo()">
+          <option value="">Com estoque</option><option value="todos">Todos</option><option value="futura">Só com promoção programada</option>
+        </select>
+        <select class="sselect" id="shp-osp" onchange="renderShpSemPromo()">
+          <option value="estoque">Maior estoque</option><option value="vendas">Mais vendidos (15 dias)</option><option value="preco">Maior preço</option>
+        </select>
+      </div>
+      <div class="section"><div class="sec-head">🏷️ Fora de promoção <span class="cnt" id="shp-c-sempromo">-</span></div><div id="shp-b-sempromo"><div class="loading">Carregando...</div></div></div>
+    </div>
+    <div id="shp-tab-chat" class="tab-content">
+      <div class="sf">
+        <select class="sselect" id="shp-fchat" onchange="renderShpChat()"><option value="pend">Sem resposta</option><option value="todas">Todas (30 dias)</option></select>
+        <button class="btn" onclick="recarregarChat()">↺ Atualizar chat</button>
+        <a class="btn" href="https://seller.shopee.com.br/webchat/conversations" target="_blank" rel="noopener" style="text-decoration:none">Abrir chat na Shopee ↗</a>
+      </div>
+      <div class="section"><div class="sec-head">💬 Conversas <span class="cnt" id="shp-c-chat">-</span></div><div id="shp-b-chat"><div class="loading">Carregando...</div></div></div>
+    </div>
+    <div id="shp-tab-produtos" class="tab-content">
       <div class="sf"><input class="sinput" type="text" placeholder="Buscar produto..." oninput="renderShpProdutos()" id="shp-bp"></div>
       <div class="section"><div class="sec-head">📦 Produtos ativos <span class="cnt" id="shp-c-produtos">-</span></div><div id="shp-b-produtos"><div class="loading">Carregando...</div></div></div>
-      <div class="footer"><span id="shp-upd">-</span><button class="btn" onclick="fetch('/shopee/recarregar')">↺ Atualizar</button></div>
     </div>
     <div id="shp-tab-pedidos" class="tab-content">
+      <div class="sf"><select class="sselect" id="shp-fped" onchange="renderShpPedidos()"><option value="">Todos</option><option value="READY_TO_SHIP">A enviar</option><option value="PROCESSED">Em processamento</option><option value="SHIPPED">Enviados</option><option value="UNPAID">Aguardando pgto</option><option value="CANCELLED">Cancelados</option></select></div>
       <div class="section"><div class="sec-head">🛒 Pedidos (últimos 15 dias) <span class="cnt" id="shp-c-pedidos">-</span></div><div id="shp-b-pedidos"><div class="loading">Carregando...</div></div></div>
     </div>
     <div id="shp-tab-avaliacoes" class="tab-content">
       <div class="section"><div class="sec-head">⭐ Avaliações <span class="cnt" id="shp-c-avaliacoes">-</span></div><div id="shp-b-avaliacoes"><div class="loading">Carregando...</div></div></div>
     </div>
+    <div class="footer"><span id="shp-upd">-</span><button class="btn" onclick="fetch('/shopee/recarregar').then(()=>set('shp-upd','Atualizando… (leva 1 a 2 minutos)'))">↺ Atualizar Shopee</button></div>
   </div>
 </div>
 
@@ -390,55 +437,157 @@ function showShpTab(name,btn){
   document.querySelectorAll('#shopee-content .tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('#shopee-content .tab-content').forEach(t=>t.classList.remove('active'));
   el('shp-tab-'+name).classList.add('active');
+  if(!btn)btn=[...document.querySelectorAll('#shopee-content .tab')].find(b=>(b.getAttribute('onclick')||'').includes("'"+name+"'"));
   if(btn)btn.classList.add('active');
 }
 
-let _shpDados=null;
+let _shpDados=null,_shpVersao=null;
+const shpEsc=t=>String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const shpPreco=p=>p.price_info?.[0]?.current_price ?? (p._variacoes?.length?Math.min(...p._variacoes.map(v=>v.preco||Infinity)):0);
+const shpEstoque=p=>p._variacoes?.length?p._variacoes.reduce((a,v)=>a+(v.estoque||0),0):(p.stock_info_v2?.summary_info?.total_available_stock??0);
+const shpImg=p=>p.image?.image_url_list?.[0]?'<img src="'+shpEsc(p.image.image_url_list[0])+'" loading="lazy" />':'📦';
+const shpLinkEdit=id=>'https://seller.shopee.com.br/portal/product/'+id;
+const shpLinkAnuncio=id=>'https://shopee.com.br/product/'+(_shpDados?.shopId||'')+'/'+id;
+const shpData=ts=>ts?new Date(ts*1000).toLocaleDateString('pt-BR'):'-';
+const shpQuando=ms=>{const d=new Date(ms),h=new Date();return d.toDateString()===h.toDateString()?d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});};
 
-function renderShopee(){
+function renderShopee(forcar){
   if(!_shpDados)return;
+  if(!forcar&&_shpVersao===_shpDados.ultimaAtualizacao)return;   // não redesenha à toa (não apaga o que você está digitando)
+  _shpVersao=_shpDados.ultimaAtualizacao;
   const d=_shpDados;
+  d.conversas=d.conversas||[];
+  // vendas por item (15 dias) para ordenar a lista sem promoção
+  d._vendas={};
+  d.pedidos.filter(o=>o.order_status!=='CANCELLED'&&o.order_status!=='UNPAID').forEach(o=>(o.item_list||[]).forEach(i=>{d._vendas[i.item_id]=(d._vendas[i.item_id]||0)+(i.model_quantity_purchased||1);}));
+  const semPromo=d.produtos.filter(p=>p._semPromo);
+  const comEst=semPromo.filter(p=>shpEstoque(p)>0);
+  const pend=d.conversas.filter(c=>c.pendente);
+  const hoje=new Date();hoje.setHours(0,0,0,0);const fimHoje=hoje.getTime()/1000+86400;
+  const aEnviar=d.pedidos.filter(o=>o.order_status==='READY_TO_SHIP');
+  const atraso=aEnviar.filter(o=>o.ship_by_date&&o.ship_by_date<fimHoje);
+  const validos=d.pedidos.filter(o=>!['CANCELLED','UNPAID','IN_CANCEL'].includes(o.order_status));
+  const nota=d.avaliacoes.length?(d.avaliacoes.reduce((a,r)=>a+(r.rating_star||0),0)/d.avaliacoes.length):0;
   set('stc-produtos',d.produtos.length);set('shp-c-produtos',d.produtos.length);
   set('stc-pedidos',d.pedidos.length);set('shp-c-pedidos',d.pedidos.length);
   set('stc-avaliacoes',d.avaliacoes.length);set('shp-c-avaliacoes',d.avaliacoes.length);
+  set('stc-sempromo',comEst.length);set('stc-chat',pend.length);
+  set('sk-sempromo',comEst.length);set('sk-chat',pend.length);set('sk-enviar',aEnviar.length);set('sk-atraso',atraso.length);
+  set('sk-hoje',d.pedidos.filter(o=>(o.create_time||0)>=hoje.getTime()/1000).length);
+  set('sk-fat',fmt(validos.reduce((a,o)=>a+(o.total_amount||0),0)).replace(/,\d\d$/,''));
+  set('sk-nota',nota?nota.toLocaleString('pt-BR',{maximumFractionDigits:2}):'-');
+  set('sk-semest',d.produtos.filter(p=>shpEstoque(p)<=0).length);
+  set('sk-ativos',d.produtos.length);set('sk-compromo',d.produtos.length-semPromo.length);set('sk-sempromo2',semPromo.length+' ('+comEst.length+' com estoque)');
+  set('sk-futura',semPromo.filter(p=>p._promoFutura?.length).length);set('sk-avsem',d.avaliacoes.filter(r=>!r.comment).length);
+  const st={};d.pedidos.forEach(o=>st[o.order_status]=(st[o.order_status]||0)+1);
+  el('sk-status').innerHTML=Object.entries(st).sort((a,b)=>b[1]-a[1]).map(([k,v])=>'<div class="rrow"><span>'+(SHP_STATUS[k]||k)+'</span><span class="v">'+v+'</span></div>').join('')||'<div class="rrow"><span>Sem pedidos</span></div>';
+  const er=Object.entries(d.erros||{});el('shp-erros').textContent=er.length?'Não carregou: '+er.map(([k,v])=>k+' ('+v+')').join(' · '):'';
   set('shp-upd','Atualizado: '+d.ultimaAtualizacao);
-  renderShpProdutos();renderShpPedidos();renderShpAvaliacoes();
+  renderShpSemPromo();renderShpChat();renderShpProdutos();renderShpPedidos();renderShpAvaliacoes();
+}
+const SHP_STATUS={UNPAID:'💳 Aguardando pgto',READY_TO_SHIP:'📦 A enviar',PROCESSED:'🏷️ Etiqueta gerada',RETRY_SHIP:'🔁 Reenviar',SHIPPED:'🚛 Enviado',TO_CONFIRM_RECEIVE:'📬 Aguardando confirmação',COMPLETED:'✅ Concluído',IN_CANCEL:'⚠️ Cancelando',CANCELLED:'❌ Cancelado',TO_RETURN:'↩️ Devolução',INVOICE_PENDING:'🧾 NF pendente'};
+
+function renderShpSemPromo(){
+  const b=el('shp-b-sempromo');
+  if(!_shpDados){b.innerHTML='<div class="loading">Aguarde...</div>';return;}
+  const q=(el('shp-bsp')?.value||'').toLowerCase(), modo=el('shp-fsp')?.value||'', ord=el('shp-osp')?.value||'estoque';
+  let f=_shpDados.produtos.filter(p=>p._semPromo);
+  if(modo==='')f=f.filter(p=>shpEstoque(p)>0);
+  if(modo==='futura')f=f.filter(p=>p._promoFutura?.length);
+  if(q)f=f.filter(p=>(p.item_name||'').toLowerCase().includes(q)||(p.item_sku||'').toLowerCase().includes(q)||String(p.item_id).includes(q)||(p._variacoes||[]).some(v=>(v.sku||'').toLowerCase().includes(q)));
+  const V=_shpDados._vendas||{};
+  f.sort((a,b)=>ord==='vendas'?(V[b.item_id]||0)-(V[a.item_id]||0):ord==='preco'?shpPreco(b)-shpPreco(a):shpEstoque(b)-shpEstoque(a));
+  set('shp-c-sempromo',f.length);
+  if(!f.length){b.innerHTML='<div class="loading" style="color:green">✓ Todos os produtos'+(modo===''?' com estoque':'')+' estão em promoção.</div>';return;}
+  b.innerHTML=f.map(p=>{
+    const fut=p._promoFutura?.length?'<span class="pv" style="background:#E3F2FD;color:#1565C0">Programada: '+shpEsc(p._promoFutura[0].tipo)+' em '+shpData(p._promoFutura[0].inicio)+'</span> ':'';
+    const varInfo=p._variacoes?.length?' · '+p._variacoes.length+' variações':'';
+    const vend=V[p.item_id]?' · '+V[p.item_id]+' vendidos em 15 dias':'';
+    return '<div class="item-row"><div class="thumb">'+shpImg(p)+'</div><div class="iinfo"><div class="ititle">'+shpEsc(p.item_name)+'</div><div class="imeta">'+(p.item_sku?'SKU: '+shpEsc(p.item_sku)+' · ':'')+'ID: '+p.item_id+varInfo+vend+' · <a class="alink" href="'+shpLinkEdit(p.item_id)+'" target="_blank" rel="noopener">Editar</a> · <a class="alink" href="https://seller.shopee.com.br/portal/marketing/discount" target="_blank" rel="noopener">Criar promoção</a></div>'+(fut?'<div style="margin-top:4px">'+fut+'</div>':'')+'</div><div class="prices"><div class="mp">'+fmt(shpPreco(p))+'</div><div class="pv">Estoque: '+shpEstoque(p)+'</div></div></div>';
+  }).join('');
+}
+
+function renderShpChat(){
+  const b=el('shp-b-chat');
+  if(!_shpDados){b.innerHTML='<div class="loading">Aguarde...</div>';return;}
+  const todas=el('shp-fchat')?.value==='todas';
+  const L=(_shpDados.conversas||[]).filter(c=>todas||c.pendente);
+  set('shp-c-chat',L.length);set('stc-chat',(_shpDados.conversas||[]).filter(c=>c.pendente).length);
+  if(_shpDados.erros?.chat){b.innerHTML='<div class="loading" style="color:#c0392b">Não consegui ler o chat: '+shpEsc(_shpDados.erros.chat)+'</div>';return;}
+  if(!L.length){b.innerHTML='<div class="loading" style="color:green">✓ Nenhuma conversa esperando resposta.</div>';return;}
+  b.innerHTML=L.map(c=>'<div class="item-row" style="flex-direction:column;align-items:stretch;cursor:pointer" id="cv-'+c.id+'"><div style="display:flex;gap:10px;align-items:center" onclick="abrirConversa(\''+c.id+'\','+Number(c.cliente_id)+')"><div class="thumb">'+(c.avatar?'<img src="'+shpEsc(c.avatar)+'" style="border-radius:50%" />':'👤')+'</div><div class="iinfo"><div class="ititle">'+shpEsc(c.cliente)+(c.pendente?' <span class="pv" style="background:#FFEBEE;color:#C62828">sem resposta</span>':'')+(c.naoLidas?' <span class="pv" style="background:#EE4D2D;color:#fff">'+c.naoLidas+' nova'+(c.naoLidas>1?'s':'')+'</span>':'')+'</div><div class="imeta">'+shpEsc((c.texto||'').slice(0,140))+'</div></div><div class="prices"><div class="imeta">'+shpQuando(c.quando)+'</div><div class="imeta" style="color:#EE4D2D">Abrir ▸</div></div></div><div class="cv-corpo"></div></div>').join('');
+}
+
+async function abrirConversa(id,toId){
+  const box=el('cv-'+id)?.querySelector('.cv-corpo');if(!box)return;
+  if(box.dataset.aberta){box.innerHTML='';delete box.dataset.aberta;return;}
+  box.dataset.aberta=1;box.innerHTML='<div class="loading">Carregando mensagens…</div>';
+  try{
+    const r=await fetch('/shopee/chat/'+encodeURIComponent(id)).then(r=>r.json());
+    if(!r.ok)throw new Error(r.erro);
+    const msgs=r.mensagens.map(m=>{const cli=String(m.de)===String(toId);
+      const corpo=m.texto?shpEsc(m.texto).replace(/\n/g,'<br>'):m.url?'<a class="alink" href="'+shpEsc(m.url)+'" target="_blank" rel="noopener">[imagem/arquivo]</a>':m.item?'[produto '+m.item+']':m.pedido?'[pedido '+shpEsc(m.pedido)+']':'['+shpEsc(m.tipo)+']';
+      return '<div style="display:flex;justify-content:'+(cli?'flex-start':'flex-end')+';margin:4px 0"><div style="max-width:75%;padding:7px 10px;border-radius:10px;font-size:13px;background:'+(cli?'#f1f3f5':'#FFE9E3')+'">'+corpo+'<div style="font-size:10px;color:#999;margin-top:2px;text-align:right">'+shpQuando(m.quando)+'</div></div></div>';}).join('');
+    box.innerHTML='<div style="padding:8px 4px 0;max-height:360px;overflow:auto" class="cv-msgs">'+(msgs||'<div class="loading">Sem mensagens.</div>')+'</div><div class="reply-box"><input type="text" placeholder="Escreva a resposta e tecle Enter…" maxlength="1000" onkeydown="if(event.key===\'Enter\')responderChat(\''+id+'\','+toId+',this)"><button onclick="responderChat(\''+id+'\','+toId+',this.previousElementSibling)">Enviar</button></div>';
+    const sc=box.querySelector('.cv-msgs');sc.scrollTop=sc.scrollHeight;box.querySelector('input').focus();
+  }catch(e){box.innerHTML='<div class="loading" style="color:#c0392b">Erro: '+shpEsc(e.message)+'</div>';}
+}
+
+async function responderChat(id,toId,input){
+  const texto=input.value.trim();if(!texto)return;
+  input.disabled=true;
+  try{
+    const r=await fetch('/shopee/chat/'+encodeURIComponent(id)+'/responder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to_id:toId,texto})}).then(r=>r.json());
+    if(!r.ok)throw new Error(r.erro);
+    const c=(_shpDados.conversas||[]).find(x=>x.id===id);if(c){c.pendente=false;c.texto=texto;c.quando=Date.now();}
+    const box=el('cv-'+id).querySelector('.cv-corpo');delete box.dataset.aberta;
+    await abrirConversa(id,toId);
+    set('stc-chat',(_shpDados.conversas||[]).filter(c=>c.pendente).length);set('sk-chat',(_shpDados.conversas||[]).filter(c=>c.pendente).length);
+  }catch(e){input.disabled=false;alert('Não enviou: '+e.message);}
+}
+
+async function recarregarChat(){
+  el('shp-b-chat').innerHTML='<div class="loading">Atualizando conversas…</div>';
+  try{const r=await fetch('/shopee/chat').then(r=>r.json());if(!r.ok)throw new Error(r.erro);_shpDados.conversas=r.conversas;if(_shpDados.erros)delete _shpDados.erros.chat;}
+  catch(e){el('shp-b-chat').innerHTML='<div class="loading" style="color:#c0392b">Erro: '+shpEsc(e.message)+'</div>';return;}
+  renderShpChat();
 }
 
 function renderShpProdutos(){
   if(!_shpDados){el('shp-b-produtos').innerHTML='<div class="loading">Aguarde...</div>';return;}
   const q=(el('shp-bp')?.value||'').toLowerCase();
-  let f=q?_shpDados.produtos.filter(p=>(p.item_name||'').toLowerCase().includes(q)):[..._shpDados.produtos];
+  let f=q?_shpDados.produtos.filter(p=>(p.item_name||'').toLowerCase().includes(q)||(p.item_sku||'').toLowerCase().includes(q)):[..._shpDados.produtos];
   if(!f.length){el('shp-b-produtos').innerHTML='<div class="loading">Nenhum produto.</div>';return;}
   el('shp-b-produtos').innerHTML=f.map(p=>{
-    const img=p.image?.image_url_list?.[0]?'<img src="'+p.image.image_url_list[0]+'" />':'📦';
-    const price=p.price_info?.[0]?.current_price||0;
-    const stock=p.stock_info_v2?.summary_info?.total_available_stock??p.stock_info_v2?.summary_info?.total_reserved_stock??0;
-    return '<div class="item-row"><div class="thumb">'+img+'</div><div class="iinfo"><div class="ititle">'+(p.item_name||'-')+'</div><div class="imeta">ID: '+p.item_id+'</div></div><div class="prices"><div class="mp">'+fmt(price)+'</div><div class="pv">Estoque: '+stock+'</div></div></div>';
+    const promo=p._promoAtiva?.length?'<span class="pv" style="background:#E8F5E9;color:#2E7D32">Em promoção</span>':'<span class="pv" style="background:#FFF3E0;color:#E65100">Sem promoção</span>';
+    return '<div class="item-row"><div class="thumb">'+shpImg(p)+'</div><div class="iinfo"><div class="ititle">'+shpEsc(p.item_name)+'</div><div class="imeta">'+(p.item_sku?'SKU: '+shpEsc(p.item_sku)+' · ':'')+'ID: '+p.item_id+' · <a class="alink" href="'+shpLinkEdit(p.item_id)+'" target="_blank" rel="noopener">Editar</a> '+promo+'</div></div><div class="prices"><div class="mp">'+fmt(shpPreco(p))+'</div><div class="pv">Estoque: '+shpEstoque(p)+'</div></div></div>';
   }).join('');
 }
 
 function renderShpPedidos(){
   if(!_shpDados){el('shp-b-pedidos').innerHTML='<div class="loading">Aguarde...</div>';return;}
-  if(!_shpDados.pedidos.length){el('shp-b-pedidos').innerHTML='<div class="loading" style="color:green">✓ Nenhum pedido nos últimos 15 dias.</div>';return;}
-  const statusLabel={UNPAID:'💳 Aguardando pgto',READY_TO_SHIP:'📦 Pronto p/ envio',PROCESSED:'🚚 Em processamento',SHIPPED:'🚛 Enviado',COMPLETED:'✅ Concluído',CANCELLED:'❌ Cancelado'};
-  el('shp-b-pedidos').innerHTML=_shpDados.pedidos.map(o=>{
-    const st=statusLabel[o.order_status]||o.order_status;
-    const total=o.total_amount||0;
-    const dt=o.pay_time?new Date(o.pay_time*1000).toLocaleDateString('pt-BR'):'-';
-    return '<div class="item-row"><div class="thumb" style="font-size:16px">🛒</div><div class="iinfo"><div class="ititle">'+o.order_sn+'</div><div class="imeta">'+dt+' · '+(o.buyer_username||'')+'</div></div><div class="prices"><div class="mp">'+fmt(total)+'</div><div class="pv">'+st+'</div></div></div>';
+  const fs=el('shp-fped')?.value||'';
+  const L=_shpDados.pedidos.filter(o=>!fs||o.order_status===fs);
+  set('shp-c-pedidos',L.length);
+  if(!L.length){el('shp-b-pedidos').innerHTML='<div class="loading" style="color:green">✓ Nenhum pedido.</div>';return;}
+  const fimHoje=(()=>{const h=new Date();h.setHours(24,0,0,0);return h.getTime()/1000;})();
+  el('shp-b-pedidos').innerHTML=L.map(o=>{
+    const st=SHP_STATUS[o.order_status]||o.order_status;
+    const itens=(o.item_list||[]).map(i=>(i.model_quantity_purchased||1)+'× '+shpEsc((i.item_name||'').slice(0,50))).join(' · ');
+    const prazo=o.order_status==='READY_TO_SHIP'&&o.ship_by_date?' · <span style="color:'+(o.ship_by_date<fimHoje?'#C62828':'#666')+'">enviar até '+shpData(o.ship_by_date)+'</span>':'';
+    return '<div class="item-row"><div class="thumb" style="font-size:16px">🛒</div><div class="iinfo"><div class="ititle">'+shpEsc(o.order_sn)+'</div><div class="imeta">'+shpData(o.create_time)+' · '+shpEsc(o.buyer_username||'')+prazo+'</div><div class="imeta">'+itens+'</div></div><div class="prices"><div class="mp">'+fmt(o.total_amount||0)+'</div><div class="pv">'+st+'</div></div></div>';
   }).join('');
 }
 
 function renderShpAvaliacoes(){
   if(!_shpDados){el('shp-b-avaliacoes').innerHTML='<div class="loading">Aguarde...</div>';return;}
   if(!_shpDados.avaliacoes.length){el('shp-b-avaliacoes').innerHTML='<div class="loading" style="color:green">✓ Nenhuma avaliação.</div>';return;}
-  el('shp-b-avaliacoes').innerHTML=_shpDados.avaliacoes.map(r=>{
+  const L=[..._shpDados.avaliacoes].sort((a,b)=>(!a.comment?0:1)-(!b.comment?0:1)||(b.create_time||0)-(a.create_time||0));
+  el('shp-b-avaliacoes').innerHTML=L.map(r=>{
     const stars='★'.repeat(r.rating_star)+'☆'.repeat(5-r.rating_star);
-    const dt=r.create_time?new Date(r.create_time*1000).toLocaleDateString('pt-BR'):'-';
-    const jaRespondeu=r.comment?'<div class="imeta" style="color:#43A047;margin-top:4px">✓ Respondida: '+r.comment+'</div>':'';
+    const jaRespondeu=r.comment?'<div class="imeta" style="color:#43A047;margin-top:4px">✓ Respondida: '+shpEsc(r.comment)+'</div>':'';
     const replyForm=!r.comment?'<div class="reply-box"><input type="text" placeholder="Responder avaliação..." id="rep-'+r.rating_id+'"><button onclick="responderAvaliacao('+r.rating_id+')">Enviar</button></div>':'';
-    return '<div class="item-row" style="flex-direction:column;align-items:flex-start"><div style="display:flex;gap:10px;width:100%"><div class="thumb" style="font-size:18px">⭐</div><div class="iinfo"><div class="ititle"><span class="star">'+stars+'</span> · '+dt+'</div><div class="imeta">'+(r.buyer_username||'Comprador')+' · '+(r.comment_list?.[0]||'Sem comentário')+'</div>'+jaRespondeu+'</div></div>'+replyForm+'</div>';
+    return '<div class="item-row" style="flex-direction:column;align-items:flex-start"><div style="display:flex;gap:10px;width:100%"><div class="thumb" style="font-size:18px">⭐</div><div class="iinfo"><div class="ititle"><span class="star">'+stars+'</span> · '+shpData(r.create_time)+'</div><div class="imeta">'+shpEsc(r.buyer_username||'Comprador')+' · '+shpEsc(r.comment_list?.[0]||'Sem comentário')+'</div>'+jaRespondeu+'</div></div>'+replyForm+'</div>';
   }).join('');
 }
 
@@ -757,7 +906,7 @@ async function pollDados(){
     if(dotShp)dotShp.className='sdot '+(ds.status==='pronto'?'sp':ds.status==='erro'||ds.status==='sem_auth'?'se':'sl');
     if(ds.status==='sem_auth'&&el('shp-banner-auth'))el('shp-banner-auth').style.display='flex';
     else if(el('shp-banner-auth'))el('shp-banner-auth').style.display='none';
-    if(ds.dados){_shpDados=ds.dados;if(modoShopee)renderShopee();}
+    if(ds.dados&&(!_shpDados||ds.dados.ultimaAtualizacao!==_shpDados.ultimaAtualizacao)){_shpDados=ds.dados;if(modoShopee)renderShopee();}
   }catch(e){}
 }
 

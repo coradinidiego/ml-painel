@@ -49,11 +49,30 @@ async function carregarShopee() {
     delete erros.produtos;
     produtos = await parte('produtos', () => shopee.listarProdutos());
   }
+  // Promoções e variações (para a aba "Sem promoção")
+  if (produtos?.length) await parte('promocoes', async () => {
+    const promos = await shopee.promocoesPorItem(produtos.map(p => p.item_id));
+    for (const p of produtos) {
+      const ps = promos[p.item_id] || [];
+      p._promoAtiva = ps.filter(x => x.situacao === 'ongoing');
+      p._promoFutura = ps.filter(x => x.situacao === 'upcoming');
+      if (p.has_model) {
+        try {
+          p._variacoes = await shopee.variacoes(p.item_id);
+          const comPromo = new Set(p._promoAtiva.map(x => String(x.modelo)));
+          for (const v of p._variacoes) v.emPromo = comPromo.has(String(v.model_id));
+          p._varSemPromo = p._variacoes.filter(v => !v.emPromo).length;
+        } catch (e) {}
+      }
+      p._semPromo = p._promoAtiva.length === 0;
+    }
+  });
   const pedidos = await parte('pedidos', () => shopee.listarPedidos());
   const avaliacoes = await parte('avaliacoes', () => shopee.listarAvaliacoes());
+  const conversas = await parte('chat', () => shopee.listarConversas());
   shopeeErros = erros;
   if (produtos === null && pedidos === null && avaliacoes === null) { shopeeStatus = 'erro'; return; }
-  shopeeCache = { produtos: produtos || [], pedidos: pedidos || [], avaliacoes: avaliacoes || [], erros,
+  shopeeCache = { produtos: produtos || [], pedidos: pedidos || [], avaliacoes: avaliacoes || [], conversas: conversas || [], erros,
                   ultimaAtualizacao: new Date().toLocaleTimeString('pt-BR') };
   shopeeStatus = 'pronto';
   console.log(new Date().toLocaleTimeString('pt-BR') + ' - Shopee: carregado! ' + (shopeeCache.produtos.length) + ' produtos, ' + shopeeCache.pedidos.length + ' pedidos');
@@ -427,6 +446,26 @@ app.get('/shopee/config', (req, res) => {
 
 app.get('/shopee/dados', (req, res) => {
   res.json({ status: shopeeStatus, dados: shopeeCache, erros: shopeeErros });
+});
+
+// Chat Shopee: conversas, mensagens de uma conversa e resposta
+app.get('/shopee/chat', async (req, res) => {
+  try { const c = await shopee.listarConversas(); if (shopeeCache) shopeeCache.conversas = c; res.json({ ok: true, conversas: c }); }
+  catch (e) { res.status(500).json({ ok: false, erro: e.message }); }
+});
+app.get('/shopee/chat/:id', async (req, res) => {
+  try { res.json({ ok: true, mensagens: await shopee.mensagens(req.params.id) }); }
+  catch (e) { res.status(500).json({ ok: false, erro: e.message }); }
+});
+app.post('/shopee/chat/:id/responder', async (req, res) => {
+  const { to_id, texto } = req.body || {};
+  if (!to_id || !String(texto || '').trim()) return res.status(400).json({ ok: false, erro: 'Escreva a mensagem.' });
+  try {
+    await shopee.enviarMensagem(to_id, String(texto).trim().slice(0, 1000));
+    const c = shopeeCache?.conversas?.find(x => x.id === req.params.id);
+    if (c) { c.pendente = false; c.texto = String(texto).trim(); c.quando = Date.now(); }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, erro: e.message }); }
 });
 
 app.get('/shopee/recarregar', (req, res) => {
