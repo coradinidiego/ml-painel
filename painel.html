@@ -248,6 +248,7 @@ body{background:#f0f2f5;color:#111}
       <span id="custos-msg" style="font-size:12px;color:#666;align-self:center"></span>
     </div>
     <div class="section"><div class="sec-head">🔴 Perdendo no catalogo <span class="cnt" id="c-perdendo">-</span></div><div id="b-perdendo"><div class="loading">Carregando...</div></div></div>
+    <div class="section"><div class="sec-head">🤝 Ganho por outra conta sua (não é concorrência) <span class="cnt" id="c-grupo">-</span></div><div id="b-grupo"><div class="loading">Carregando...</div></div></div>
     <div class="section"><div class="sec-head">🏆 Quem ganha catálogo de você <span class="cnt" id="c-concorrentes">-</span></div><div id="b-concorrentes"><div class="loading">Carregando...</div></div></div>
     <div class="footer"><span id="upd-p">-</span><button class="btn" onclick="recarregarConta()">↺ Atualizar</button></div>
   </div>
@@ -488,8 +489,16 @@ function exibirDados(idx){
   else bq.innerHTML=d.perguntas.map(q=>'<div class="qrow"><div class="qbody"><div class="qtxt">'+q.text+'</div><div class="qmeta">'+new Date(q.date_created).toLocaleDateString("pt-BR")+' · '+q.item_id+' · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+q.item_id+'/modificar" target="_blank">Ver</a></div></div></div>').join('');
 }
 
+function renderGrupo(){
+  const d=window._dados[ci];const b=el('b-grupo');if(!b)return;
+  const g=(d&&d.grupo)||[];set('c-grupo',g.length);
+  if(!g.length){b.innerHTML='<div class="loading" style="color:#888">Nenhum catálogo desta conta está com outra conta sua.</div>';return;}
+  const escH=t=>String(t||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  b.innerHTML=g.map(it=>'<div class="item-row"><div class="thumb">'+(it.thumbnail?'<img src="'+escH(it.thumbnail)+'" />':'📦')+'</div><div class="iinfo"><div class="ititle">'+escH(it.title||'-')+'</div><div class="imeta">'+escH(it.id)+((it._sku||it.seller_sku)?' · SKU: '+escH(it._sku||it.seller_sku):'')+' · 🤝 Ganhando: <b>'+escH(it.winner_conta)+'</b></div></div><div class="prices"><div class="mp">Meu: '+fmt(it.current_price||0)+'</div><div class="pw">'+escH(it.winner_conta)+': '+fmt(it.winner_price||0)+'</div></div></div>').join('');
+}
 function renderPerdendo(from){
   try{renderConcorrentes();}catch(e){}
+  try{renderGrupo();}catch(e){}
   const d=window._dados[ci];const b=el('b-perdendo');
   if(!d){b.innerHTML='<div class="loading">Aguarde...</div>';return;}
   const q=(el('bp')?.value||'').toLowerCase();

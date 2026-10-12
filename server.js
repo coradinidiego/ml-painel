@@ -161,6 +161,17 @@ async function vendedorML(idx, sellerId) {
   } catch (e) { return null; }
 }
 
+// IDs de vendedor das MINHAS contas ML (Zagodini, Mãe, Lufe): quando uma delas ganha o catálogo
+// de outra, não é concorrência — é o grupo ganhando. Cache por processo.
+const _meusSellers = new Map(); // seller_id -> nome da conta
+async function meusSellers() {
+  for (let i = 0; i < CONTAS.length; i++) {
+    if ([..._meusSellers.values()].includes(CONTAS[i].nome)) continue;
+    try { const u = await ml(i, '/users/me'); if (u?.id) _meusSellers.set(String(u.id), CONTAS[i].nome); } catch (e) {}
+  }
+  return _meusSellers;
+}
+
 async function carregarConta(idx) {
   statusCache[idx] = 'carregando';
   progressoCache[idx] = { conta: 0, cat: 0, promo: 0, perguntas: 0 };
@@ -204,8 +215,10 @@ async function carregarConta(idx) {
     }
 
     // Price to win
-    const perdendo = [], ganhando = [], atualizando = [];
+    const perdendo = [], ganhando = [], atualizando = [], grupo = [];
     let naoListados = 0;
+    const meus = await meusSellers();
+    meus.set(String(uid), CONTAS[idx].nome);
     for (let i = 0; i < catIds.length; i++) {
       try {
         const ptw = await ml(idx, '/items/'+catIds[i]+'/price_to_win');
@@ -239,14 +252,16 @@ async function carregarConta(idx) {
             }
             const v = await vendedorML(idx, sellerId);
             if (v) { it.winner_nome = v.nome; it.winner_loja = v.loja; }
+            if (sellerId && meus.has(String(sellerId))) it.winner_conta = meus.get(String(sellerId));
           } catch(e3) {}
-          perdendo.push(it);
+          // ganhador é outra conta minha → não é concorrência
+          if (it.winner_conta) grupo.push(it); else perdendo.push(it);
         }
         else if (ptw.status === 'winning') {
           try {
             if (ptw.catalog_product_id) {
               const comp = await ml(idx, '/products/'+ptw.catalog_product_id+'/items', {status:'active',limit:5});
-              const others = (comp.results||[]).filter(r => r.seller_id != uid);
+              const others = (comp.results||[]).filter(r => r.seller_id != uid && !meus.has(String(r.seller_id)));
               if (others.length > 0) {
                 const s2 = others.sort((a,b) => a.price-b.price)[0];
                 it.s2price = s2.price;
@@ -309,7 +324,7 @@ const semPromo = [], comPromo = [];
       uid, nickname,
       ativos, pausados,
       perguntas,
-      perdendo, ganhando, atualizando,
+      perdendo, ganhando, atualizando, grupo,
       semPromo, comPromo,
       catTotal: catIds.length,
       naoListados,
