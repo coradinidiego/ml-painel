@@ -1340,6 +1340,20 @@ app.get('/amazon/config', async (req, res) => {
   }
   res.json(out);
 });
+// Quais lojas têm Amazon conectada (para mostrar a chave no painel)
+app.get('/amazon/lojas', (req, res) => res.json(Object.fromEntries(Object.keys(amazon.LOJAS).map(k => [k, amazon.loja(k).configurada()]))));
+// Pedidos da Amazon (15 dias) resumidos para o painel
+app.get('/amazon/dados', async (req, res) => {
+  const k = amazon.LOJAS[req.query.loja] ? req.query.loja : 'lufe', az = amazon.loja(k);
+  if (!az.configurada()) return res.json({ status: 'sem_auth' });
+  try {
+    const d = await az.pedidosCache(!!req.query.forcar);
+    const r = o => ({ id: o.AmazonOrderId, status: o.OrderStatus, criado: o.PurchaseDate, atualizado: o.LastUpdateDate,
+      limiteEnvio: o.LatestShipDate, entregaAte: o.LatestDeliveryDate, total: Number(o.OrderTotal?.Amount || 0), itens: (o.NumberOfItemsShipped || 0) + (o.NumberOfItemsUnshipped || 0),
+      canal: o.FulfillmentChannel, servico: o.ShipServiceLevel, prime: !!o.IsPrime, empresa: !!o.IsBusinessOrder });
+    res.json({ status: 'pronto', atualizadoEm: new Date(d.em).toISOString(), pedidos: d.todos.map(r) });
+  } catch (e) { res.json({ status: 'erro', erro: e.message }); }
+});
 // Diagnóstico (admin): GET cru na SP-API. /debug/amazon-raw?loja=lufe&path=/orders/v0/orders&CreatedAfter=...
 app.get('/debug/amazon-raw', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });

@@ -18,6 +18,7 @@ const DATA = require('./dados');
 const bling = require('./bling');
 const tiny = require('./tiny');
 const mlEnvios = require('./ml_envios');
+const amazon = require('./amazon');
 
 const ARQ_CFG = path.join(DATA, 'tv_config.json');
 const ARQ_CANAL_TINY = path.join(DATA, 'apuracao_cache', 'tv_tiny_canal.json');
@@ -27,9 +28,9 @@ const JANELA_DIAS = 15;
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
 const EMPRESAS = [
-  { id: 'lufe',     nome: 'Magazine Lufe',   logo: 'lufe',     erp: 'tiny',          ml: 'Lufe',     canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein'] },
-  { id: 'zagodini', nome: 'Zagodini',        logo: 'zagodini', erp: 'bling', idx: 0, ml: 'Zagodini', canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein'] },
-  { id: 'mae',      nome: 'Com Amor de Mãe', logo: 'mae',      erp: 'bling', idx: 1, ml: 'Mae',      canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein', 'TikTok'] },
+  { id: 'lufe',     nome: 'Magazine Lufe',   logo: 'lufe',     erp: 'tiny',          ml: 'Lufe', amazon: 'lufe',     canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein'] },
+  { id: 'zagodini', nome: 'Zagodini',        logo: 'zagodini', erp: 'bling', idx: 0, ml: 'Zagodini', amazon: 'zagodini', canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein'] },
+  { id: 'mae',      nome: 'Com Amor de Mãe', logo: 'mae',      erp: 'bling', idx: 1, ml: 'Mae', amazon: 'mae',      canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein', 'TikTok'] },
 ];
 const ETAPAS = ['emitirNF', 'aEmpacotar', 'empacotado', 'enviado'];
 const ROTULO = { emitirNF: 'Emitir NF', aEmpacotar: 'A empacotar', empacotado: 'Empacotado', enviado: 'Enviado', ignorar: 'Ignorar' };
@@ -126,7 +127,7 @@ async function coletarBling(emp, cfg, hoje) {
   const linhas = [];
   for (const etapa of ['emitirNF', 'aEmpacotar', 'empacotado']) {
     for (const p of await blingListar(emp.idx, m[etapa], janela)) {
-      linhas.push({ tipo: etapa, canal: canalBling(canais, p), prazo: prazo((p.dataPrevista || '').slice(0, 10), hoje) });
+      linhas.push({ tipo: etapa, canal: canalBling(canais, p), prazo: prazo((p.dataPrevista || '').slice(0, 10), hoje), num: String(p.numeroLoja || '') });
     }
     await delay(350);
   }
@@ -189,7 +190,7 @@ async function coletarTiny(cfg, hoje) {
     for (const sit of cfg.tiny[etapa] || []) {
       for (const p of await tinyListar(sit, janela)) {
         const info = await canalTiny(p, consultas);
-        linhas.push({ tipo: etapa, canal: info.canal, prazo: prazo(brToIso(p.data_prevista) || info.prevista, hoje) });
+        linhas.push({ tipo: etapa, canal: info.canal, prazo: prazo(brToIso(p.data_prevista) || info.prevista, hoje), num: String(p.numero_ecommerce || '') });
       }
     }
   }
@@ -200,6 +201,26 @@ async function coletarTiny(cfg, hoje) {
     }
   }
   salvarCanalTiny();
+  return linhas;
+}
+
+// ─── Amazon (direto da SP-API) ─────────────────────────────────────────────
+// A Amazon diz QUAIS pedidos estão por enviar (e o prazo); a etapa (NF / empacotar / empacotado)
+// vem do ERP pelo número do pedido. Pedido que ainda não chegou no ERP conta como "Emitir NF".
+async function coletarAmazon(emp, hoje, erpLinhas) {
+  const az = amazon.loja(emp.amazon);
+  if (!az.configurada()) return null;                     // sem Amazon conectada: fica com o ERP
+  const d = await az.pedidosCache();
+  const etapaErp = {};
+  for (const l of erpLinhas) if (l.canal === 'Amazon' && l.num) etapaErp[l.num] = l.tipo;
+  const linhas = [];
+  const diaSP = iso => iso ? new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) : '';
+  for (const o of d.abertos) {
+    let tipo = etapaErp[o.AmazonOrderId] || 'emitirNF';
+    if (tipo === 'enviado') tipo = 'empacotado';           // no ERP já saiu, na Amazon ainda não: aguardando coleta
+    linhas.push({ tipo, canal: 'Amazon', prazo: prazo(diaSP(o.LatestShipDate), hoje) });
+  }
+  for (const o of d.enviadosHoje) linhas.push({ tipo: 'enviado', canal: 'Amazon', prazo: 'hoje' });
   return linhas;
 }
 
@@ -234,7 +255,16 @@ async function coletarEmpresa(emp, cfg, hoje, erros, aoParcial) {
   const atual = { ...ant };
   if (rMl.status === 'fulfilled') Object.assign(atual, { ml: rMl.value, okMl: true });
   else { erros[`${emp.nome} · Mercado Livre`] = rMl.reason?.response?.status === 401 ? 'token do ML expirado' : (rMl.reason?.message || 'erro'); console.warn('[tv] ML', emp.id, rMl.reason?.message); }
-  if (rErp.status === 'fulfilled') Object.assign(atual, { erp: rErp.value.filter(l => l.canal !== 'Mercado Livre'), okErp: true });
+  if (rErp.status === 'fulfilled') {
+    let erp = rErp.value.filter(l => l.canal !== 'Mercado Livre');
+    if (emp.amazon) {
+      try {
+        const az = await coletarAmazon(emp, hoje, erp);
+        if (az) erp = [...erp.filter(l => l.canal !== 'Amazon'), ...az];
+      } catch (e) { erros[`${emp.nome} · Amazon`] = e.message; console.warn('[tv] Amazon', emp.id, e.message); }
+    }
+    Object.assign(atual, { erp, okErp: true });
+  }
   else { erros[`${emp.nome} · ${emp.erp === 'tiny' ? 'Tiny' : 'Bling'}`] = rErp.reason?.response?.status === 401 ? 'ERP não autorizado' : (rErp.reason?.message || 'erro'); console.warn('[tv] ERP', emp.id, rErp.reason?.message); }
   ULTIMAS[emp.id] = atual;
   return { ...agregar(emp, [...atual.ml, ...atual.erp]), fontes: { ml: rMl.status === 'fulfilled', erp: rErp.status === 'fulfilled' } };

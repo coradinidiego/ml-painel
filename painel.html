@@ -139,6 +139,8 @@ body{background:#f0f2f5;color:#111}
 .canal-sw button:hover{color:#fff}
 .canal-sw button.on{background:#fff;color:#0d1b2a}
 #canal-sw-shp.on{background:#ee4d2d;color:#fff}
+#canal-sw-amz.on{background:#ff9900;color:#111}
+#amazon-content{display:none}
 @media(max-width:700px){.conta-tab{min-width:180px}.hd .top-bar,.contas{padding-left:16px;padding-right:16px}}
 </style>
 </head><body>
@@ -151,6 +153,7 @@ body{background:#f0f2f5;color:#111}
   <div class="canal-sw" id="canal-sw" role="tablist" aria-label="Canal da conta">
     <button id="canal-sw-ml" class="on" role="tab">Mercado Livre</button>
     <button id="canal-sw-shp" role="tab"><span class="sdot sl" id="dot-shp"></span>Shopee</button>
+    <button id="canal-sw-amz" role="tab" style="display:none">Amazon</button>
   </div>
 </header>
 
@@ -229,6 +232,22 @@ body{background:#f0f2f5;color:#111}
     <div class="footer"><span id="shp-upd">-</span><button class="btn" onclick="fetch(shpU('/shopee/recarregar')).then(()=>set('shp-upd','Atualizando… (leva 1 a 2 minutos)'))">↺ Atualizar Shopee</button></div>
   </div>
 </div>
+
+<!-- Conteúdo Amazon -->
+<div id="amazon-content"><div class="content">
+  <div class="cards">
+    <div class="card b" onclick="azFiltro('aenviar')"><div class="icon">📦</div><div class="num" id="az-enviar">-</div><div class="lbl">A enviar</div></div>
+    <div class="card r" onclick="azFiltro('atraso')"><div class="icon">⏰</div><div class="num" id="az-atraso">-</div><div class="lbl">Envio vence hoje/atrasado</div></div>
+    <div class="card g" onclick="azFiltro('hoje')"><div class="icon">🛒</div><div class="num" id="az-hoje">-</div><div class="lbl">Pedidos hoje</div></div>
+    <div class="card p" onclick="azFiltro('')"><div class="icon">💰</div><div class="num" id="az-fat">-</div><div class="lbl">Vendido 15 dias</div></div>
+  </div>
+  <div class="sf">
+    <select class="sselect" id="az-f" onchange="renderAmazon()"><option value="aenviar">A enviar</option><option value="atraso">Vence hoje/atrasado</option><option value="hoje">Pedidos de hoje</option><option value="Shipped">Enviados</option><option value="Canceled">Cancelados</option><option value="Pending">Aguardando pagamento</option><option value="">Todos (15 dias)</option></select>
+    <input class="sinput" id="az-b" placeholder="Buscar nº do pedido..." oninput="renderAmazon()">
+  </div>
+  <div class="section"><div class="sec-head">📦 Pedidos Amazon <span class="cnt" id="az-c">-</span></div><div id="az-lista"><div class="loading">Carregando...</div></div></div>
+  <div class="footer"><span id="az-upd">-</span><button class="btn" onclick="carregarAmazon(true)">↺ Atualizar Amazon</button></div>
+</div></div>
 
 <div class="content" id="ml-content">
   <div class="banner" id="banner">
@@ -402,6 +421,10 @@ let shpLoja='zagodini';
 const shpU=u=>u+(u.includes('?')?'&':'?')+'loja='+shpLoja;
 el('canal-sw-ml').onclick=()=>trocarConta(ci,el('cb-'+ci));
 el('canal-sw-shp').onclick=()=>trocarParaShopee(el('cb-'+ci));
+el('canal-sw-amz').onclick=()=>trocarParaAmazon(el('cb-'+ci));
+let AZ_LOJAS={},modoAmazon=false,_azDados=null,_azLoja=null;
+fetch('/amazon/lojas').then(r=>r.json()).then(m=>{AZ_LOJAS=m;atualizarBotaoAmz();CONTAS.forEach((c,i)=>{if(m[SHP_LOJAS[i]])el('cb-'+i).querySelector('.ct-canal').textContent='Mercado Livre · Shopee · Amazon';});}).catch(()=>{});
+function atualizarBotaoAmz(){el('canal-sw-amz').style.display=AZ_LOJAS[SHP_LOJAS[ci]]?'flex':'none';}
 CONTAS.forEach((c,i)=>el('cb-'+i).querySelector('.ct-canal').textContent='Mercado Livre · Shopee');
 
 function showTab(name,btn){
@@ -424,7 +447,8 @@ function trocarConta(idx,btn){
   el('ml-content').style.display='block';
   el('shopee-content').style.display='none';
   el('canal-sw').classList.add('show');
-  el('canal-sw-ml').classList.add('on'); el('canal-sw-shp').classList.remove('on');
+  el('canal-sw-ml').classList.add('on'); el('canal-sw-shp').classList.remove('on'); el('canal-sw-amz').classList.remove('on');
+  modoAmazon=false; el('amazon-content').style.display='none'; atualizarBotaoAmz();
   exibirDados(idx);
 }
 
@@ -438,11 +462,55 @@ function trocarParaShopee(btn){
   el('top-logo').src='/logo/'+CONTAS[ci].logo;
   el('top-title').textContent=CONTAS[ci].nome+' · Shopee';
   el('canal-sw').classList.add('show');
-  el('canal-sw-shp').classList.add('on'); el('canal-sw-ml').classList.remove('on');
+  el('canal-sw-shp').classList.add('on'); el('canal-sw-ml').classList.remove('on'); el('canal-sw-amz').classList.remove('on');
+  modoAmazon=false; el('amazon-content').style.display='none';
   el('ml-content').style.display='none';
   el('shopee-content').style.display='block';
   renderShopee();
 }
+
+function trocarParaAmazon(btn){
+  modoShopee=false;modoAmazon=true;
+  document.querySelectorAll('.conta-tab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');
+  el('top-logo').src='/logo/'+CONTAS[ci].logo;el('top-title').textContent=CONTAS[ci].nome+' · Amazon';
+  el('canal-sw-amz').classList.add('on');el('canal-sw-ml').classList.remove('on');el('canal-sw-shp').classList.remove('on');
+  el('ml-content').style.display='none';el('shopee-content').style.display='none';el('amazon-content').style.display='block';
+  if(_azLoja!==SHP_LOJAS[ci]){_azDados=null;_azLoja=SHP_LOJAS[ci];el('az-lista').innerHTML='<div class="loading">Carregando...</div>';}
+  carregarAmazon();
+}
+async function carregarAmazon(forcar){
+  const lj=SHP_LOJAS[ci];
+  try{
+    if(forcar)set('az-upd','Atualizando…');
+    const d=await fetch('/amazon/dados?loja='+lj+(forcar?'&forcar=1':'')).then(r=>r.json());
+    if(lj!==SHP_LOJAS[ci])return;
+    if(d.status!=='pronto'){el('az-lista').innerHTML='<div class="loading" style="color:#c0392b">'+(d.status==='sem_auth'?'Amazon não conectada para esta conta.':'Erro: '+shpEsc(d.erro))+'</div>';return;}
+    _azDados=d;renderAmazon();
+  }catch(e){el('az-lista').innerHTML='<div class="loading" style="color:#c0392b">Sem conexão com o servidor.</div>';}
+}
+function azFiltro(f){el('az-f').value=f;renderAmazon();}
+const AZ_ST={Pending:'💳 Aguardando pagamento',Unshipped:'📦 A enviar',PartiallyShipped:'📦 Enviado em parte',Shipped:'🚚 Enviado',Canceled:'❌ Cancelado',Unfulfillable:'⚠️ Não atendível',InvoiceUnconfirmed:'🧾 Fatura pendente',PendingAvailability:'⏳ Pré-venda'};
+function renderAmazon(){
+  const d=_azDados;if(!d)return;
+  const P=d.pedidos,ini=new Date();ini.setHours(0,0,0,0);const fim=new Date(ini.getTime()+864e5);
+  const aEnv=P.filter(o=>(o.status==='Unshipped'||o.status==='PartiallyShipped')&&o.canal!=='AFN');
+  const atr=aEnv.filter(o=>o.limiteEnvio&&new Date(o.limiteEnvio)<fim);
+  const hoje=P.filter(o=>new Date(o.criado)>=ini&&o.status!=='Canceled');
+  set('az-enviar',aEnv.length);set('az-atraso',atr.length);set('az-hoje',hoje.length);
+  set('az-fat',fmt(P.filter(o=>o.status!=='Canceled'&&o.status!=='Pending').reduce((a,o)=>a+o.total,0)).replace(/,\d\d$/,''));
+  const f=el('az-f').value,q=(el('az-b').value||'').trim();
+  let L=f==='aenviar'?aEnv:f==='atraso'?atr:f==='hoje'?hoje:f?P.filter(o=>o.status===f):P;
+  if(q)L=L.filter(o=>o.id.includes(q));
+  L=[...L].sort((a,b)=>(f==='aenviar'||f==='atraso')?new Date(a.limiteEnvio)-new Date(b.limiteEnvio):new Date(b.criado)-new Date(a.criado));
+  set('az-c',L.length);set('az-upd','Atualizado: '+new Date(d.atualizadoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+' · a Amazon libera consulta a cada 5 min');
+  if(!L.length){el('az-lista').innerHTML='<div class="loading" style="color:green">✓ Nenhum pedido.</div>';return;}
+  const dt=iso=>iso?new Date(iso).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'-';
+  el('az-lista').innerHTML=L.map(o=>{
+    const venc=o.limiteEnvio&&(o.status==='Unshipped'||o.status==='PartiallyShipped')?' · <span style="color:'+(new Date(o.limiteEnvio)<fim?'#C62828;font-weight:600':'#666')+'">enviar até '+new Date(o.limiteEnvio).toLocaleDateString('pt-BR')+'</span>':'';
+    return '<div class="item-row"><div class="thumb" style="font-size:16px">'+(o.prime?'⚡':'📦')+'</div><div class="iinfo"><div class="ititle">'+shpEsc(o.id)+(o.canal==='AFN'?' <span class="pv">FBA</span>':'')+(o.prime?' <span class="pv" style="background:#E3F2FD;color:#1565C0">Prime</span>':'')+'</div><div class="imeta">'+dt(o.criado)+' · '+o.itens+' item'+(o.itens>1?'s':'')+' · '+shpEsc(o.servico||'')+venc+' · <a class="alink" href="https://sellercentral.amazon.com.br/orders-v3/order/'+encodeURIComponent(o.id)+'" target="_blank" rel="noopener">Abrir</a></div></div><div class="prices"><div class="mp">'+fmt(o.total)+'</div><div class="pv">'+(AZ_ST[o.status]||shpEsc(o.status))+'</div></div></div>';
+  }).join('');
+}
+setInterval(()=>{if(modoAmazon)carregarAmazon();},5*60e3);
 
 function showShpTab(name,btn){
   document.querySelectorAll('#shopee-content .tab').forEach(t=>t.classList.remove('active'));

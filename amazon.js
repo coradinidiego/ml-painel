@@ -69,9 +69,28 @@ function criar(chave) {
     return out;
   }
 
+  // Cache de pedidos (a API de pedidos da Amazon libera ~1 consulta por minuto): renova no máx. a cada 5 min
+  let _ped = null, _pedTs = 0, _pedProm = null;
+  /** { abertos: [...], enviadosHoje: [...], todos15: [...] } */
+  async function pedidosCache(forcar) {
+    if (!forcar && _ped && Date.now() - _pedTs < 5 * 60e3) return _ped;
+    if (_pedProm) return _pedProm;
+    _pedProm = (async () => {
+      const todos = await pedidos(15);
+      const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+      const dia = iso => iso ? new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) : '';
+      const abertos = todos.filter(o => ['Unshipped', 'PartiallyShipped'].includes(o.OrderStatus) && o.FulfillmentChannel !== 'AFN');
+      const enviadosHoje = todos.filter(o => o.OrderStatus === 'Shipped' && o.FulfillmentChannel !== 'AFN' && dia(o.LastUpdateDate) === hoje);
+      _ped = { abertos, enviadosHoje, todos, em: Date.now() };
+      _pedTs = Date.now();
+      return _ped;
+    })().finally(() => { _pedProm = null; });
+    return _pedProm;
+  }
+
   async function participacoes() { return (await get('/sellers/v1/marketplaceParticipations')).payload || []; }
 
-  return { chave, nome: L.nome, configurada, get, pedidos, participacoes, MARKETPLACE_BR };
+  return { chave, nome: L.nome, configurada, get, pedidos, pedidosCache, participacoes, MARKETPLACE_BR };
 }
 
 const _l = {};
