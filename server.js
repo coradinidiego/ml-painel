@@ -1457,6 +1457,33 @@ app.post('/shopee/avaliacoes/responder-lote', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, erro: e.message }); }
 });
 
+// Resposta automática diária das avaliações 4★ e 5★ (uma vez por dia, a partir das 9h de Brasília)
+const SHP_TXT_AVAL = 'Ficamos felizes pela sua avaliação e agradecemos sua compra. Esperamos lhe atender novamente. Att. Comercial Zagodini';
+const ARQ_AUTO_AVAL = path.join(DATA, 'shopee_auto_avaliacoes.json');
+let autoAval = (() => { try { return JSON.parse(fs.readFileSync(ARQ_AUTO_AVAL)); } catch (e) { return {}; } })();
+async function autoResponderAvaliacoes(forcar) {
+  const agora = new Date(), dia = agora.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const hora = Number(agora.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false }));
+  if (!forcar && (autoAval.ultimoDia === dia || hora < 9)) return;
+  if (!shopee.getTokens().access_token) return;
+  autoAval.ultimoDia = dia;
+  try {
+    const todas = await shopee.listarAvaliacoes(1000);
+    const alvo = todas.filter(r => (r.rating_star === 4 || r.rating_star === 5) && !r.comment);
+    const r = alvo.length ? await shopee.responderAvaliacoesLote(alvo.map(x => x.rating_id), SHP_TXT_AVAL) : { ok: [], falhas: [] };
+    autoAval.ultimo = { em: agora.toISOString(), respondidas: r.ok.length, falhas: r.falhas.length, erroExemplo: r.falhas[0]?.erro || null };
+    console.log('[auto-avaliacoes] ' + r.ok.length + ' respondidas, ' + r.falhas.length + ' falhas');
+  } catch (e) {
+    autoAval.ultimo = { em: agora.toISOString(), erro: e.message };
+    autoAval.ultimoDia = null;   // tenta de novo na próxima verificação
+    console.log('[auto-avaliacoes] erro: ' + e.message);
+  }
+  try { fs.writeFileSync(ARQ_AUTO_AVAL, JSON.stringify(autoAval)); } catch (e) {}
+}
+setInterval(() => autoResponderAvaliacoes().catch(() => {}), 15 * 60 * 1000);
+setTimeout(() => autoResponderAvaliacoes().catch(() => {}), 90 * 1000);
+app.get('/shopee/auto-avaliacoes', (req, res) => res.json(autoAval));
+
 app.post('/shopee/reply-rating', async (req, res) => {
   try {
     const { rating_id, comment } = req.body;
