@@ -531,7 +531,7 @@ function renderAmazon(){
     let dir='<div class="mp">Meu: '+fmt(a.preco)+'</div>';
     if(bb&&bb.situacao==='perdendo'){
       const dif=a.preco-bb.preco;
-      dir+='<div class="pw">Buy Box: '+fmt(bb.preco)+'</div><div class="'+(dif<=2?'pc':'ptw')+'">'+(dif>0?'Baixar '+fmt(dif):'Mesmo preço')+'</div>';
+      dir+='<div class="pw">Buy Box: '+fmt(bb.preco)+'</div>'+(dif>0.009?'<div class="'+(dif<=2?'pc':'ptw')+'">Baixar '+fmt(dif)+'</div>':'<div class="pv" style="background:#FFF3E0;color:#E65100" title="O ganhador está mais caro ou igual: a Amazon está preferindo ele por outro motivo (ex.: FBA/Prime, prazo de entrega ou reputação).">'+(dif<-0.009?'Você já é mais barato':'Mesmo preço')+'</div>');
     } else if(bb&&bb.situacao==='sem'){dir+='<div class="pv">Sem Buy Box'+(bb.menorConcorrente?' · menor: '+fmt(bb.menorConcorrente):'')+'</div>';}
     else if(bb&&bb.situacao==='ganhando'){dir+='<div class="pv" style="background:#E8F5E9;color:#2E7D32">Ganhando'+(bb.concorrentes?' · '+bb.concorrentes+' concorrente'+(bb.concorrentes>1?'s':''):' · sozinho')+'</div>';}
     dir+=azLucroHtml(a);
