@@ -1409,7 +1409,7 @@ async function carregarAnunciosAmazon(k) {
     for (const a of anuncios) a.img = imgs[a.asin]?.img || null;
     // Histórico financeiro (comissão real, outras tarifas e frete DBA por SKU) — renova a cada 6h
     let hist = E.hist;
-    if (!hist || Date.now() - (E.histTs || 0) > 6 * 3600e3) {
+    if (!hist || !hist.freteFaixas || Date.now() - (E.histTs || 0) > 6 * 3600e3) {
       try { hist = await az.historicoTarifas(60); E.hist = hist; E.histTs = Date.now(); } catch (e) { console.log('[amazon] financeiro ' + k + ': ' + e.message); }
     }
     // Tarifa de comissão estimada pela Amazon no preço atual e no preço da Buy Box
@@ -1433,13 +1433,16 @@ async function carregarAnunciosAmazon(k) {
       if (comPct == null) return null;
       const tarifa = preco * comPct;
       const fixa = (t && !t.erro ? (t.total - (t.det?.ReferralFee ?? t.total)) : 0) + (h ? h.outrasUn : 0);
-      const frete = a.fba ? 0 : (h && h.freteUn > 0 ? h.freteUn : (hist?.freteMedioPedido || 0));
+      const fxs = hist?.freteFaixas || [], fxi = fxs.find(f => f.ate == null || preco < f.ate);
+      const freteFaixa = fxi && fxi.medio != null && fxi.pedidos >= 3 ? fxi.medio : null;
+      const frete = a.fba ? 0 : (h && h.freteUn > 0 && h.pedidos >= 2 ? h.freteUn : (freteFaixa ?? hist?.freteMedioPedido ?? 0));
+      const fonteFrete = a.fba ? 'FBA' : (h && h.freteUn > 0 && h.pedidos >= 2 ? 'sku' : freteFaixa != null ? 'faixa' : 'loja');
       const imposto = preco * imp;
       const lucro = preco - a.custo - tarifa - fixa - frete - emb - imposto;
       return { preco: r2(preco), frete: r2(frete), tarifa: r2(tarifa + fixa), tarifaPct: Math.round(comPct * 1000) / 10, tarifaFixa: fixa ? r2(fixa) : 0,
         custo: r2(a.custo), custoFonte: a.custoFonte, embalagem: r2(emb), imposto: r2(imposto), impostoPct: Math.round(imp * 1000) / 10, rebate: 0,
         lucro: r2(lucro), pct: Math.round(lucro / preco * 1000) / 10, mkt: 'Amazon',
-        nota: 'Comissão estimada pela Amazon para este produto' + (fixa ? '; outras tarifas e ' : '; ') + (a.fba ? 'FBA.' : (h && h.freteUn > 0 ? 'frete Envios Fácil = média real dos seus pedidos deste SKU (' + h.pedidos + ' pedido' + (h.pedidos > 1 ? 's' : '') + ', 60 dias).' : 'frete Envios Fácil = média da loja (' + (hist?.pedidosComFrete || 0) + ' pedidos, 60 dias).')) };
+        nota: 'Comissão estimada pela Amazon para este produto' + (fixa ? '; outras tarifas e ' : '; ') + (fonteFrete === 'FBA' ? 'FBA.' : fonteFrete === 'sku' ? 'frete Envios Fácil = média real dos seus pedidos deste SKU (' + h.pedidos + ' pedidos, 60 dias).' : fonteFrete === 'faixa' ? 'frete Envios Fácil = média dos seus pedidos na faixa de ' + (fxi.ate ? 'até R$ ' + fxi.ate : 'acima de R$ 200') + ' (' + fxi.pedidos + ' pedidos, 60 dias).' : 'frete Envios Fácil = média da loja (' + (hist?.pedidosComFrete || 0) + ' pedidos, 60 dias).') };
     };
     for (const a of anuncios) {
       if (a.status !== 'Active') continue;

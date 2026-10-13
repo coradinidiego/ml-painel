@@ -184,7 +184,7 @@ function criar(chave) {
       await delay(2100);
     }
     const amt = x => Number(x?.CurrencyAmount ?? x?.Amount ?? 0);
-    const sku = {}, unidPedido = {}, skusPedido = {};
+    const sku = {}, unidPedido = {}, skusPedido = {}, valorPedido = {};
     for (const s of ev.ship) for (const it of s.ShipmentItemList || []) {
       const q = it.QuantityShipped || 1, k = it.SellerSKU;
       const princ = (it.ItemChargeList || []).filter(c => c.ChargeType === 'Principal').reduce((a, c) => a + amt(c.ChargeAmount), 0);
@@ -193,20 +193,26 @@ function criar(chave) {
       const S = sku[k] ||= { princ: 0, com: 0, outras: 0, unid: 0, frete: 0, pedidos: 0 };
       S.princ += princ; S.com += com; S.outras += outras; S.unid += q; S.pedidos++;
       unidPedido[s.AmazonOrderId] = (unidPedido[s.AmazonOrderId] || 0) + q;
+      valorPedido[s.AmazonOrderId] = (valorPedido[s.AmazonOrderId] || 0) + princ;
       (skusPedido[s.AmazonOrderId] ||= []).push([k, q]);
     }
     let freteTot = 0, fretePed = 0;
+    // frete médio por faixa de valor do pedido (a tarifa do Envios Fácil muda com o preço)
+    const FAIXAS = [30, 50, 79, 120, 200, Infinity], fx = FAIXAS.map(() => ({ t: 0, n: 0 }));
+    const faixa = v => FAIXAS.findIndex(l => v < l);
     for (const s of ev.serv) {
       const v = (s.FeeList || []).filter(f => /Postage|Shipping/i.test(f.FeeType)).reduce((a, f) => a - amt(f.FeeAmount), 0);
       if (!v || !s.AmazonOrderId) continue;
       freteTot += v; fretePed++;
+      if (valorPedido[s.AmazonOrderId] != null) { const f = fx[faixa(valorPedido[s.AmazonOrderId])]; f.t += v; f.n++; }
       const tot = unidPedido[s.AmazonOrderId];
       for (const [k, q] of skusPedido[s.AmazonOrderId] || []) if (sku[k] && tot) sku[k].frete += v * q / tot;
     }
     const out = {};
     for (const [k, S] of Object.entries(sku)) if (S.unid) out[k] = {
       comPct: S.princ ? S.com / S.princ : null, outrasUn: S.outras / S.unid, freteUn: S.frete / S.unid, unid: S.unid, pedidos: S.pedidos };
-    return { porSku: out, freteMedioPedido: fretePed ? freteTot / fretePed : null, pedidosComFrete: fretePed, dias };
+    const freteFaixas = FAIXAS.map((l, i) => ({ ate: l === Infinity ? null : l, medio: fx[i].n ? fx[i].t / fx[i].n : null, pedidos: fx[i].n }));
+    return { porSku: out, freteMedioPedido: fretePed ? freteTot / fretePed : null, pedidosComFrete: fretePed, freteFaixas, dias };
   }
 
   async function participacoes() { return (await get('/sellers/v1/marketplaceParticipations')).payload || []; }
