@@ -1354,6 +1354,18 @@ app.get('/amazon/dados', async (req, res) => {
     res.json({ status: 'pronto', atualizadoEm: new Date(d.em).toISOString(), pedidos: d.todos.map(r) });
   } catch (e) { res.json({ status: 'erro', erro: e.message }); }
 });
+// Diagnóstico (admin): relatório de anúncios cru (primeiras linhas) e ofertas de 2 ASINs
+app.get('/debug/amazon-teste', async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const az = amazon.loja(req.query.loja || 'lufe');
+  try {
+    const txt = await az.relatorio('GET_MERCHANT_LISTINGS_ALL_DATA');
+    const ls = az.tsv(txt);
+    const asins = [...new Set(ls.map(l => l.asin1).filter(Boolean))].slice(0, 2);
+    const of = asins.length ? await az.ofertas(asins) : [];
+    res.json({ linhas: ls.length, colunas: Object.keys(ls[0] || {}), exemplo: ls.slice(0, 2), status: ls.reduce((a, l) => (a[l.status] = (a[l.status] || 0) + 1, a), {}), ofertas: of });
+  } catch (e) { res.status(500).json({ erro: e.message }); }
+});
 // Diagnóstico (admin): GET cru na SP-API. /debug/amazon-raw?loja=lufe&path=/orders/v0/orders&CreatedAfter=...
 app.get('/debug/amazon-raw', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });

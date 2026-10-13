@@ -88,9 +88,54 @@ function criar(chave) {
     return _pedProm;
   }
 
+  async function post(path, body, tent = 4) {
+    for (let i = 0; i < tent; i++) {
+      try {
+        return (await axios.post(ENDPOINT + path, body, { timeout: 30000, headers: { 'x-amz-access-token': await accessToken(), 'Content-Type': 'application/json' } })).data;
+      } catch (e) {
+        const st = e.response?.status;
+        if ((st === 429 || st >= 500) && i < tent - 1) { await delay(3000 * (i + 1)); continue; }
+        const er = e.response?.data?.errors?.[0];
+        throw new Error(path + ': ' + (er ? er.code + ' — ' + er.message : e.message));
+      }
+    }
+  }
+
+  /** Pede um relatório, espera ficar pronto e devolve o texto (TSV). */
+  async function relatorio(tipo, maxEspera = 300e3) {
+    const c = await post('/reports/2021-06-30/reports', { reportType: tipo, marketplaceIds: [MARKETPLACE_BR] });
+    const t0 = Date.now();
+    let r;
+    do {
+      await delay(15000);
+      r = await get('/reports/2021-06-30/reports/' + c.reportId);
+      if (['CANCELLED', 'FATAL'].includes(r.processingStatus)) throw new Error('relatório ' + tipo + ': ' + r.processingStatus);
+    } while (r.processingStatus !== 'DONE' && Date.now() - t0 < maxEspera);
+    if (r.processingStatus !== 'DONE') throw new Error('relatório ' + tipo + ' demorou demais');
+    const doc = await get('/reports/2021-06-30/documents/' + r.reportDocumentId);
+    const bin = (await axios.get(doc.url, { responseType: 'arraybuffer', timeout: 60000 })).data;
+    const buf = doc.compressionAlgorithm === 'GZIP' ? require('zlib').gunzipSync(Buffer.from(bin)) : Buffer.from(bin);
+    // relatórios do BR vêm em UTF-8 ou Latin-1
+    let txt = buf.toString('utf8');
+    if (txt.includes('\uFFFD')) txt = buf.toString('latin1');
+    return txt;
+  }
+  const tsv = txt => {
+    const [cab, ...ls] = txt.split(/\r?\n/).filter(Boolean);
+    const h = cab.split('\t');
+    return ls.map(l => { const v = l.split('\t'); return Object.fromEntries(h.map((k, i) => [k, v[i]])); });
+  };
+
+  /** Ofertas de até 20 ASINs (Buy Box, ganhador, menor preço). */
+  async function ofertas(asins) {
+    const requests = asins.slice(0, 20).map(a => ({ uri: '/products/pricing/v0/items/' + a + '/offers', method: 'GET', MarketplaceId: MARKETPLACE_BR, ItemCondition: 'New', CustomerType: 'Consumer' }));
+    const d = await post('/batches/products/pricing/v0/itemOffers', { requests });
+    return d.responses || [];
+  }
+
   async function participacoes() { return (await get('/sellers/v1/marketplaceParticipations')).payload || []; }
 
-  return { chave, nome: L.nome, configurada, get, pedidos, pedidosCache, participacoes, MARKETPLACE_BR };
+  return { chave, nome: L.nome, configurada, get, post, relatorio, tsv, ofertas, pedidos, pedidosCache, participacoes, MARKETPLACE_BR };
 }
 
 const _l = {};
