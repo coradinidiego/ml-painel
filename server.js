@@ -1417,6 +1417,22 @@ app.post('/amazon/anuncios/atualizar', (req, res) => {
   carregarAnunciosAmazon(k); res.json({ ok: true });
 });
 
+// Diagnóstico (admin): catálogo, tarifas e eventos financeiros de exemplo
+app.get('/debug/amazon-teste2', async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const k = req.query.loja || 'lufe', az = amazon.loja(k), A = AZ_ANUNCIOS[k]?.anuncios || [];
+  const ex = A.filter(a => a.status === 'Active').slice(0, 3);
+  const out = {};
+  try { out.catalogo = await az.catalogo(ex.map(a => a.asin)); } catch (e) { out.catalogo = e.message; }
+  try { out.tarifas = await az.tarifas(ex.map(a => ({ asin: a.asin, preco: a.preco, fba: a.fba, id: a.sku }))); } catch (e) { out.tarifas = e.message; }
+  try {
+    const desde = new Date(Date.now() - 20 * 864e5).toISOString();
+    const f = await az.get('/finances/v0/financialEvents', { PostedAfter: desde, MaxResultsPerPage: 20 });
+    const ev = f.payload?.FinancialEvents || {};
+    out.financeiro = { chaves: Object.keys(ev).filter(x => ev[x]?.length), envio: JSON.stringify(ev.ShipmentEventList?.slice(0, 2)).slice(0, 3000), servico: JSON.stringify(ev.ServiceFeeEventList?.slice(0, 3)).slice(0, 1500) };
+  } catch (e) { out.financeiro = e.message; }
+  res.json(out);
+});
 // Diagnóstico (admin): relatório de anúncios cru (primeiras linhas) e ofertas de 2 ASINs
 app.get('/debug/amazon-teste', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });

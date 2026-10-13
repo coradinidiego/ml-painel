@@ -133,9 +133,42 @@ function criar(chave) {
     return d.responses || [];
   }
 
+  /** Imagem e título de até 20 ASINs (Catalog Items). */
+  async function catalogo(asins) {
+    const d = await get('/catalog/2022-04-01/items', { identifiers: asins.slice(0, 20).join(','), identifiersType: 'ASIN', marketplaceIds: MARKETPLACE_BR, includedData: 'images,summaries' });
+    const out = {};
+    for (const it of d.items || []) {
+      const imgs = (it.images?.[0]?.images || []).filter(i => i.variant === 'MAIN');
+      const img = imgs.sort((a, b) => Math.abs(a.width - 300) - Math.abs(b.width - 300))[0] || it.images?.[0]?.images?.[0];
+      out[it.asin] = { img: img?.link || null, titulo: it.summaries?.[0]?.itemName || null };
+    }
+    return out;
+  }
+
+  /** Tarifas da Amazon (comissão, tarifa fixa, FBA) para vários preços de uma vez. itens: [{asin, preco, fba, id}] */
+  async function tarifas(itens) {
+    const body = itens.slice(0, 20).map(i => ({
+      FeesEstimateRequest: { MarketplaceId: MARKETPLACE_BR, IsAmazonFulfilled: !!i.fba, Identifier: i.id,
+        PriceToEstimateFees: { ListingPrice: { CurrencyCode: 'BRL', Amount: Number(i.preco.toFixed(2)) }, Shipping: { CurrencyCode: 'BRL', Amount: 0 } } },
+      IdType: 'ASIN', IdValue: i.asin,
+    }));
+    const d = await post('/products/fees/v0/feesEstimate', body);
+    const out = {};
+    for (const r of Array.isArray(d) ? d : []) {
+      const id = r.FeesEstimateIdentifier?.SellerInputIdentifier;
+      const fe = r.FeesEstimate;
+      if (!id) continue;
+      if (r.Status !== 'Success' || !fe) { out[id] = { erro: r.Error?.Message || r.Status }; continue; }
+      const det = {};
+      for (const f of fe.FeeDetailList || []) det[f.FeeType] = (f.FinalFee?.Amount ?? f.FeeAmount?.Amount ?? 0);
+      out[id] = { total: fe.TotalFeesEstimate?.Amount ?? 0, det };
+    }
+    return out;
+  }
+
   async function participacoes() { return (await get('/sellers/v1/marketplaceParticipations')).payload || []; }
 
-  return { chave, nome: L.nome, configurada, get, post, relatorio, tsv, ofertas, pedidos, pedidosCache, participacoes, MARKETPLACE_BR };
+  return { chave, nome: L.nome, configurada, get, post, relatorio, tsv, ofertas, catalogo, tarifas, pedidos, pedidosCache, participacoes, MARKETPLACE_BR };
 }
 
 const _l = {};
