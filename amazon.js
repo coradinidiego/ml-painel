@@ -166,9 +166,52 @@ function criar(chave) {
     return out;
   }
 
+  /**
+   * Histórico financeiro (últimos `dias`) por SKU: comissão %, outras tarifas por unidade e frete por unidade
+   * (MFNPostageFee = frete do Envios Fácil/DBA, cobrado por pedido e rateado pelas unidades do pedido).
+   */
+  async function historicoTarifas(dias = 60) {
+    const ev = { ship: [], serv: [] };
+    let next = null;
+    const desde = new Date(Date.now() - dias * 864e5).toISOString();
+    for (let pg = 0; pg < 60; pg++) {
+      const d = await get('/finances/v0/financialEvents', next ? { NextToken: next } : { PostedAfter: desde, MaxResultsPerPage: 100 });
+      const fe = d.payload?.FinancialEvents || {};
+      ev.ship.push(...(fe.ShipmentEventList || []));
+      ev.serv.push(...(fe.ServiceFeeEventList || []));
+      next = d.payload?.NextToken;
+      if (!next) break;
+      await delay(2100);
+    }
+    const amt = x => Number(x?.CurrencyAmount ?? x?.Amount ?? 0);
+    const sku = {}, unidPedido = {}, skusPedido = {};
+    for (const s of ev.ship) for (const it of s.ShipmentItemList || []) {
+      const q = it.QuantityShipped || 1, k = it.SellerSKU;
+      const princ = (it.ItemChargeList || []).filter(c => c.ChargeType === 'Principal').reduce((a, c) => a + amt(c.ChargeAmount), 0);
+      let com = 0, outras = 0;
+      for (const f of it.ItemFeeList || []) { const v = -amt(f.FeeAmount); if (f.FeeType === 'Commission') com += v; else outras += v; }
+      const S = sku[k] ||= { princ: 0, com: 0, outras: 0, unid: 0, frete: 0, pedidos: 0 };
+      S.princ += princ; S.com += com; S.outras += outras; S.unid += q; S.pedidos++;
+      unidPedido[s.AmazonOrderId] = (unidPedido[s.AmazonOrderId] || 0) + q;
+      (skusPedido[s.AmazonOrderId] ||= []).push([k, q]);
+    }
+    let freteTot = 0, fretePed = 0;
+    for (const s of ev.serv) {
+      const v = (s.FeeList || []).filter(f => /Postage|Shipping/i.test(f.FeeType)).reduce((a, f) => a - amt(f.FeeAmount), 0);
+      if (!v || !s.AmazonOrderId) continue;
+      freteTot += v; fretePed++;
+      const tot = unidPedido[s.AmazonOrderId];
+      for (const [k, q] of skusPedido[s.AmazonOrderId] || []) if (sku[k] && tot) sku[k].frete += v * q / tot;
+    }
+    const out = {};
+    for (const [k, S] of Object.entries(sku)) if (S.unid) out[k] = {
+      comPct: S.princ ? S.com / S.princ : null, outrasUn: S.outras / S.unid, freteUn: S.frete / S.unid, unid: S.unid, pedidos: S.pedidos };
+    return { porSku: out, freteMedioPedido: fretePed ? freteTot / fretePed : null, pedidosComFrete: fretePed, dias };
+  }
+
   async function participacoes() { return (await get('/sellers/v1/marketplaceParticipations')).payload || []; }
 
-  return { chave, nome: L.nome, configurada, get, post, relatorio, tsv, ofertas, catalogo, tarifas, pedidos, pedidosCache, participacoes, MARKETPLACE_BR };
+  return { chave, nome: L.nome, configurada, get, post, relatorio, tsv, ofertas, catalogo, tarifas, historicoTarifas, pedidos, pedidosCache, participacoes, MARKETPLACE_BR };
 }
 
 const _l = {};

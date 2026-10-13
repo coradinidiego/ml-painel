@@ -250,6 +250,7 @@ body{background:#f0f2f5;color:#111}
       <option value="perdendo">🔴 Perdendo Buy Box</option><option value="sem">⚪ Sem Buy Box</option><option value="ganhando">🟢 Ganhando Buy Box</option>
       <option value="semEstoque">🚫 Sem estoque</option><option value="baixo">⚠️ Estoque baixo (≤3)</option><option value="incompleto">🧩 Incompletos</option><option value="inativo">⏸️ Inativos</option><option value="">Todos os anúncios</option>
     </select>
+    <select class="sselect" id="az-fl" onchange="renderAmazon()" title="Lucro no preço da Buy Box"><option value="">Qualquer lucro</option><option value="0">Lucro na Buy Box ≥ 0%</option><option value="10">≥ 10%</option><option value="15">≥ 15%</option><option value="20">≥ 20%</option></select>
     <input class="sinput" id="az-b" placeholder="Buscar por nome, SKU ou ASIN..." oninput="renderAmazon()">
   </div>
   <div class="section"><div class="sec-head"><span id="az-tit">Anúncios</span> <span class="cnt" id="az-c">-</span></div><div id="az-lista"><div class="loading">Carregando...</div></div></div>
@@ -500,6 +501,12 @@ async function atualizarAmazon(){
   set('az-upd','Atualizando… a Amazon leva de 2 a 4 minutos para gerar o relatório.');
   setTimeout(()=>{if(modoAmazon)carregarAmazon();},30000);
 }
+function azLucroHtml(a){
+  if(a.lucro_ptw_pct!=null)return lucroHtml(a).replace("'No preço para ganhar'","'No preço da Buy Box'");
+  if(a.lucro_atual_pct!=null){const v=a.lucro_atual_pct,cor=v<0?'#c62828':v<10?'#e67e00':'#2e7d32';
+    return '<div style="font-size:12px;margin-top:3px;white-space:nowrap">Lucro: <b class="ctw" style="color:'+cor+'">'+v.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%'+calcTip(a.calc_atual,'Hoje, no seu preço')+'</b></div>';}
+  return a.status==='Active'?'<div style="font-size:11px;color:#999;margin-top:2px">Lucro: '+shpEsc(a.margem_obs||'calculando…')+'</div>':'';
+}
 function azFiltro(f){el('az-f').value=f;renderAmazon();}
 const AZ_TIT={perdendo:'🔴 Perdendo Buy Box',sem:'⚪ Sem Buy Box (ninguém ganha — geralmente preço acima do aceito pela Amazon)',ganhando:'🟢 Ganhando Buy Box',semEstoque:'🚫 Sem estoque',baixo:'⚠️ Estoque baixo (até 3 unidades)',incompleto:'🧩 Anúncios incompletos (precisam de correção)',inativo:'⏸️ Anúncios inativos','':'Todos os anúncios'};
 function renderAmazon(){
@@ -512,6 +519,7 @@ function renderAmazon(){
   const f=el('az-f').value,q=(el('az-b').value||'').toLowerCase().trim();
   let L=g[f]||A;
   if(q)L=L.filter(a=>(a.nome||'').toLowerCase().includes(q)||(a.sku||'').toLowerCase().includes(q)||(a.asin||'').toLowerCase().includes(q));
+  const fl=el('az-fl').value;if(fl!=='')L=L.filter(a=>{const v=a.lucro_ptw_pct??a.lucro_atual_pct;return v!=null&&v>=parseFloat(fl);});
   if(f==='perdendo')L=[...L].sort((x,y)=>((x.preco-(x.bb.preco||0))/x.preco)-((y.preco-(y.bb.preco||0))/y.preco));
   else if(f==='baixo')L=[...L].sort((x,y)=>x.qtd-y.qtd);
   set('az-tit',AZ_TIT[f]||'Anúncios');set('az-c',L.length);
@@ -526,11 +534,11 @@ function renderAmazon(){
       dir+='<div class="pw">Buy Box: '+fmt(bb.preco)+'</div><div class="'+(dif<=2?'pc':'ptw')+'">'+(dif>0?'Baixar '+fmt(dif):'Mesmo preço')+'</div>';
     } else if(bb&&bb.situacao==='sem'){dir+='<div class="pv">Sem Buy Box'+(bb.menorConcorrente?' · menor: '+fmt(bb.menorConcorrente):'')+'</div>';}
     else if(bb&&bb.situacao==='ganhando'){dir+='<div class="pv" style="background:#E8F5E9;color:#2E7D32">Ganhando'+(bb.concorrentes?' · '+bb.concorrentes+' concorrente'+(bb.concorrentes>1?'s':''):' · sozinho')+'</div>';}
-    if(a.custo)dir+='<div style="font-size:11px;color:#666;margin-top:2px">Custo ('+shpEsc(a.custoFonte)+'): '+fmt(a.custo)+(a.preco?' · '+Math.round((a.preco-a.custo)/a.preco*100)+'% bruto':'')+'</div>';
+    dir+=azLucroHtml(a);
     const ganh=bb?.ganhador&&urlOk(bb.ganhador.id)?'<div class="imeta" style="margin-top:3px">🏆 Ganhador: '+(bb.ganhador.id==='A1ZZFT5FULY4LN'?'<b>Amazon.com.br (a própria Amazon)</b>':'<a class="alink" href="https://www.amazon.com.br/sp?seller='+bb.ganhador.id+'" target="_blank" rel="noopener">ver loja</a>')+(bb.ganhador.fba?' <span class="pv">FBA</span>':'')+(bb.ganhador.avaliacoes!=null?' · '+bb.ganhador.nota+'% positivas ('+bb.ganhador.avaliacoes+')':'')+'</div>':'';
     const est=a.fba?'<span class="pv">FBA</span>':'Estoque: <b style="color:'+(a.qtd<=0?'#C62828':a.qtd<=3?'#E65100':'inherit')+'">'+a.qtd+'</b>';
     const stt=a.status!=='Active'?' · <span style="color:#C62828">'+(a.status==='Incomplete'?'Incompleto':a.status==='Inactive'?'Inativo':shpEsc(a.status))+'</span>':'';
-    return '<div class="item-row"><div class="thumb" style="font-size:18px">📦</div><div class="iinfo"><div class="ititle">'+shpEsc(a.nome)+'</div><div class="imeta">SKU: '+shpEsc(a.sku)+' · ASIN: '+shpEsc(a.asin||'-')+' · '+est+stt+' · '+(urlOk(a.asin)?'<a class="alink" href="https://www.amazon.com.br/dp/'+a.asin+'" target="_blank" rel="noopener">Ver na Amazon</a> · ':'')+'<a class="alink" href="'+linkSC+'" target="_blank" rel="noopener">Editar</a></div>'+ganh+'</div><div class="prices">'+dir+'</div></div>';
+    return '<div class="item-row"><div class="thumb">'+(a.img?'<img src="'+shpEsc(a.img)+'" loading="lazy" />':'📦')+'</div><div class="iinfo"><div class="ititle">'+shpEsc(a.nome)+'</div><div class="imeta">SKU: '+shpEsc(a.sku)+' · ASIN: '+shpEsc(a.asin||'-')+' · '+est+stt+' · '+(urlOk(a.asin)?'<a class="alink" href="https://www.amazon.com.br/dp/'+a.asin+'" target="_blank" rel="noopener">Ver na Amazon</a> · ':'')+'<a class="alink" href="'+linkSC+'" target="_blank" rel="noopener">Editar</a></div>'+ganh+'</div><div class="prices">'+dir+'</div></div>';
   }).join('')+(L.length>400?'<div class="loading">Mostrando 400 de '+L.length+'. Use a busca.</div>':'');
 }
 setInterval(()=>{if(modoAmazon)carregarAmazon();},10*60e3);
@@ -806,7 +814,7 @@ function calcTip(c,titulo){
     '<div class="ct-h">'+titulo+'</div>'+
     l('Preço de venda',m(c.preco))+
     l('Envio (pago por você)',m(c.frete),1)+
-    l('Tarifa ML'+(c.tarifaPct!=null?' ('+p(c.tarifaPct)+(c.tarifaFixa?' + '+m(c.tarifaFixa):'')+')':''),m(c.tarifa),1)+
+    l('Tarifa '+(c.mkt||'ML')+(c.tarifaPct!=null?' ('+p(c.tarifaPct)+(c.tarifaFixa?' + '+m(c.tarifaFixa):'')+')':''),m(c.tarifa),1)+
     l('Custo do produto <small>('+escH(c.custoFonte)+')</small>',m(c.custo),1)+
     (c.embalagem?l('Embalagem',m(c.embalagem),1):'')+
     l('Imposto ('+p(c.impostoPct)+')',m(c.imposto),1)+
@@ -814,7 +822,7 @@ function calcTip(c,titulo){
     '<div class="ct-t '+(c.lucro<0?'neg':c.pct<10?'mid':'pos')+'"><span>Margem</span><span>'+m(c.lucro)+' ('+p(c.pct)+')</span></div>'+
     (c.rebate&&c.campanhaStatus&&c.campanhaStatus!=='ativa'?'<div class="ct-n" style="color:#5ee08f">Campanha '+escH(c.campanhaStatus)+' para este anúncio: entre nela em Promoções para valer este preço com a redução.</div>':'')+
     (c.perdeCampanha?'<div class="ct-n" style="color:#ffb547">Neste preço o anúncio sai da campanha “'+escH(c.campanhaNome)+'” e perde a redução de tarifa do ML.</div>':'')+
-    '<div class="ct-n">Envio e tarifa informados pelo Mercado Livre para este anúncio'+(c.tipoAnuncio?' ('+escH(c.tipoAnuncio)+')':'')+(c.pesoG?' · peso faturável '+c.pesoG+' g':'')+'.</div>'+
+    (c.nota?'<div class="ct-n">'+escH(c.nota)+'</div>':'<div class="ct-n">Envio e tarifa informados pelo Mercado Livre para este anúncio'+(c.tipoAnuncio?' ('+escH(c.tipoAnuncio)+')':'')+(c.pesoG?' · peso faturável '+c.pesoG+' g':'')+'.</div>')+
   '</div>';
 }
 function lucroHtml(it){
@@ -824,7 +832,7 @@ function lucroHtml(it){
   const atual=it.lucro_atual_pct!=null?'<span class="ctw" style="color:'+cor(it.lucro_atual_pct)+'">'+pc(it.lucro_atual_pct)+calcTip(it.calc_atual,'Hoje, no seu preço')+'</span> → ':'';
   const cc=it.calc_campanha;
   const camp=cc?'<div style="font-size:12px;margin-top:2px;white-space:nowrap">🎯 Com campanha <b>'+String(cc.campanha||'').replace(/[&<>"]/g,'')+'</b> ('+fmt(cc.preco)+'): <b class="ctw" style="color:'+cor(cc.pct)+'">'+pc(cc.pct)+calcTip(cc,'Na campanha com redução do ML ('+fmt(cc.preco)+')')+'</b></div>':'';
-  return '<div style="font-size:12px;margin-top:3px;white-space:nowrap">Lucro: '+atual+'<b class="ctw" style="color:'+cor(it.lucro_ptw_pct)+'">'+pc(it.lucro_ptw_pct)+calcTip(it.calc_ptw,'No preço para ganhar'+(it.calc_ptw&&it.calc_ptw.rebate?' (com redução do ML)':''))+'</b></div>'+camp;
+  return '<div style="font-size:12px;margin-top:3px;white-space:nowrap">Lucro: '+atual+'<b class="ctw" style="color:'+cor(it.lucro_ptw_pct)+'">'+pc(it.lucro_ptw_pct)+calcTip(it.calc_ptw,(it.calc_ptw&&it.calc_ptw.mkt==='Amazon'?'No preço da Buy Box':'No preço para ganhar')+(it.calc_ptw&&it.calc_ptw.rebate?' (com redução do ML)':''))+'</b></div>'+camp;
 }
 
 function renderConcorrentes(){

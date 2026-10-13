@@ -1399,8 +1399,61 @@ async function carregarAnunciosAmazon(k) {
         menorConcorrente: outros.length ? Math.min(...outros.map(preco)) : null,
       };
     }
-    Object.assign(E, { status: 'pronto', em: new Date().toISOString(), anuncios, eu, erro: null });
+    // Imagens (catálogo da Amazon, 20 ASINs por consulta)
+    const imgs = { ...(E.imgs || {}) };
+    const faltam = [...new Set(anuncios.map(a => a.asin).filter(x => x && !imgs[x]))];
+    for (let i = 0; i < faltam.length; i += 20) {
+      try { Object.assign(imgs, await az.catalogo(faltam.slice(i, i + 20))); } catch (e) { console.log('[amazon] catálogo ' + k + ': ' + e.message); }
+      await new Promise(r => setTimeout(r, 600));
+    }
+    for (const a of anuncios) a.img = imgs[a.asin]?.img || null;
+    // Histórico financeiro (comissão real, outras tarifas e frete DBA por SKU) — renova a cada 6h
+    let hist = E.hist;
+    if (!hist || Date.now() - (E.histTs || 0) > 6 * 3600e3) {
+      try { hist = await az.historicoTarifas(60); E.hist = hist; E.histTs = Date.now(); } catch (e) { console.log('[amazon] financeiro ' + k + ': ' + e.message); }
+    }
+    // Tarifa de comissão estimada pela Amazon no preço atual e no preço da Buy Box
+    const pedidosTar = [];
+    for (const a of anuncios) if (a.status === 'Active' && a.asin) {
+      pedidosTar.push({ asin: a.asin, preco: a.preco, fba: a.fba, id: a.sku + '|atual' });
+      if (a.bb?.situacao === 'perdendo' && a.bb.preco > 0 && a.bb.preco < a.preco) pedidosTar.push({ asin: a.asin, preco: a.bb.preco, fba: a.fba, id: a.sku + '|bb' });
+    }
+    const tar = {};
+    for (let i = 0; i < pedidosTar.length; i += 20) {
+      try { Object.assign(tar, await az.tarifas(pedidosTar.slice(i, i + 20))); } catch (e) { console.log('[amazon] tarifas ' + k + ': ' + e.message); }
+      await new Promise(r => setTimeout(r, 2200));
+    }
+    const cfgE = require('./config_empresas').porMlIdx(idxErp) || {};
+    const imp = cfgE.imposto ?? 0.05, emb = cfgE.embalagem ?? 0;
+    const r2 = x => Math.round(x * 100) / 100;
+    const calc = (a, preco, t) => {
+      if (!(preco > 0) || a.custo == null) return null;
+      const h = hist?.porSku?.[a.sku];
+      const comPct = t && !t.erro && preco ? (t.det?.ReferralFee ?? t.total) / preco : (h?.comPct ?? null);
+      if (comPct == null) return null;
+      const tarifa = preco * comPct;
+      const fixa = (t && !t.erro ? (t.total - (t.det?.ReferralFee ?? t.total)) : 0) + (h ? h.outrasUn : 0);
+      const frete = a.fba ? 0 : (h && h.freteUn > 0 ? h.freteUn : (hist?.freteMedioPedido || 0));
+      const imposto = preco * imp;
+      const lucro = preco - a.custo - tarifa - fixa - frete - emb - imposto;
+      return { preco: r2(preco), frete: r2(frete), tarifa: r2(tarifa + fixa), tarifaPct: Math.round(comPct * 1000) / 10, tarifaFixa: fixa ? r2(fixa) : 0,
+        custo: r2(a.custo), custoFonte: a.custoFonte, embalagem: r2(emb), imposto: r2(imposto), impostoPct: Math.round(imp * 1000) / 10, rebate: 0,
+        lucro: r2(lucro), pct: Math.round(lucro / preco * 1000) / 10, mkt: 'Amazon',
+        nota: 'Comissão estimada pela Amazon para este produto' + (fixa ? '; outras tarifas e ' : '; ') + (a.fba ? 'FBA.' : (h && h.freteUn > 0 ? 'frete Envios Fácil = média real dos seus pedidos deste SKU (' + h.pedidos + ' pedido' + (h.pedidos > 1 ? 's' : '') + ', 60 dias).' : 'frete Envios Fácil = média da loja (' + (hist?.pedidosComFrete || 0) + ' pedidos, 60 dias).')) };
+    };
+    for (const a of anuncios) {
+      if (a.status !== 'Active') continue;
+      const atual = calc(a, a.preco, tar[a.sku + '|atual']);
+      if (atual) { a.calc_atual = atual; a.lucro_atual_pct = atual.pct; }
+      if (a.bb?.situacao === 'perdendo' && a.bb.preco > 0) {
+        const bb = a.bb.preco < a.preco ? calc(a, a.bb.preco, tar[a.sku + '|bb']) : atual;
+        if (bb) { a.calc_ptw = bb; a.lucro_ptw_pct = bb.pct; }
+      }
+      if (a.custo == null) a.margem_obs = 'sem custo no Tiny/Bling';
+    }
+    Object.assign(E, { status: 'pronto', em: new Date().toISOString(), anuncios, eu, erro: null, imgs });
     try { fs.mkdirSync(path.dirname(ARQ_AZ(k)), { recursive: true }); fs.writeFileSync(ARQ_AZ(k), JSON.stringify(E)); } catch (e) {}
+    E.duracaoSeg = Math.round((Date.now() - E.inicio) / 1000);
     console.log('[amazon] ' + k + ': ' + anuncios.length + ' anúncios, ' + Object.keys(of).length + ' com ofertas');
   } catch (e) { E.status = 'erro'; E.erro = e.message; console.log('[amazon] anúncios ' + k + ': ' + e.message); }
 }
@@ -1410,7 +1463,8 @@ setInterval(anunciosAmazonTodas, 2 * 3600e3);
 app.get('/amazon/anuncios', (req, res) => {
   const k = amazon.LOJAS[req.query.loja] ? req.query.loja : 'lufe';
   if (!amazon.loja(k).configurada()) return res.json({ status: 'sem_auth' });
-  res.json(AZ_ANUNCIOS[k] || { status: 'aguardando' });
+  const { imgs, hist, ...E } = AZ_ANUNCIOS[k] || { status: 'aguardando' };
+  res.json(E);
 });
 app.post('/amazon/anuncios/atualizar', (req, res) => {
   const k = amazon.LOJAS[req.query.loja] ? req.query.loja : 'lufe';
