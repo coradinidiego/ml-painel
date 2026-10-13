@@ -396,10 +396,11 @@ router.get('/bling-situacoes/:idx', async (req, res) => {
   try { out.situacoes = await situacoesBling(idx); } catch (e) { out.erroSituacoes = (e.response?.status || '') + ' ' + JSON.stringify(e.response?.data || e.message).slice(0, 400); }
   const hoje = hojeIso(), janela = { dataInicial: isoMenosDias(hoje, JANELA_DIAS), dataFinal: hoje };
   const canais = await canaisBling(idx);
+  if (req.query.fluxo) { try { out.fluxo = await coletarFluxoBling({ idx, id: 'diag' }, req.query.fluxo, canais, hoje, janela); out.fluxo = out.fluxo && out.fluxo.reduce((a, l) => (a[l.tipo] = (a[l.tipo] || 0) + 1, a), {}); } catch (e) { out.fluxoErro = e.stack?.slice(0, 500) || e.message; } }
   out.canais = canais; out.lojasDescobertas = Object.fromEntries(Object.entries(_lojaCanal).map(([k, v]) => [k, [...v.ids]]));
   out.contagem = {};
   for (const id of (req.query.sit ? req.query.sit.split(',').map(Number) : [6, 9, 24])) {
-    try { const l = await blingListar(idx, [id], janela); const pc = {}; l.forEach(p => { const c = canalBling(canais, p) + '#loja' + (p.loja?.id || '?'); pc[c] = (pc[c] || 0) + 1; }); out.contagem[id] = { total: l.length, porCanal: pc, exNum: l.filter(p => /shopee/i.test(canalBling(canais, p))).slice(0, 3).map(p => p.numeroLoja) }; }
+    try { const l = await blingListar(idx, [id], req.query.idLoja ? { ...janela, idLoja: req.query.idLoja } : janela); const pc = {}; l.forEach(p => { const c = canalBling(canais, p) + '#loja' + (p.loja?.id || '?'); pc[c] = (pc[c] || 0) + 1; }); out.contagem[id] = { total: l.length, porCanal: pc, exNum: l.filter(p => /shopee/i.test(canalBling(canais, p))).slice(0, 3).map(p => p.numeroLoja) }; }
     catch (e) { out.contagem[id] = 'erro ' + e.message; }
     await delay(400);
   }
