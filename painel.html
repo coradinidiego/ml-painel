@@ -233,20 +233,27 @@ body{background:#f0f2f5;color:#111}
   </div>
 </div>
 
-<!-- Conteúdo Amazon -->
+<!-- Conteúdo Amazon: Buy Box, estoque e anúncios (pedidos ficam na TV) -->
 <div id="amazon-content"><div class="content">
   <div class="cards">
-    <div class="card b" onclick="azFiltro('aenviar')"><div class="icon">📦</div><div class="num" id="az-enviar">-</div><div class="lbl">A enviar</div></div>
-    <div class="card r" onclick="azFiltro('atraso')"><div class="icon">⏰</div><div class="num" id="az-atraso">-</div><div class="lbl">Envio vence hoje/atrasado</div></div>
-    <div class="card g" onclick="azFiltro('hoje')"><div class="icon">🛒</div><div class="num" id="az-hoje">-</div><div class="lbl">Pedidos hoje</div></div>
-    <div class="card p" onclick="azFiltro('')"><div class="icon">💰</div><div class="num" id="az-fat">-</div><div class="lbl">Vendido 15 dias</div></div>
+    <div class="card r" onclick="azFiltro('perdendo')"><div class="icon">🔴</div><div class="num" id="az-perd">-</div><div class="lbl">Perdendo Buy Box</div></div>
+    <div class="card a" onclick="azFiltro('sem')"><div class="icon">⚪</div><div class="num" id="az-sem">-</div><div class="lbl">Sem Buy Box</div></div>
+    <div class="card g" onclick="azFiltro('ganhando')"><div class="icon">🟢</div><div class="num" id="az-ganh">-</div><div class="lbl">Ganhando Buy Box</div></div>
+    <div class="card b" onclick="azFiltro('')"><div class="icon">📦</div><div class="num" id="az-ativos">-</div><div class="lbl">Anúncios ativos</div></div>
+    <div class="card c" onclick="azFiltro('semEstoque')"><div class="icon">🚫</div><div class="num" id="az-semest">-</div><div class="lbl">Sem estoque</div></div>
+    <div class="card a" onclick="azFiltro('baixo')"><div class="icon">⚠️</div><div class="num" id="az-baixo">-</div><div class="lbl">Estoque baixo (≤3)</div></div>
+    <div class="card p" onclick="azFiltro('incompleto')"><div class="icon">🧩</div><div class="num" id="az-inc">-</div><div class="lbl">Incompletos</div></div>
+    <div class="card c" onclick="azFiltro('inativo')"><div class="icon">⏸️</div><div class="num" id="az-inat">-</div><div class="lbl">Inativos</div></div>
   </div>
   <div class="sf">
-    <select class="sselect" id="az-f" onchange="renderAmazon()"><option value="aenviar">A enviar</option><option value="atraso">Vence hoje/atrasado</option><option value="hoje">Pedidos de hoje</option><option value="Shipped">Enviados</option><option value="Canceled">Cancelados</option><option value="Pending">Aguardando pagamento</option><option value="">Todos (15 dias)</option></select>
-    <input class="sinput" id="az-b" placeholder="Buscar nº do pedido..." oninput="renderAmazon()">
+    <select class="sselect" id="az-f" onchange="renderAmazon()">
+      <option value="perdendo">🔴 Perdendo Buy Box</option><option value="sem">⚪ Sem Buy Box</option><option value="ganhando">🟢 Ganhando Buy Box</option>
+      <option value="semEstoque">🚫 Sem estoque</option><option value="baixo">⚠️ Estoque baixo (≤3)</option><option value="incompleto">🧩 Incompletos</option><option value="inativo">⏸️ Inativos</option><option value="">Todos os anúncios</option>
+    </select>
+    <input class="sinput" id="az-b" placeholder="Buscar por nome, SKU ou ASIN..." oninput="renderAmazon()">
   </div>
-  <div class="section"><div class="sec-head">📦 Pedidos Amazon <span class="cnt" id="az-c">-</span></div><div id="az-lista"><div class="loading">Carregando...</div></div></div>
-  <div class="footer"><span id="az-upd">-</span><button class="btn" onclick="carregarAmazon(true)">↺ Atualizar Amazon</button></div>
+  <div class="section"><div class="sec-head"><span id="az-tit">Anúncios</span> <span class="cnt" id="az-c">-</span></div><div id="az-lista"><div class="loading">Carregando...</div></div></div>
+  <div class="footer"><span id="az-upd">-</span><button class="btn" onclick="atualizarAmazon()">↺ Atualizar Amazon</button></div>
 </div></div>
 
 <div class="content" id="ml-content">
@@ -478,39 +485,55 @@ function trocarParaAmazon(btn){
   if(_azLoja!==SHP_LOJAS[ci]){_azDados=null;_azLoja=SHP_LOJAS[ci];el('az-lista').innerHTML='<div class="loading">Carregando...</div>';}
   carregarAmazon();
 }
-async function carregarAmazon(forcar){
+async function carregarAmazon(){
   const lj=SHP_LOJAS[ci];
   try{
-    if(forcar)set('az-upd','Atualizando…');
-    const d=await fetch('/amazon/dados?loja='+lj+(forcar?'&forcar=1':'')).then(r=>r.json());
+    const d=await fetch('/amazon/anuncios?loja='+lj).then(r=>r.json());
     if(lj!==SHP_LOJAS[ci])return;
-    if(d.status!=='pronto'){el('az-lista').innerHTML='<div class="loading" style="color:#c0392b">'+(d.status==='sem_auth'?'Amazon não conectada para esta conta.':'Erro: '+shpEsc(d.erro))+'</div>';return;}
+    if(!d.anuncios){el('az-lista').innerHTML='<div class="loading" style="'+(d.status==='erro'?'color:#c0392b':'')+'">'+(d.status==='sem_auth'?'Amazon não conectada para esta conta.':d.status==='erro'?'Erro: '+shpEsc(d.erro):'Lendo os anúncios e a Buy Box na Amazon… (leva 2 a 4 minutos na primeira vez)')+'</div>';if(d.status!=='sem_auth'&&d.status!=='erro')setTimeout(()=>{if(modoAmazon)carregarAmazon();},20000);return;}
     _azDados=d;renderAmazon();
+    if(d.status==='carregando')setTimeout(()=>{if(modoAmazon)carregarAmazon();},20000);
   }catch(e){el('az-lista').innerHTML='<div class="loading" style="color:#c0392b">Sem conexão com o servidor.</div>';}
 }
+async function atualizarAmazon(){
+  await fetch('/amazon/anuncios/atualizar?loja='+SHP_LOJAS[ci],{method:'POST'});
+  set('az-upd','Atualizando… a Amazon leva de 2 a 4 minutos para gerar o relatório.');
+  setTimeout(()=>{if(modoAmazon)carregarAmazon();},30000);
+}
 function azFiltro(f){el('az-f').value=f;renderAmazon();}
-const AZ_ST={Pending:'💳 Aguardando pagamento',Unshipped:'📦 A enviar',PartiallyShipped:'📦 Enviado em parte',Shipped:'🚚 Enviado',Canceled:'❌ Cancelado',Unfulfillable:'⚠️ Não atendível',InvoiceUnconfirmed:'🧾 Fatura pendente',PendingAvailability:'⏳ Pré-venda'};
+const AZ_TIT={perdendo:'🔴 Perdendo Buy Box',sem:'⚪ Sem Buy Box (ninguém ganha — geralmente preço acima do aceito pela Amazon)',ganhando:'🟢 Ganhando Buy Box',semEstoque:'🚫 Sem estoque',baixo:'⚠️ Estoque baixo (até 3 unidades)',incompleto:'🧩 Anúncios incompletos (precisam de correção)',inativo:'⏸️ Anúncios inativos','':'Todos os anúncios'};
 function renderAmazon(){
   const d=_azDados;if(!d)return;
-  const P=d.pedidos,ini=new Date();ini.setHours(0,0,0,0);const fim=new Date(ini.getTime()+864e5);
-  const aEnv=P.filter(o=>(o.status==='Unshipped'||o.status==='PartiallyShipped')&&o.canal!=='AFN');
-  const atr=aEnv.filter(o=>o.limiteEnvio&&new Date(o.limiteEnvio)<fim);
-  const hoje=P.filter(o=>new Date(o.criado)>=ini&&o.status!=='Canceled');
-  set('az-enviar',aEnv.length);set('az-atraso',atr.length);set('az-hoje',hoje.length);
-  set('az-fat',fmt(P.filter(o=>o.status!=='Canceled'&&o.status!=='Pending').reduce((a,o)=>a+o.total,0)).replace(/,\d\d$/,''));
-  const f=el('az-f').value,q=(el('az-b').value||'').trim();
-  let L=f==='aenviar'?aEnv:f==='atraso'?atr:f==='hoje'?hoje:f?P.filter(o=>o.status===f):P;
-  if(q)L=L.filter(o=>o.id.includes(q));
-  L=[...L].sort((a,b)=>(f==='aenviar'||f==='atraso')?new Date(a.limiteEnvio)-new Date(b.limiteEnvio):new Date(b.criado)-new Date(a.criado));
-  set('az-c',L.length);set('az-upd','Atualizado: '+new Date(d.atualizadoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+' · a Amazon libera consulta a cada 5 min');
-  if(!L.length){el('az-lista').innerHTML='<div class="loading" style="color:green">✓ Nenhum pedido.</div>';return;}
-  const dt=iso=>iso?new Date(iso).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'-';
-  el('az-lista').innerHTML=L.map(o=>{
-    const venc=o.limiteEnvio&&(o.status==='Unshipped'||o.status==='PartiallyShipped')?' · <span style="color:'+(new Date(o.limiteEnvio)<fim?'#C62828;font-weight:600':'#666')+'">enviar até '+new Date(o.limiteEnvio).toLocaleDateString('pt-BR')+'</span>':'';
-    return '<div class="item-row"><div class="thumb" style="font-size:16px">'+(o.prime?'⚡':'📦')+'</div><div class="iinfo"><div class="ititle">'+shpEsc(o.id)+(o.canal==='AFN'?' <span class="pv">FBA</span>':'')+(o.prime?' <span class="pv" style="background:#E3F2FD;color:#1565C0">Prime</span>':'')+'</div><div class="imeta">'+dt(o.criado)+' · '+o.itens+' item'+(o.itens>1?'s':'')+' · '+shpEsc(o.servico||'')+venc+' · <a class="alink" href="https://sellercentral.amazon.com.br/orders-v3/order/'+encodeURIComponent(o.id)+'" target="_blank" rel="noopener">Abrir</a></div></div><div class="prices"><div class="mp">'+fmt(o.total)+'</div><div class="pv">'+(AZ_ST[o.status]||shpEsc(o.status))+'</div></div></div>';
-  }).join('');
+  const A=d.anuncios, at=A.filter(a=>a.status==='Active');
+  const g={perdendo:at.filter(a=>a.bb?.situacao==='perdendo'),sem:at.filter(a=>a.bb?.situacao==='sem'),ganhando:at.filter(a=>a.bb?.situacao==='ganhando'),
+    semEstoque:A.filter(a=>!a.fba&&a.qtd<=0&&a.status!=='Incomplete'),baixo:at.filter(a=>!a.fba&&a.qtd>0&&a.qtd<=3),incompleto:A.filter(a=>a.status==='Incomplete'),inativo:A.filter(a=>a.status==='Inactive'),'':A};
+  set('az-perd',g.perdendo.length);set('az-sem',g.sem.length);set('az-ganh',g.ganhando.length);set('az-ativos',at.length);
+  set('az-semest',g.semEstoque.length);set('az-baixo',g.baixo.length);set('az-inc',g.incompleto.length);set('az-inat',g.inativo.length);
+  const f=el('az-f').value,q=(el('az-b').value||'').toLowerCase().trim();
+  let L=g[f]||A;
+  if(q)L=L.filter(a=>(a.nome||'').toLowerCase().includes(q)||(a.sku||'').toLowerCase().includes(q)||(a.asin||'').toLowerCase().includes(q));
+  if(f==='perdendo')L=[...L].sort((x,y)=>((x.preco-(x.bb.preco||0))/x.preco)-((y.preco-(y.bb.preco||0))/y.preco));
+  else if(f==='baixo')L=[...L].sort((x,y)=>x.qtd-y.qtd);
+  set('az-tit',AZ_TIT[f]||'Anúncios');set('az-c',L.length);
+  set('az-upd',(d.em?'Atualizado: '+new Date(d.em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+(d.status==='carregando'?' · atualizando agora…':' · atualiza sozinho a cada 2h'));
+  if(!L.length){el('az-lista').innerHTML='<div class="loading" style="color:green">✓ Nenhum anúncio aqui.</div>';return;}
+  const urlOk=id=>/^[A-Z0-9]{8,20}$/.test(id||'');
+  el('az-lista').innerHTML=L.slice(0,400).map(a=>{
+    const bb=a.bb,linkSC='https://sellercentral.amazon.com.br/myinventory/inventory?searchField=all&searchTerm='+encodeURIComponent(a.sku);
+    let dir='<div class="mp">Meu: '+fmt(a.preco)+'</div>';
+    if(bb&&bb.situacao==='perdendo'){
+      const dif=a.preco-bb.preco;
+      dir+='<div class="pw">Buy Box: '+fmt(bb.preco)+'</div><div class="'+(dif<=2?'pc':'ptw')+'">'+(dif>0?'Baixar '+fmt(dif):'Mesmo preço')+'</div>';
+    } else if(bb&&bb.situacao==='sem'){dir+='<div class="pv">Sem Buy Box'+(bb.menorConcorrente?' · menor: '+fmt(bb.menorConcorrente):'')+'</div>';}
+    else if(bb&&bb.situacao==='ganhando'){dir+='<div class="pv" style="background:#E8F5E9;color:#2E7D32">Ganhando'+(bb.concorrentes?' · '+bb.concorrentes+' concorrente'+(bb.concorrentes>1?'s':''):' · sozinho')+'</div>';}
+    if(a.custo)dir+='<div style="font-size:11px;color:#666;margin-top:2px">Custo ('+shpEsc(a.custoFonte)+'): '+fmt(a.custo)+(a.preco?' · '+Math.round((a.preco-a.custo)/a.preco*100)+'% bruto':'')+'</div>';
+    const ganh=bb?.ganhador&&urlOk(bb.ganhador.id)?'<div class="imeta" style="margin-top:3px">🏆 Ganhador: <a class="alink" href="https://www.amazon.com.br/sp?seller='+bb.ganhador.id+'" target="_blank" rel="noopener">ver loja</a>'+(bb.ganhador.fba?' <span class="pv">FBA</span>':'')+(bb.ganhador.avaliacoes!=null?' · '+bb.ganhador.nota+'% positivas ('+bb.ganhador.avaliacoes+')':'')+'</div>':'';
+    const est=a.fba?'<span class="pv">FBA</span>':'Estoque: <b style="color:'+(a.qtd<=0?'#C62828':a.qtd<=3?'#E65100':'inherit')+'">'+a.qtd+'</b>';
+    const stt=a.status!=='Active'?' · <span style="color:#C62828">'+(a.status==='Incomplete'?'Incompleto':a.status==='Inactive'?'Inativo':shpEsc(a.status))+'</span>':'';
+    return '<div class="item-row"><div class="thumb" style="font-size:18px">📦</div><div class="iinfo"><div class="ititle">'+shpEsc(a.nome)+'</div><div class="imeta">SKU: '+shpEsc(a.sku)+' · ASIN: '+shpEsc(a.asin||'-')+' · '+est+stt+' · '+(urlOk(a.asin)?'<a class="alink" href="https://www.amazon.com.br/dp/'+a.asin+'" target="_blank" rel="noopener">Ver na Amazon</a> · ':'')+'<a class="alink" href="'+linkSC+'" target="_blank" rel="noopener">Editar</a></div>'+ganh+'</div><div class="prices">'+dir+'</div></div>';
+  }).join('')+(L.length>400?'<div class="loading">Mostrando 400 de '+L.length+'. Use a busca.</div>':'');
 }
-setInterval(()=>{if(modoAmazon)carregarAmazon();},5*60e3);
+setInterval(()=>{if(modoAmazon)carregarAmazon();},10*60e3);
 
 function showShpTab(name,btn){
   document.querySelectorAll('#shopee-content .tab').forEach(t=>t.classList.remove('active'));

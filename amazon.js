@@ -9,9 +9,9 @@ const axios = require('axios');
 const ENDPOINT = 'https://sellingpartnerapi-na.amazon.com';
 const MARKETPLACE_BR = 'A2Q3Y263D00KWC';
 const LOJAS = {
-  zagodini: { nome: 'Comercial Zagodini', env: 'ZAGODINI' },
-  mae:      { nome: 'Com Amor de Mãe',    env: 'MAE' },
-  lufe:     { nome: 'Lufe Casa & Decoração', env: 'LUFE' },
+  zagodini: { nome: 'Comercial Zagodini', env: 'ZAGODINI', ml: 0 },
+  mae:      { nome: 'Com Amor de Mãe',    env: 'MAE', ml: 1 },
+  lufe:     { nome: 'Lufe Casa & Decoração', env: 'LUFE', ml: 2 },
 };
 const delay = ms => new Promise(r => setTimeout(r, ms));
 

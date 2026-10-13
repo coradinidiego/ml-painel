@@ -1354,6 +1354,69 @@ app.get('/amazon/dados', async (req, res) => {
     res.json({ status: 'pronto', atualizadoEm: new Date(d.em).toISOString(), pedidos: d.todos.map(r) });
   } catch (e) { res.json({ status: 'erro', erro: e.message }); }
 });
+// ─── Amazon: anúncios, estoque e Buy Box (atualiza a cada 2h por loja) ──────
+const AZ_ANUNCIOS = {};   // loja -> { status, em, anuncios, erro }
+const ARQ_AZ = k => path.join(DATA, 'apuracao_cache', 'amazon_anuncios_' + k + '.json');
+for (const k of Object.keys(amazon.LOJAS)) { try { AZ_ANUNCIOS[k] = JSON.parse(fs.readFileSync(ARQ_AZ(k))); } catch (e) {} }
+async function carregarAnunciosAmazon(k) {
+  const az = amazon.loja(k);
+  if (!az.configurada()) return;
+  const E = AZ_ANUNCIOS[k] ||= {};
+  if (E.status === 'carregando') return;
+  E.status = 'carregando'; E.inicio = Date.now();
+  try {
+    const ls = az.tsv(await az.relatorio('GET_MERCHANT_LISTINGS_ALL_DATA'));
+    const col = (l, n) => l[n] ?? l['\uFEFF' + n];
+    const anuncios = ls.map(l => ({ sku: col(l, 'seller-sku'), asin: col(l, 'asin1'), nome: col(l, 'item-name'), preco: Number(col(l, 'price') || 0),
+      qtd: Number(col(l, 'quantity') || 0), status: col(l, 'status'), fba: /AMAZON/i.test(col(l, 'fulfillment-channel') || ''), aberto: col(l, 'open-date') }));
+    // Buy Box: ofertas dos ASINs ativos (20 por consulta; a Amazon libera ~1 consulta a cada 10 s)
+    const asins = [...new Set(anuncios.filter(a => a.status === 'Active' && a.asin).map(a => a.asin))];
+    const of = {};
+    for (let i = 0; i < asins.length; i += 20) {
+      try { for (const r of await az.ofertas(asins.slice(i, i + 20))) { const pl = r.body?.payload; if (pl?.ASIN) of[pl.ASIN] = pl; } }
+      catch (e) { console.log('[amazon] ofertas ' + k + ': ' + e.message); }
+      await new Promise(r => setTimeout(r, 10500));
+    }
+    // meu SellerId: o vendedor das ofertas em que só existe uma oferta (a minha)
+    const conta = {};
+    for (const pl of Object.values(of)) if ((pl.Offers || []).length === 1) { const id = pl.Offers[0].SellerId; conta[id] = (conta[id] || 0) + 1; }
+    const eu = Object.entries(conta).sort((a, b) => b[1] - a[1])[0]?.[0] || E.eu || null;
+    const cm = require('./custos_ml'), idxErp = amazon.LOJAS[k].ml ?? 2;
+    const custos = await cm.custosErp(idxErp).catch(() => ({}));
+    for (const a of anuncios) {
+      const cf = cm.custoComFonte(idxErp, a.sku, custos); a.custo = cf?.v ?? null; a.custoFonte = cf?.fonte || null;
+      const pl = of[a.asin];
+      if (!pl) continue;
+      const offers = pl.Offers || [];
+      const win = offers.find(o => o.IsBuyBoxWinner);
+      const preco = o => (o?.ListingPrice?.Amount || 0) + (o?.Shipping?.Amount || 0);
+      const outros = offers.filter(o => o.SellerId !== eu);
+      a.bb = {
+        situacao: !win ? 'sem' : win.SellerId === eu ? 'ganhando' : 'perdendo',
+        preco: win ? preco(win) : (pl.Summary?.BuyBoxPrices?.[0]?.LandedPrice?.Amount ?? null),
+        ganhador: win && win.SellerId !== eu ? { id: win.SellerId, fba: !!win.IsFulfilledByAmazon, preco: preco(win), nota: win.SellerFeedbackRating?.SellerPositiveFeedbackRating, avaliacoes: win.SellerFeedbackRating?.FeedbackCount } : null,
+        concorrentes: outros.length,
+        menorConcorrente: outros.length ? Math.min(...outros.map(preco)) : null,
+      };
+    }
+    Object.assign(E, { status: 'pronto', em: new Date().toISOString(), anuncios, eu, erro: null });
+    try { fs.mkdirSync(path.dirname(ARQ_AZ(k)), { recursive: true }); fs.writeFileSync(ARQ_AZ(k), JSON.stringify(E)); } catch (e) {}
+    console.log('[amazon] ' + k + ': ' + anuncios.length + ' anúncios, ' + Object.keys(of).length + ' com ofertas');
+  } catch (e) { E.status = 'erro'; E.erro = e.message; console.log('[amazon] anúncios ' + k + ': ' + e.message); }
+}
+async function anunciosAmazonTodas() { for (const k of Object.keys(amazon.LOJAS)) await carregarAnunciosAmazon(k); }
+setTimeout(anunciosAmazonTodas, 2 * 60e3);
+setInterval(anunciosAmazonTodas, 2 * 3600e3);
+app.get('/amazon/anuncios', (req, res) => {
+  const k = amazon.LOJAS[req.query.loja] ? req.query.loja : 'lufe';
+  if (!amazon.loja(k).configurada()) return res.json({ status: 'sem_auth' });
+  res.json(AZ_ANUNCIOS[k] || { status: 'aguardando' });
+});
+app.post('/amazon/anuncios/atualizar', (req, res) => {
+  const k = amazon.LOJAS[req.query.loja] ? req.query.loja : 'lufe';
+  carregarAnunciosAmazon(k); res.json({ ok: true });
+});
+
 // Diagnóstico (admin): relatório de anúncios cru (primeiras linhas) e ofertas de 2 ASINs
 app.get('/debug/amazon-teste', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
