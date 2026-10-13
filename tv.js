@@ -218,7 +218,9 @@ async function coletarAmazon(emp, hoje, erpLinhas) {
   for (const o of d.abertos) {
     let tipo = etapaErp[o.AmazonOrderId] || 'emitirNF';
     if (tipo === 'enviado') tipo = 'empacotado';           // no ERP já saiu, na Amazon ainda não: aguardando coleta
-    linhas.push({ tipo, canal: 'Amazon', prazo: prazo(diaSP(o.LatestShipDate), hoje) });
+    // pedido da Amazon já pago entra no trabalho do dia (não vai para "próximos dias"); atrasado se passou do limite
+    const lim = diaSP(o.LatestShipDate);
+    linhas.push({ tipo, canal: 'Amazon', prazo: lim && lim < hoje ? 'atrasado' : 'hoje' });
   }
   for (const o of d.enviadosHoje) linhas.push({ tipo: 'enviado', canal: 'Amazon', prazo: 'hoje' });
   return linhas;
