@@ -79,9 +79,14 @@ function criar(chave) {
       const todos = await pedidos(15);
       const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
       const dia = iso => iso ? new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) : '';
-      const abertos = todos.filter(o => ['Unshipped', 'PartiallyShipped'].includes(o.OrderStatus) && o.FulfillmentChannel !== 'AFN');
-      const enviadosHoje = todos.filter(o => o.OrderStatus === 'Shipped' && o.FulfillmentChannel !== 'AFN' && dia(o.LastUpdateDate) === hoje);
-      _ped = { abertos, enviadosHoje, todos, em: Date.now() };
+      // Envios Fácil (DBA): ao gerar a etiqueta a Amazon já marca "Shipped", mas o pacote ainda está com você
+      // aguardando coleta (EasyShipShipmentStatus = PendingPickUp / PendingDropOff) → empacotado.
+      const AGUARDA_COLETA = ['PendingPickUp', 'PendingDropOff'];
+      const mfn = todos.filter(o => o.FulfillmentChannel !== 'AFN');
+      const empacotados = mfn.filter(o => AGUARDA_COLETA.includes(o.EasyShipShipmentStatus) && o.OrderStatus !== 'Canceled');
+      const abertos = mfn.filter(o => ['Unshipped', 'PartiallyShipped'].includes(o.OrderStatus) && !AGUARDA_COLETA.includes(o.EasyShipShipmentStatus));
+      const enviadosHoje = mfn.filter(o => o.OrderStatus === 'Shipped' && !AGUARDA_COLETA.includes(o.EasyShipShipmentStatus) && dia(o.LastUpdateDate) === hoje);
+      _ped = { abertos, empacotados, enviadosHoje, todos, em: Date.now() };
       _pedTs = Date.now();
       return _ped;
     })().finally(() => { _pedProm = null; });

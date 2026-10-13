@@ -1350,7 +1350,7 @@ app.get('/amazon/dados', async (req, res) => {
     const d = await az.pedidosCache(!!req.query.forcar);
     const r = o => ({ id: o.AmazonOrderId, status: o.OrderStatus, criado: o.PurchaseDate, atualizado: o.LastUpdateDate,
       limiteEnvio: o.LatestShipDate, entregaAte: o.LatestDeliveryDate, total: Number(o.OrderTotal?.Amount || 0), itens: (o.NumberOfItemsShipped || 0) + (o.NumberOfItemsUnshipped || 0),
-      canal: o.FulfillmentChannel, servico: o.ShipServiceLevel, prime: !!o.IsPrime, empresa: !!o.IsBusinessOrder });
+      canal: o.FulfillmentChannel, envioFacil: o.EasyShipShipmentStatus || null, servico: o.ShipServiceLevel, prime: !!o.IsPrime, empresa: !!o.IsBusinessOrder });
     res.json({ status: 'pronto', atualizadoEm: new Date(d.em).toISOString(), pedidos: d.todos.map(r) });
   } catch (e) { res.json({ status: 'erro', erro: e.message }); }
 });

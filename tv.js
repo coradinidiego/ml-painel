@@ -265,6 +265,7 @@ async function coletarAmazon(emp, hoje, erpLinhas) {
     const lim = diaSP(o.LatestShipDate);
     linhas.push({ tipo, canal: 'Amazon', prazo: lim && lim < hoje ? 'atrasado' : 'hoje' });
   }
+  for (const o of d.empacotados || []) linhas.push({ tipo: 'empacotado', canal: 'Amazon', prazo: 'hoje' });   // etiqueta gerada, aguardando coleta
   for (const o of d.enviadosHoje) linhas.push({ tipo: 'enviado', canal: 'Amazon', prazo: 'hoje' });
   return linhas;
 }
