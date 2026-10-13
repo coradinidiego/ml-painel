@@ -135,32 +135,38 @@ async function coletarBling(emp, cfg, hoje) {
   for (const p of await blingListar(emp.idx, m.enviado, { dataAlteracaoInicial: hoje, dataAlteracaoFinal: hoje })) {
     linhas.push({ tipo: 'enviado', canal: canalBling(canais, p), prazo: 'hoje' });
   }
-  // Shein tem fluxo próprio no Bling: Em aberto = sem nota · Atendido = a empacotar · Verificado = empacotado
-  try {
-    const shein = await coletarSheinBling(emp, canais, hoje, janela);
-    if (shein) return [...linhas.filter(l => l.canal !== 'Shein'), ...shein];
-  } catch (e) { console.warn('[tv] Shein Bling', emp.id, e.message); }
-  return linhas;
+  // Shein e Shopee têm fluxo próprio no Bling: Em aberto = sem nota · Atendido = a empacotar · Verificado = empacotado
+  let out = linhas;
+  for (const canal of Object.keys(FLUXO_VERIFICADO)) {
+    try {
+      const l = await coletarFluxoBling(emp, canal, canais, hoje, janela);
+      if (l) out = [...out.filter(x => x.canal !== canal), ...l];
+    } catch (e) { console.warn('[tv]', canal, 'Bling', emp.id, e.message); }
+  }
+  return out;
 }
 
+// canal -> como reconhecer o pedido pelo número no marketplace (para achar a loja no Bling)
+const FLUXO_VERIFICADO = { Shein: /^GSH/i, Shopee: /^\d{6}[A-Z0-9]{8}$/i };
+
 const SIT = { emAberto: 6, atendido: 9, verificado: 24 };
-const _lojaShein = {};   // idx -> { ids:Set, ts }
-async function lojasShein(idx, canais, janela) {
-  const c = _lojaShein[idx];
+const _lojaCanal = {};   // idx|canal -> { ids:Set, ts }
+async function lojasCanal(idx, canal, canais, janela) {
+  const chave = idx + '|' + canal, c = _lojaCanal[chave];
   if (c && c.ids.size && Date.now() - c.ts < 6 * 3600e3) return c.ids;
-  const ids = new Set();
-  for (const [id, nome] of Object.entries(canais)) if (/shein/i.test(nome)) ids.add(String(id));
-  if (!ids.size) {  // Bling não informou o nome das lojas: descobre pela numeração dos pedidos Shein (GSH…)
-    for (const p of await blingListar(idx, [SIT.verificado], janela)) if (/^GSH/i.test(p.numeroLoja || '') && p.loja?.id) ids.add(String(p.loja.id));
+  const ids = new Set(), re = new RegExp(canal, 'i');
+  for (const [id, nome] of Object.entries(canais)) if (re.test(nome)) ids.add(String(id));
+  if (!ids.size) {  // Bling não informou o nome das lojas: descobre pela numeração dos pedidos do canal
+    for (const p of await blingListar(idx, [SIT.verificado], janela)) if (FLUXO_VERIFICADO[canal].test(p.numeroLoja || '') && p.loja?.id) ids.add(String(p.loja.id));
   }
-  _lojaShein[idx] = { ids, ts: Date.now() };
+  _lojaCanal[chave] = { ids, ts: Date.now() };
   return ids;
 }
-async function coletarSheinBling(emp, canais, hoje, janela) {
-  const ids = await lojasShein(emp.idx, canais, janela);
+async function coletarFluxoBling(emp, canal, canais, hoje, janela) {
+  const ids = await lojasCanal(emp.idx, canal, canais, janela);
   if (!ids.size) return null;
   const linhas = [];
-  const add = (tipo, l) => { for (const p of l) linhas.push({ tipo, canal: 'Shein', prazo: tipo === 'empacotado' ? 'hoje' : prazo((p.dataPrevista || '').slice(0, 10), hoje), num: String(p.numeroLoja || '') }); };
+  const add = (tipo, l) => { for (const p of l) linhas.push({ tipo, canal, prazo: tipo === 'empacotado' ? 'hoje' : prazo((p.dataPrevista || '').slice(0, 10), hoje), num: String(p.numeroLoja || '') }); };
   for (const idLoja of ids) {
     add('emitirNF', await blingListar(emp.idx, [SIT.emAberto], { ...janela, idLoja }));
     await delay(350);
