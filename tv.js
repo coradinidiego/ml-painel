@@ -32,6 +32,7 @@ const EMPRESAS = [
   { id: 'zagodini', nome: 'Zagodini',        logo: 'zagodini', erp: 'bling', idx: 0, ml: 'Zagodini', amazon: 'zagodini', canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein'] },
   { id: 'mae',      nome: 'Com Amor de Mãe', logo: 'mae',      erp: 'bling', idx: 1, ml: 'Mae', amazon: 'mae',      canais: ['Mercado Livre', 'Amazon', 'Shopee', 'Shein', 'TikTok'] },
 ];
+const MARKETPLACES = ['Mercado Livre', 'Amazon', 'Shopee', 'Shein', 'TikTok'];
 const ETAPAS = ['emitirNF', 'aEmpacotar', 'empacotado', 'enviado'];
 const ROTULO = { emitirNF: 'Emitir NF', aEmpacotar: 'A empacotar', empacotado: 'Empacotado', enviado: 'Enviado', ignorar: 'Ignorar' };
 const TINY_SITUACOES = ['Em aberto', 'Aprovado', 'Preparando envio', 'Faturado', 'Pronto para envio', 'Enviado', 'Entregue', 'Não Entregue', 'Cancelado', 'Dados incompletos'];
@@ -232,6 +233,7 @@ function agregar(emp, linhas) {
   const canais = {};
   for (const c of emp.canais) canais[c] = { canal: c, ...zerado() };
   for (const l of linhas) {
+    if (!MARKETPLACES.includes(l.canal)) continue;   // venda física / balcão / sem marketplace: fora da TV
     const c = canais[l.canal] ||= { canal: l.canal, ...zerado() };
     if (l.tipo === 'futuro' || ((l.tipo === 'emitirNF' || l.tipo === 'aEmpacotar') && l.prazo === 'futuro')) { c.futuros++; continue; }
     if (!ETAPAS.includes(l.tipo)) continue;
