@@ -166,7 +166,9 @@ async function coletarFluxoBling(emp, canal, canais, hoje, janela) {
   const ids = await lojasCanal(emp.idx, canal, canais, janela);
   if (!ids.size) return null;
   const linhas = [];
-  const add = (tipo, l) => { for (const p of l) linhas.push({ tipo, canal, prazo: tipo === 'empacotado' ? 'hoje' : prazo((p.dataPrevista || '').slice(0, 10), hoje), num: String(p.numeroLoja || '') }); };
+  // pedido já pago entra no trabalho do dia (não vai para "próximos dias"); atrasado se passou da data prevista
+  const pz = p => { const d = (p.dataPrevista || '').slice(0, 10); return d && d > '2000-01-01' && d < hoje ? 'atrasado' : 'hoje'; };
+  const add = (tipo, l) => { for (const p of l) linhas.push({ tipo, canal, prazo: tipo === 'empacotado' ? 'hoje' : pz(p), num: String(p.numeroLoja || '') }); };
   for (const idLoja of ids) {
     add('emitirNF', await blingListar(emp.idx, [SIT.emAberto], { ...janela, idLoja }));
     await delay(350);
