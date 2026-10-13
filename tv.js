@@ -349,6 +349,22 @@ router.post('/config', express.urlencoded({ extended: false }), (req, res) => {
   res.redirect('/tv/config?ok=1');
 });
 
+// Diagnóstico das situações do Bling (admin): /tv/bling-situacoes/0
+router.get('/bling-situacoes/:idx', async (req, res) => {
+  if (!ehAdmin(req)) return res.status(403).send('Só o administrador.');
+  const idx = parseInt(req.params.idx), out = {};
+  try { out.situacoes = await situacoesBling(idx); } catch (e) { out.erroSituacoes = (e.response?.status || '') + ' ' + JSON.stringify(e.response?.data || e.message).slice(0, 400); }
+  const hoje = hojeIso(), janela = { dataInicial: isoMenosDias(hoje, JANELA_DIAS), dataFinal: hoje };
+  const canais = await canaisBling(idx);
+  out.contagem = {};
+  for (const id of [6, 9, 15, 24, 12, 21, 18]) {
+    try { const l = await blingListar(idx, [id], janela); const pc = {}; l.forEach(p => { const c = canalBling(canais, p); pc[c] = (pc[c] || 0) + 1; }); out.contagem[id] = { total: l.length, porCanal: pc, nomeSituacao: l[0]?.situacao }; }
+    catch (e) { out.contagem[id] = 'erro ' + e.message; }
+    await delay(400);
+  }
+  res.json(out);
+});
+
 router.get('/diagnostico', (req, res) => {
   if (!ehAdmin(req)) return res.status(403).send('Só o administrador.');
   const nomes = { Lufe: 'Magazine Lufe', Zagodini: 'Zagodini', Mae: 'Com Amor de Mãe' };
