@@ -179,7 +179,8 @@ function criar(chave) {
     const ev = { ship: [], serv: [] };
     let next = null;
     const desde = new Date(Date.now() - dias * 864e5).toISOString();
-    for (let pg = 0; pg < 60; pg++) {
+    const t0 = Date.now();
+    for (let pg = 0; pg < 40 && Date.now() - t0 < 6 * 60e3; pg++) {
       const d = await get('/finances/v0/financialEvents', next ? { NextToken: next } : { PostedAfter: desde, MaxResultsPerPage: 100 });
       const fe = d.payload?.FinancialEvents || {};
       ev.ship.push(...(fe.ShipmentEventList || []));

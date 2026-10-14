@@ -1362,9 +1362,10 @@ async function carregarAnunciosAmazon(k) {
   const az = amazon.loja(k);
   if (!az.configurada()) return;
   const E = AZ_ANUNCIOS[k] ||= {};
-  if (E.status === 'carregando') return;
+  if (E.status === 'carregando' && Date.now() - (E.inicio || 0) < 40 * 60e3) return;   // trava de segurança: 40 min
   E.status = 'carregando'; E.inicio = Date.now();
   try {
+    E.etapa = 'relatório de anúncios';
     const ls = az.tsv(await az.relatorio('GET_MERCHANT_LISTINGS_ALL_DATA'));
     const col = (l, n) => l[n] ?? l['\uFEFF' + n];
     const anuncios = ls.map(l => ({ sku: col(l, 'seller-sku'), asin: col(l, 'asin1'), nome: col(l, 'item-name'), preco: Number(col(l, 'price') || 0),
@@ -1372,6 +1373,7 @@ async function carregarAnunciosAmazon(k) {
     // Buy Box: ofertas dos ASINs ativos (20 por consulta; a Amazon libera ~1 consulta a cada 10 s)
     const asins = [...new Set(anuncios.filter(a => a.status === 'Active' && a.asin).map(a => a.asin))];
     const of = {};
+    E.etapa = 'Buy Box';
     for (let i = 0; i < asins.length; i += 20) {
       try { for (const r of await az.ofertas(asins.slice(i, i + 20))) { const pl = r.body?.payload; if (pl?.ASIN) of[pl.ASIN] = pl; } }
       catch (e) { console.log('[amazon] ofertas ' + k + ': ' + e.message); }
@@ -1400,6 +1402,7 @@ async function carregarAnunciosAmazon(k) {
       };
     }
     // Imagens (catálogo da Amazon, 20 ASINs por consulta)
+    E.etapa = 'imagens';
     const imgs = { ...(E.imgs || {}) };
     const faltam = [...new Set(anuncios.map(a => a.asin).filter(x => x && !imgs[x]))];
     for (let i = 0; i < faltam.length; i += 20) {
@@ -1413,6 +1416,7 @@ async function carregarAnunciosAmazon(k) {
     // Histórico financeiro (comissão real, outras tarifas e frete DBA por SKU) — renova a cada 6h
     let hist = E.hist;
     if (!hist || !hist.freteFaixas || Date.now() - (E.histTs || 0) > 6 * 3600e3) {
+      E.etapa = 'histórico financeiro';
       try { hist = await az.historicoTarifas(60); E.hist = hist; E.histTs = Date.now(); } catch (e) { console.log('[amazon] financeiro ' + k + ': ' + e.message); }
     }
     // Tarifa de comissão estimada pela Amazon no preço atual e no preço da Buy Box
@@ -1422,6 +1426,7 @@ async function carregarAnunciosAmazon(k) {
       if (a.bb?.situacao === 'perdendo' && a.bb.preco > 0 && a.bb.preco < a.preco) pedidosTar.push({ asin: a.asin, preco: a.bb.preco, fba: a.fba, id: a.sku + '|bb' });
     }
     const tar = {};
+    E.etapa = 'tarifas';
     for (let i = 0; i < pedidosTar.length; i += 20) {
       for (let t = 0; t < 3; t++) {
         try { Object.assign(tar, await az.tarifas(pedidosTar.slice(i, i + 20))); break; }
