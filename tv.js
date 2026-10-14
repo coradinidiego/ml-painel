@@ -409,17 +409,15 @@ router.get('/config', async (req, res) => {
   const sel = (nome, atual) => [...ETAPAS, 'ignorar'].map(v => `<label style="margin-right:12px"><input type="radio" name="${esc(nome)}" value="${v}" ${atual === v ? 'checked' : ''}> ${ROTULO[v]}</label>`).join('');
   const papel = (m, x) => ETAPAS.find(e => (m[e] || []).includes(x)) || 'ignorar';
   let blocos = `<div class="box"><h2>Magazine Lufe — Tiny</h2><table>${TINY_SITUACOES.map(s => `<tr><td>${esc(s)}</td><td>${sel('tiny|' + s, papel(cfg.tiny, s))}</td></tr>`).join('')}</table></div>`;
-  for (const emp of EMPRESAS.filter(e => e.erp === 'bling')) {
-    const m = { ...vazio(), ...(cfg.bling[emp.idx] || {}) };
-    let sits; try { sits = await situacoesBling(emp.idx); } catch (e) { sits = null; }
-    blocos += `<div class="box"><h2>${esc(emp.nome)} — Bling</h2>` + (sits?.length
-      ? `<table>${sits.map(s => `<tr><td>${esc(s.nome)} <small style="color:#999">#${s.id}</small></td><td>${sel('bling|' + emp.idx + '|' + s.id, papel(m, s.id))}</td></tr>`).join('')}</table>`
-      : `<p style="color:#c62828">Não consegui ler as situações do Bling desta conta. Autorize o Bling no painel e recarregue esta página.</p>`) + `</div>`;
-  }
+  // Bling (Zagodini e Com Amor de Mãe): não há o que configurar — todos os marketplaces seguem o fluxo fixo do Bling
+  // e o Mercado Livre vem direto da API do ML.
+  blocos += `<div class="box"><h2>Zagodini e Com Amor de Mãe — Bling</h2><p class="s" style="margin:0">Não precisa configurar. No Bling, Shopee, Shein, Amazon e TikTok Shop seguem sempre o mesmo fluxo:
+    <b>Em aberto</b> → Emitir NF · <b>Atendido</b> → A empacotar · <b>Verificado</b> → A coletar. O Mercado Livre vem direto da API do ML.
+    A Amazon usa a lista de pedidos da própria Amazon (com o prazo de envio) e o Bling só para saber a etapa.</p></div>`;
   res.send(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Configurar TV</title><style>${CSS}</style></head><body>
   <div class="top"><b>📺 Configurar painel da TV</b><span style="flex:1"></span><a href="/tv" target="_blank">Abrir TV</a><a href="/tv/diagnostico">Diagnóstico ML</a><a href="/conta">⚙️ Conta</a></div>
   ${req.query.ok ? '<div class="box" style="background:#e8f5e9;color:#2e7d32">Configuração salva. A TV atualiza em até 2 minutos.</div>' : ''}
-  <form method="post" action="/tv/config"><div class="box"><p class="s">O Mercado Livre vem direto da API do ML. Aqui você diz, para os outros canais (Amazon, Shopee, Shein, TikTok), em que etapa da expedição cada situação do pedido está: <b>Emitir NF</b> → <b>A empacotar</b> → <b>A coletar</b>. <b>Enviado</b> conta só o que mudou para essa situação hoje.</p></div>
+  <form method="post" action="/tv/config"><div class="box"><p class="s">O Mercado Livre vem direto da API do ML. Aqui você diz, para os pedidos da Lufe no Tiny, em que etapa da expedição cada situação está: <b>Emitir NF</b> → <b>A empacotar</b> → <b>A coletar</b>. <b>Enviado</b> conta só o que mudou para essa situação hoje.</p></div>
   ${blocos}<div class="box" style="text-align:right"><button>Salvar</button></div></form></body></html>`);
 });
 router.post('/config', express.urlencoded({ extended: false }), (req, res) => {
