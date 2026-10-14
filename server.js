@@ -164,11 +164,16 @@ const _vendedores = new Map();
 async function vendedorML(idx, sellerId) {
   if (!sellerId) return null;
   const c = _vendedores.get(sellerId);
-  if (c && Date.now() - c.ts < 24 * 3600e3) return c;
+  if (c && c.medalha !== undefined && Date.now() - c.ts < 24 * 3600e3) return c;
   try {
     const u = await ml(idx, '/users/' + sellerId);
     const nick = u.nickname || String(sellerId);
-    const v = { nome: nick, loja: (u.permalink || ('https://perfil.mercadolivre.com.br/' + encodeURIComponent(nick))).replace(/^http:/, 'https:'), ts: Date.now() };
+    const rep = u.seller_reputation || {};
+    const v = { nome: nick, loja: (u.permalink || ('https://perfil.mercadolivre.com.br/' + encodeURIComponent(nick))).replace(/^http:/, 'https:'),
+      medalha: rep.power_seller_status || null,          // platinum | gold | silver | null (MercadoLíder)
+      nivel: rep.level_id || null,                        // termômetro: 5_green, 4_light_green...
+      oficial: u.user_type === 'brand' || (u.tags || []).includes('brand'),   // loja oficial
+      ts: Date.now() };
     _vendedores.set(sellerId, v);
     return v;
   } catch (e) { return null; }
@@ -303,12 +308,12 @@ async function carregarConta(idx) {
                 const pr = await ml(idx, '/products/' + ptw.catalog_product_id + '/items', { limit: 50, offset: off });
                 const lista = pr.results || [];
                 const w = wid ? lista.find(x => x.item_id === wid) : lista.find(x => x.seller_id != uid);
-                if (w) { sellerId = w.seller_id; if (!wid) { it.winner_item_id = w.item_id; it.winner_permalink = 'https://produto.mercadolivre.com.br/' + w.item_id.replace(/^MLB/, 'MLB-'); } }
+                if (w) { sellerId = w.seller_id; if (w.official_store_id) it.winner_oficial = true; if (!wid) { it.winner_item_id = w.item_id; it.winner_permalink = 'https://produto.mercadolivre.com.br/' + w.item_id.replace(/^MLB/, 'MLB-'); } }
                 if (lista.length < 50) break;
               }
             }
             const v = await vendedorML(idx, sellerId);
-            if (v) { it.winner_nome = v.nome; it.winner_loja = v.loja; }
+            if (v) { it.winner_nome = v.nome; it.winner_loja = v.loja; it.winner_medalha = v.medalha; it.winner_nivel = v.nivel; it.winner_oficial = !!(it.winner_oficial || v.oficial); }
             if (sellerId && meus.has(String(sellerId))) it.winner_conta = String(sellerId) === String(uid) ? 'outro anúncio seu nesta conta' : meus.get(String(sellerId));
           } catch(e3) {}
           // ganhador é outra conta minha → não é concorrência
@@ -317,12 +322,20 @@ async function carregarConta(idx) {
         else if (ptw.status === 'winning') {
           try {
             if (ptw.catalog_product_id) {
-              const comp = await ml(idx, '/products/'+ptw.catalog_product_id+'/items', {status:'active',limit:5});
+              const comp = await ml(idx, '/products/'+ptw.catalog_product_id+'/items', {status:'active',limit:50});
               const others = (comp.results||[]).filter(r => r.seller_id != uid && !meus.has(String(r.seller_id)));
               if (others.length > 0) {
                 const s2 = others.sort((a,b) => a.price-b.price)[0];
                 it.s2price = s2.price;
                 it.margem = s2.price - ptw.current_price;
+                it.s2_concorrentes = others.length;
+                if (s2.item_id) it.s2_permalink = 'https://produto.mercadolivre.com.br/' + s2.item_id.replace(/^MLB/, 'MLB-');
+                const v = await vendedorML(idx, s2.seller_id);
+                if (v) { it.s2_nome = v.nome; it.s2_loja = v.loja; it.s2_medalha = v.medalha; it.s2_nivel = v.nivel; }
+                it.s2_oficial = !!(s2.official_store_id || v?.oficial);
+                // dá para subir até R$ 0,10 abaixo do 2º colocado
+                const alvo = Math.floor((s2.price - 0.10) * 100) / 100;
+                if (alvo > ptw.current_price + 0.009) it.preco_subir = alvo;
               }
             }
           } catch(e2) {}
@@ -382,6 +395,8 @@ const semPromo = [], comPromo = [];
     // Lucro % no preço atual e no preço para ganhar (custo da planilha + tarifa/frete do ML + imposto)
     try { await require('./custos_ml').calcularMargens(ml, idx, uid, perdendo); }
     catch (e) { console.warn('[margens]', idx, e.message); }
+    try { await require('./custos_ml').calcularMargens(ml, idx, uid, ganhando); }
+    catch (e) { console.warn('[margens ganhando]', idx, e.message); }
 
     perdendo.sort((a,b) => a.diff-b.diff);
     ganhando.sort((a,b) => (b.margem||0)-(a.margem||0));
@@ -461,6 +476,7 @@ app.post('/custos/atualizar/:idx', async (req, res) => {
     cm.recarregarErp(idx);
     const erp = await cm.custosErp(idx);
     await cm.calcularMargens(ml, idx, d.uid, d.perdendo || []);
+    await cm.calcularMargens(ml, idx, d.uid, d.ganhando || []);
     const p = d.perdendo || [];
     res.json({ ok: true, produtosComCusto: Object.keys(erp).length, catalogos: p.length, comLucro: p.filter(x => x.lucro_ptw_pct != null).length, erp: idx === 2 ? 'Tiny' : 'Bling' });
   } catch (e) { res.status(500).json({ ok: false, erro: e.message }); }

@@ -179,7 +179,7 @@ async function calcularMargens(ml, idx, uid, itens) {
   const erp = await custosErp(idx);
   for (const it of itens) {
     // limpa o cálculo anterior (para o recálculo manual não deixar valores velhos)
-    for (const k of ['margem_obs', 'custo_fonte', 'custo_produto', 'lucro_atual_pct', 'lucro_ptw_pct', 'lucro_ptw', 'tarifa_ptw', 'frete_ptw', 'calc_atual', 'calc_ptw', 'calc_campanha', 'lucro_campanha_pct', 'lucro_melhor_pct']) delete it[k];
+    for (const k of ['margem_obs', 'custo_fonte', 'custo_produto', 'lucro_atual_pct', 'lucro_ptw_pct', 'lucro_ptw', 'tarifa_ptw', 'frete_ptw', 'calc_atual', 'calc_ptw', 'calc_campanha', 'lucro_campanha_pct', 'lucro_melhor_pct', 'calc_subir', 'lucro_subir_pct']) delete it[k];
     try {
       const cf = custoComFonte(idx, it._sku || it.seller_sku, erp);
       if (!cf) { it.margem_obs = 'sem custo no ' + (idx === 2 ? 'Tiny' : 'Bling') + ' nem na planilha'; continue; }
@@ -216,6 +216,8 @@ async function calcularMargens(ml, idx, uid, itens) {
       if (melhor && (!ganhar || melhor.lucro > ganhar.lucro)) { it.calc_campanha = melhor; it.lucro_campanha_pct = melhor.pct; }
       it.lucro_melhor_pct = Math.max(ganhar?.pct ?? -Infinity, it.lucro_campanha_pct ?? -Infinity);
       if (!isFinite(it.lucro_melhor_pct)) delete it.lucro_melhor_pct;
+      // ganhando o catálogo: margem se subir o preço até perto do 2º colocado
+      if (it.preco_subir > 0) { const sb = await calc(it.preco_subir); if (sb) { it.calc_subir = sb; it.lucro_subir_pct = sb.pct; } }
       it.custo_produto = custo;
       if (atual) { it.lucro_atual_pct = atual.pct; it.calc_atual = atual; }
       if (ganhar) { it.lucro_ptw_pct = ganhar.pct; it.lucro_ptw = ganhar.lucro; it.tarifa_ptw = ganhar.tarifa; it.frete_ptw = ganhar.frete; it.calc_ptw = ganhar; }

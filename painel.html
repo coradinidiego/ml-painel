@@ -392,8 +392,8 @@ body{background:#f0f2f5;color:#111}
     <div class="footer"><span id="upd-p">-</span><button class="btn" onclick="recarregarConta()">↺ Atualizar</button></div>
   </div>
   <div id="tab-ganhando" class="tab-content">
-    <div class="sf"><input class="sinput" type="text" placeholder="Buscar..." oninput="renderGanhando(0)" id="bg"></div>
-    <div class="section"><div class="sec-head">🟢 Ganhando - 2o lugar e margem <span class="cnt" id="c-ganhando">-</span></div><div id="b-ganhando"><div class="loading">Carregando...</div></div></div>
+    <div class="sf"><input class="sinput" type="text" placeholder="Buscar..." oninput="renderGanhando(0)" id="bg"><select class="sselect" id="og" onchange="renderGanhando(0)"><option value="subir">Maior ganho ao subir o preço</option><option value="lucro">Menor margem hoje</option><option value="folga">Maior folga até o 2º</option></select></div>
+    <div class="section"><div class="sec-head">🟢 Ganhando — margem, 2º colocado e quanto dá para subir <span class="cnt" id="c-ganhando">-</span></div><div id="b-ganhando"><div class="loading">Carregando...</div></div></div>
     <div class="footer"><span id="upd-g">-</span><button class="btn" onclick="recarregarConta()">↺ Atualizar</button></div>
   </div>
   <div id="tab-atualizando" class="tab-content">
@@ -985,7 +985,7 @@ function renderPerdendo(from){
     const sku=(it._sku||it.seller_sku)?'<span style="color:#aaa"> · SKU: '+(it._sku||it.seller_sku)+'</span>':'';
     const escH=t=>String(t||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const urlOk=u=>/^https:\/\/[a-z0-9.-]*mercadoli[vb]re\.com(\.br)?\//i.test(u||'')?u:'';
-    const ganhador=it.winner_nome?'<div class="imeta" style="margin-top:3px">🏆 Ganhador: '+(urlOk(it.winner_loja)?'<a class="alink" href="'+escH(urlOk(it.winner_loja))+'" target="_blank" rel="noopener"><b>'+escH(it.winner_nome)+'</b></a>':'<b>'+escH(it.winner_nome)+'</b>')+(urlOk(it.winner_permalink)?' · <a class="alink" href="'+escH(urlOk(it.winner_permalink))+'" target="_blank" rel="noopener">Ver anúncio dele</a>':'')+'</div>':'';
+    const ganhador=it.winner_nome?'<div class="imeta" style="margin-top:3px">🏆 Ganhador: '+(urlOk(it.winner_loja)?'<a class="alink" href="'+escH(urlOk(it.winner_loja))+'" target="_blank" rel="noopener"><b>'+escH(it.winner_nome)+'</b></a>':'<b>'+escH(it.winner_nome)+'</b>')+seloVendedor(it.winner_medalha,it.winner_oficial)+(urlOk(it.winner_permalink)?' · <a class="alink" href="'+escH(urlOk(it.winner_permalink))+'" target="_blank" rel="noopener">Ver anúncio dele</a>':'')+'</div>':'';
     return'<div class="item-row '+(diff<=2?'hl':'')+'"><div class="thumb">'+thumb+'</div><div class="iinfo"><div class="ititle">'+(it.title||'-')+'</div><div class="imeta">'+it.id+sku+' · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+it.id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/lista/promos?page=1&search='+it.id.replace("MLB","")+' " target="_blank">Promo</a></div>'+ganhador+'</div><div class="prices"><div class="mp">Meu: '+fmt(it.current_price||0)+'</div><div class="pw">Ganhador: '+fmt(it.winner_price||0)+'</div><div class="'+cls+'">Para ganhar: '+fmt(it.price_to_win||0)+'</div>'+lucroHtml(it)+'</div></div>';
   }).join('');
 }
@@ -1029,7 +1029,7 @@ function renderConcorrentes(){
   const perd=d.perdendo||[];
   if(!perd.length){b.innerHTML='<div class="loading" style="color:green">✓ Você não está perdendo nenhum catálogo.</div>';set('c-concorrentes','0');return;}
   const g={};
-  perd.forEach(it=>{const k=it.winner_nome||'(não identificado)';const x=g[k]||(g[k]={nome:k,loja:it.winner_loja,qtd:0,difSoma:0,difN:0});x.qtd++;
+  perd.forEach(it=>{const k=it.winner_nome||'(não identificado)';const x=g[k]||(g[k]={nome:k,loja:it.winner_loja,med:it.winner_medalha,ofi:it.winner_oficial,qtd:0,difSoma:0,difN:0});x.qtd++;
     if(it.current_price&&it.winner_price){x.difSoma+=it.current_price-it.winner_price;x.difN++;}});
   const lista=Object.values(g).sort((a,b)=>b.qtd-a.qtd);
   const total=perd.length, cat=d.catTotal||0, max=lista[0].qtd;
@@ -1041,9 +1041,9 @@ function renderConcorrentes(){
   b.innerHTML=resumo+'<div style="padding:6px 16px 12px">'+vis.map((x,i)=>{
     const nome=urlOk(x.loja)?'<a class="alink" style="font-size:13px" href="'+escH(urlOk(x.loja))+'" target="_blank" rel="noopener" title="Abrir a loja no ML">↗</a>':'';
     const dif=x.difN?(x.difSoma/x.difN):null;
-    return '<div style="display:grid;grid-template-columns:28px minmax(120px,220px) 1fr 64px 170px;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid #f5f5f5;font-size:13px">'+
+    return '<div style="display:grid;grid-template-columns:28px minmax(160px,380px) 1fr 64px 170px;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid #f5f5f5;font-size:13px">'+
       '<span style="color:#aaa;text-align:right">'+(i+1)+'º</span>'+
-      '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><a href="#" data-n="'+escH(x.nome)+'" onclick="filtrarConcorrente(this.dataset.n);return false" style="color:#1a1a2e;font-weight:600;text-decoration:none">'+escH(x.nome)+'</a> '+nome+'</span>'+
+      '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><a href="#" data-n="'+escH(x.nome)+'" onclick="filtrarConcorrente(this.dataset.n);return false" style="color:#1a1a2e;font-weight:600;text-decoration:none">'+escH(x.nome)+'</a> '+nome+(x.nome!=='(não identificado)'?seloVendedor(x.med,x.ofi):'')+'</span>'+
       '<span style="background:#f2f3f5;border-radius:4px;height:10px;overflow:hidden"><i style="display:block;height:100%;width:'+(x.qtd/max*100)+'%;background:#e53935;border-radius:4px"></i></span>'+
       '<span style="text-align:right"><b>'+pct(x.qtd/total)+'</b></span>'+
       '<span style="color:#888;text-align:right;white-space:nowrap">'+x.qtd+' catálogo'+(x.qtd>1?'s':'')+(dif!=null?' · '+(dif>=0?'+':'')+fmt(dif):'')+'</span></div>';
@@ -1051,17 +1051,42 @@ function renderConcorrentes(){
 }
 function filtrarConcorrente(nome){const i=el('bp');if(!i)return;i.value=nome;renderPerdendo(0);el('b-perdendo').scrollIntoView({behavior:'smooth',block:'start'});}
 
+function seloVendedor(med,oficial){
+  const M={platinum:['🏆 Platinum','#EDE7F6','#4527A0'],gold:['🥇 Gold','#FFF8E1','#B26A00'],silver:['🥈 Silver','#ECEFF1','#455A64']};
+  const m=M[med];const b=(t,bg,c,tit)=>'<span title="'+tit+'" style="display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:10px;background:'+bg+';color:'+c+';margin-left:5px;white-space:nowrap">'+t+'</span>';
+  return (m?b(m[0],m[1],m[2],'MercadoLíder '+m[0].split(' ')[1]):b('sem medalha','#f5f5f5','#888','Não é MercadoLíder'))+(oficial?b('✔ Loja oficial','#E3F2FD','#1565C0','Loja oficial no Mercado Livre'):'');
+}
 function renderGanhando(from){
   const d=window._dados[ci];const b=el('b-ganhando');
   if(!d){b.innerHTML='<div class="loading">Aguarde...</div>';return;}
   const q=(el('bg')?.value||'').toLowerCase();
   let f=q?d.ganhando.filter(it=>(it.title||'').toLowerCase().includes(q)||(it.id||'').toLowerCase().includes(q)||(it._sku||it.seller_sku||'').toLowerCase().includes(q)):[...d.ganhando];
   if(!f.length){b.innerHTML='<div class="loading">Nenhum resultado.</div>';return;}
+  const ord=el('og')?.value||'subir';
+  const ganho=it=>it.calc_subir&&it.calc_atual?it.calc_subir.lucro-it.calc_atual.lucro:(it.margem>0?it.margem:0);
+  if(ord==='subir')f.sort((a,b)=>ganho(b)-ganho(a));
+  else if(ord==='lucro')f.sort((a,b)=>(a.lucro_atual_pct??999)-(b.lucro_atual_pct??999));
+  else if(ord==='folga')f.sort((a,b)=>(b.margem||0)-(a.margem||0));
+  const escH=t=>String(t||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const urlOk=u=>/^https:\/\/[a-z0-9.-]*mercadoli[vb]re\.com(\.br)?\//i.test(u||'')?u:'';
+  const pc=v=>v.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+  const cor=v=>v<0?'#b71c1c':v<10?'#e53935':v<15?'#e67e00':'#2e7d32';
   b.innerHTML=f.map(it=>{
     const thumb=it.thumbnail?'<img src="'+it.thumbnail+'" />':'📦';
-    const vis=it.visit_share==='maximum'?'🟢 Visitas maximas':'🟡 Visitas '+(it.visit_share||'');
+    const vis=it.visit_share==='maximum'?'🟢 Visitas máximas':'🟡 Visitas '+(it.visit_share||'');
     const sku=(it._sku||it.seller_sku)?'<span style="color:#aaa"> · SKU: '+(it._sku||it.seller_sku)+'</span>':'';
-    return'<div class="item-row"><div class="thumb">'+thumb+'</div><div class="iinfo"><div class="ititle">'+(it.title||'-')+'</div><div class="imeta">'+it.id+sku+' · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+it.id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/lista/promos?page=1&search='+it.id.replace("MLB","")+' " target="_blank">Promo</a></div></div><div class="prices"><div class="mp">Meu: '+fmt(it.current_price||0)+'</div>'+(it.s2price?'<div class="pw">2o lugar: '+fmt(it.s2price)+'</div><div class="pm">Subir ate: '+fmt(it.margem>0?it.margem:0)+'</div>':'<div class="pv">Unico vendedor</div>')+'<div class="pv">'+vis+'</div></div></div>';
+    const segundo=it.s2price?'<div class="imeta" style="margin-top:3px">🥈 2º colocado: '+(it.s2_nome?(urlOk(it.s2_loja)?'<a class="alink" href="'+escH(urlOk(it.s2_loja))+'" target="_blank" rel="noopener"><b>'+escH(it.s2_nome)+'</b></a>':'<b>'+escH(it.s2_nome)+'</b>')+seloVendedor(it.s2_medalha,it.s2_oficial):'<b>não identificado</b>')+(urlOk(it.s2_permalink)?' · <a class="alink" href="'+escH(urlOk(it.s2_permalink))+'" target="_blank" rel="noopener">Ver anúncio dele</a>':'')+(it.s2_concorrentes>1?' · <span style="color:#999">'+it.s2_concorrentes+' concorrentes</span>':'')+'</div>':'<div class="imeta" style="margin-top:3px">🟢 Você é o único vendedor neste catálogo</div>';
+    const hoje=it.lucro_atual_pct!=null?'<div style="font-size:12px;margin-top:3px;white-space:nowrap">Margem hoje: <b class="ctw" style="color:'+cor(it.lucro_atual_pct)+'">'+pc(it.lucro_atual_pct)+calcTip(it.calc_atual,'Hoje, no seu preço ('+fmt(it.current_price||0)+')')+'</b></div>':(it.margem_obs?'<div style="font-size:11px;color:#999;margin-top:2px">Margem: '+escH(it.margem_obs)+'</div>':'');
+    let subir='';
+    if(it.s2price){
+      if(it.preco_subir){
+        const dif=it.preco_subir-(it.current_price||0);
+        subir='<div class="pm" style="margin-top:4px">⬆ Subir para '+fmt(it.preco_subir)+' <small>(+'+fmt(dif)+')</small></div>'+
+          (it.lucro_subir_pct!=null?'<div style="font-size:12px;white-space:nowrap">Margem subindo: <b class="ctw" style="color:'+cor(it.lucro_subir_pct)+'">'+pc(it.lucro_subir_pct)+calcTip(it.calc_subir,'Subindo para '+fmt(it.preco_subir)+' (R$ 0,10 abaixo do 2º)')+'</b>'+(it.calc_subir&&it.calc_atual?' <small style="color:#2e7d32">+'+fmt(it.calc_subir.lucro-it.calc_atual.lucro)+'/venda</small>':'')+'</div>':'');
+      } else subir='<div class="pv" style="margin-top:4px">Sem folga para subir</div>';
+    }
+    return'<div class="item-row"><div class="thumb">'+thumb+'</div><div class="iinfo"><div class="ititle">'+(it.title||'-')+'</div><div class="imeta">'+it.id+sku+' · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+it.id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/lista/promos?page=1&search='+it.id.replace("MLB","")+' " target="_blank">Promo</a> · '+vis+'</div>'+segundo+'</div>'+
+      '<div class="prices"><div class="mp">Meu: '+fmt(it.current_price||0)+'</div>'+hoje+(it.s2price?'<div class="pw" style="margin-top:4px">2º lugar: '+fmt(it.s2price)+'</div>':'')+subir+'</div></div>';
   }).join('');
 }
 
