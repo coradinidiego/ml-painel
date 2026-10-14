@@ -34,7 +34,7 @@ const EMPRESAS = [
 ];
 const MARKETPLACES = ['Mercado Livre', 'Amazon', 'Shopee', 'Shein', 'TikTok'];
 const ETAPAS = ['emitirNF', 'aEmpacotar', 'empacotado', 'enviado'];
-const ROTULO = { emitirNF: 'Emitir NF', aEmpacotar: 'A empacotar', empacotado: 'Empacotado', enviado: 'Enviado', ignorar: 'Ignorar' };
+const ROTULO = { emitirNF: 'Emitir NF', aEmpacotar: 'A empacotar', empacotado: 'A coletar', enviado: 'Enviado', ignorar: 'Ignorar' };
 const TINY_SITUACOES = ['Em aberto', 'Aprovado', 'Preparando envio', 'Faturado', 'Pronto para envio', 'Enviado', 'Entregue', 'Não Entregue', 'Cancelado', 'Dados incompletos'];
 
 // ─── Config ────────────────────────────────────────────────────────────────
@@ -209,7 +209,15 @@ async function coletarFluxoBling(emp, canal, canais, hoje, janela) {
     }
     add('aEmpacotar', atendidos);
     await delay(350);
-    add('empacotado', await blingListar(emp.idx, [SIT.verificado], { idLoja, dataAlteracaoInicial: hoje, dataAlteracaoFinal: hoje }));
+    // A coletar: Verificado (empacotado) e ainda não coletado. Com a Shopee conectada, controla pelo status da Shopee
+    // (sai da conta assim que a Shopee marca como enviado); sem API, conta o que foi verificado hoje.
+    let aColetar = null;
+    if (canal === 'Shopee') {
+      const verif = await blingListar(emp.idx, [SIT.verificado], { ...janela, idLoja });
+      const st = await statusShopee(emp.id, verif.map(p => String(p.numeroLoja || '')).filter(Boolean));
+      if (st) aColetar = verif.filter(p => ['PROCESSED', 'RETRY_SHIP', 'READY_TO_SHIP'].includes(st[String(p.numeroLoja || '')]));
+    }
+    add('empacotado', aColetar ?? await blingListar(emp.idx, [SIT.verificado], { idLoja, dataAlteracaoInicial: hoje, dataAlteracaoFinal: hoje }));
     await delay(350);
     // Amazon: a lista de pedidos vem da própria Amazon; aqui só guardamos quais já foram verificados (empacotados)
     // em qualquer dia da janela, para cruzar pelo número do pedido. "_verificado" não entra na contagem.
@@ -411,7 +419,7 @@ router.get('/config', async (req, res) => {
   res.send(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Configurar TV</title><style>${CSS}</style></head><body>
   <div class="top"><b>📺 Configurar painel da TV</b><span style="flex:1"></span><a href="/tv" target="_blank">Abrir TV</a><a href="/tv/diagnostico">Diagnóstico ML</a><a href="/conta">⚙️ Conta</a></div>
   ${req.query.ok ? '<div class="box" style="background:#e8f5e9;color:#2e7d32">Configuração salva. A TV atualiza em até 2 minutos.</div>' : ''}
-  <form method="post" action="/tv/config"><div class="box"><p class="s">O Mercado Livre vem direto da API do ML. Aqui você diz, para os outros canais (Amazon, Shopee, Shein, TikTok), em que etapa da expedição cada situação do pedido está: <b>Emitir NF</b> → <b>A empacotar</b> → <b>Empacotado</b>. <b>Enviado</b> conta só o que mudou para essa situação hoje.</p></div>
+  <form method="post" action="/tv/config"><div class="box"><p class="s">O Mercado Livre vem direto da API do ML. Aqui você diz, para os outros canais (Amazon, Shopee, Shein, TikTok), em que etapa da expedição cada situação do pedido está: <b>Emitir NF</b> → <b>A empacotar</b> → <b>A coletar</b>. <b>Enviado</b> conta só o que mudou para essa situação hoje.</p></div>
   ${blocos}<div class="box" style="text-align:right"><button>Salvar</button></div></form></body></html>`);
 });
 router.post('/config', express.urlencoded({ extended: false }), (req, res) => {

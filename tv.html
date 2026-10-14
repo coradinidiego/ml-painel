@@ -84,7 +84,7 @@ footer .erro{color:var(--emp)}
   <div class="legenda">
     <span><i style="background:var(--nf)"></i>Emitir NF</span>
     <span><i style="background:var(--emp)"></i>A empacotar</span>
-    <span><i style="background:var(--ok)"></i>Empacotados</span>
+    <span><i style="background:var(--ok)"></i>A coletar</span>
   </div>
   <div class="hora n" id="hora">--:--</div>
 </header>
@@ -125,14 +125,15 @@ function faixa(e){
   const t = e.total, pendente = t.emitirNF + t.aEmpacotar;
   const estado = e.carregando ? 'Carregando…'
     : e.carregandoErp ? 'Carregando outros canais…'
-    : pendente === 0 && t.empacotado + t.enviado > 0 ? 'Tudo empacotado'
+    : pendente === 0 && t.empacotado > 0 ? 'Tudo empacotado, aguardando coleta'
+    : pendente === 0 && t.enviado > 0 ? 'Tudo enviado'
     : pendente === 0 ? 'Sem pedidos pendentes'
     : `${fmt(pendente)} para preparar`;
   return `<section class="faixa ${e.carregando?'carregando':''} ${e.desatualizado?'velho':''}">
     <div class="marca"><img src="/logo/${esc(e.logo)}" alt=""><b>${esc(e.nome)}</b><span class="estado ${pendente===0&&!e.carregando?'pronto':''}">${estado}</span></div>
     ${estacao(e,'emitirNF','nf',1,'Emitir NF')}
     ${estacao(e,'aEmpacotar','em',2,'A empacotar')}
-    ${estacao(e,'empacotado','ok',3,'Empacotados')}
+    ${estacao(e,'empacotado','ok',3,'A coletar')}
     <div class="lado">
       <div><b class="n">${fmt(t.enviado)}</b>enviados hoje</div>
       <div><b class="n">${fmt(t.futuros)}</b>próximos dias</div>
