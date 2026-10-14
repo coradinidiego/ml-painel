@@ -150,6 +150,23 @@ async function coletarBling(emp, cfg, hoje) {
 const FLUXO_VERIFICADO = { Shein: /^GSH/i, Shopee: /^\d{6}[A-Z0-9]{8}$/i, Amazon: /^\d{3}-\d{7}-\d{7}$/ };
 
 const SIT = { emAberto: 6, atendido: 9, verificado: 24 };
+
+// Status dos pedidos direto na Shopee (só lojas com a Shopee conectada no painel). Cache de 3 min por pedido.
+const _stShp = {};
+async function statusShopee(empId, sns) {
+  let sp;
+  try { sp = require('./shopee').loja(empId); } catch (e) { return null; }
+  if (!sp.getTokens().access_token || !sns.length) return null;
+  const agora = Date.now(), out = {}, faltam = [];
+  for (const sn of sns) { const c = _stShp[sn]; if (c && agora - c.ts < 3 * 60e3) out[sn] = c.st; else faltam.push(sn); }
+  try {
+    for (let i = 0; i < faltam.length; i += 50) {
+      const d = await sp.shopeeGet('/api/v2/order/get_order_detail', { order_sn_list: faltam.slice(i, i + 50).join(',') });
+      for (const o of d.response?.order_list || []) { out[o.order_sn] = o.order_status; _stShp[o.order_sn] = { st: o.order_status, ts: agora }; }
+    }
+  } catch (e) { console.warn('[tv] status Shopee', empId, e.message); if (!Object.keys(out).length) return null; }
+  return out;
+}
 const _lojaCanal = {};   // idx|canal -> { ids:Set, ts }
 async function lojasCanal(idx, canal, canais, janela) {
   const chave = idx + '|' + canal, c = _lojaCanal[chave];
@@ -172,7 +189,25 @@ async function coletarFluxoBling(emp, canal, canais, hoje, janela) {
   for (const idLoja of ids) {
     add('emitirNF', await blingListar(emp.idx, [SIT.emAberto], { ...janela, idLoja }));
     await delay(350);
-    add('aEmpacotar', await blingListar(emp.idx, [SIT.atendido], { ...janela, idLoja }));
+    let atendidos = await blingListar(emp.idx, [SIT.atendido], { ...janela, idLoja });
+    if (canal === 'Shopee') {
+      // Bling "Atendido" mas na Shopee ainda "a processar" (READY_TO_SHIP) = não gerou etiqueta → Emitir NF (precisa arrumar).
+      // Já enviado/cancelado na Shopee = Atendido esquecido no Bling → não conta.
+      const st = await statusShopee(emp.id, atendidos.map(p => String(p.numeroLoja || '')).filter(Boolean));
+      if (st) {
+        const aProcessar = [], ok = [];
+        for (const p of atendidos) {
+          const x = st[String(p.numeroLoja || '')];
+          if (!x) { ok.push(p); continue; }                       // não achou na Shopee: mantém
+          if (x === 'READY_TO_SHIP' || x === 'UNPAID') aProcessar.push(p);
+          else if (x === 'PROCESSED' || x === 'RETRY_SHIP') ok.push(p);
+          // SHIPPED, TO_CONFIRM_RECEIVE, COMPLETED, CANCELLED, IN_CANCEL, TO_RETURN: fora
+        }
+        add('emitirNF', aProcessar);
+        atendidos = ok;
+      }
+    }
+    add('aEmpacotar', atendidos);
     await delay(350);
     add('empacotado', await blingListar(emp.idx, [SIT.verificado], { idLoja, dataAlteracaoInicial: hoje, dataAlteracaoFinal: hoje }));
     await delay(350);
