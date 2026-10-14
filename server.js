@@ -1403,8 +1403,11 @@ async function carregarAnunciosAmazon(k) {
     const imgs = { ...(E.imgs || {}) };
     const faltam = [...new Set(anuncios.map(a => a.asin).filter(x => x && !imgs[x]))];
     for (let i = 0; i < faltam.length; i += 20) {
-      try { Object.assign(imgs, await az.catalogo(faltam.slice(i, i + 20))); } catch (e) { console.log('[amazon] catálogo ' + k + ': ' + e.message); }
-      await new Promise(r => setTimeout(r, 600));
+      for (let t = 0; t < 3; t++) {
+        try { Object.assign(imgs, await az.catalogo(faltam.slice(i, i + 20))); break; }
+        catch (e) { console.log('[amazon] catálogo ' + k + ': ' + e.message); await new Promise(r => setTimeout(r, 5000 * (t + 1))); }
+      }
+      await new Promise(r => setTimeout(r, 1200));
     }
     for (const a of anuncios) a.img = imgs[a.asin]?.img || null;
     // Histórico financeiro (comissão real, outras tarifas e frete DBA por SKU) — renova a cada 6h
@@ -1420,17 +1423,25 @@ async function carregarAnunciosAmazon(k) {
     }
     const tar = {};
     for (let i = 0; i < pedidosTar.length; i += 20) {
-      try { Object.assign(tar, await az.tarifas(pedidosTar.slice(i, i + 20))); } catch (e) { console.log('[amazon] tarifas ' + k + ': ' + e.message); }
-      await new Promise(r => setTimeout(r, 2200));
+      for (let t = 0; t < 3; t++) {
+        try { Object.assign(tar, await az.tarifas(pedidosTar.slice(i, i + 20))); break; }
+        catch (e) { console.log('[amazon] tarifas ' + k + ' (tentativa ' + (t + 1) + '): ' + e.message); await new Promise(r => setTimeout(r, 8000 * (t + 1))); }
+      }
+      await new Promise(r => setTimeout(r, 2500));
     }
+    // comissão média real da loja (reserva quando a Amazon não devolve a estimativa do produto)
+    let cTot = 0, pTot = 0;
+    for (const h of Object.values(hist?.porSku || {})) if (h.comPct != null) { cTot += h.comPct * h.unid; pTot += h.unid; }
+    const comMediaLoja = pTot ? cTot / pTot : 0.12;
     const cfgE = require('./config_empresas').porMlIdx(idxErp) || {};
     const imp = cfgE.imposto ?? 0.05, emb = cfgE.embalagem ?? 0;
     const r2 = x => Math.round(x * 100) / 100;
     const calc = (a, preco, t) => {
       if (!(preco > 0) || a.custo == null) return null;
       const h = hist?.porSku?.[a.sku];
-      const comPct = t && !t.erro && preco ? (t.det?.ReferralFee ?? t.total) / preco : (h?.comPct ?? null);
-      if (comPct == null) return null;
+      const comEst = t && !t.erro && preco ? (t.det?.ReferralFee ?? t.total) / preco : null;
+      const comPct = comEst ?? h?.comPct ?? comMediaLoja;
+      const fonteCom = comEst != null ? 'estimada pela Amazon para este produto' : h?.comPct != null ? 'média real deste SKU' : 'média da loja (a Amazon não devolveu a estimativa deste produto)';
       const tarifa = preco * comPct;
       const fixa = (t && !t.erro ? (t.total - (t.det?.ReferralFee ?? t.total)) : 0) + (h ? h.outrasUn : 0);
       const fxs = hist?.freteFaixas || [], fxi = fxs.find(f => f.ate == null || preco < f.ate);
@@ -1442,7 +1453,7 @@ async function carregarAnunciosAmazon(k) {
       return { preco: r2(preco), frete: r2(frete), tarifa: r2(tarifa + fixa), tarifaPct: Math.round(comPct * 1000) / 10, tarifaFixa: fixa ? r2(fixa) : 0,
         custo: r2(a.custo), custoFonte: a.custoFonte, embalagem: r2(emb), imposto: r2(imposto), impostoPct: Math.round(imp * 1000) / 10, rebate: 0,
         lucro: r2(lucro), pct: Math.round(lucro / preco * 1000) / 10, mkt: 'Amazon',
-        nota: 'Comissão estimada pela Amazon para este produto' + (fixa ? '; outras tarifas e ' : '; ') + (fonteFrete === 'FBA' ? 'FBA.' : fonteFrete === 'sku' ? 'frete Envios Fácil = média real dos seus pedidos deste SKU (' + h.pedidos + ' pedidos, 60 dias).' : fonteFrete === 'faixa' ? 'frete Envios Fácil = média dos seus pedidos na faixa de ' + (fxi.ate ? 'até R$ ' + fxi.ate : 'acima de R$ 200') + ' (' + fxi.pedidos + ' pedidos, 60 dias).' : 'frete Envios Fácil = média da loja (' + (hist?.pedidosComFrete || 0) + ' pedidos, 60 dias).') };
+        nota: 'Comissão ' + fonteCom + (fixa ? '; outras tarifas e ' : '; ') + (fonteFrete === 'FBA' ? 'FBA.' : fonteFrete === 'sku' ? 'frete Envios Fácil = média real dos seus pedidos deste SKU (' + h.pedidos + ' pedidos, 60 dias).' : fonteFrete === 'faixa' ? 'frete Envios Fácil = média dos seus pedidos na faixa de ' + (fxi.ate ? 'até R$ ' + fxi.ate : 'acima de R$ 200') + ' (' + fxi.pedidos + ' pedidos, 60 dias).' : 'frete Envios Fácil = média da loja (' + (hist?.pedidosComFrete || 0) + ' pedidos, 60 dias).') };
     };
     for (const a of anuncios) {
       if (a.status !== 'Active') continue;
