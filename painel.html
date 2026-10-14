@@ -903,13 +903,25 @@ function renderSemPromo(from){
   if(ord==='desc')f.sort((a,b)=>b.price-a.price);
   else if(ord==='asc')f.sort((a,b)=>a.price-b.price);
   else f.sort((a,b)=>(a.title||'').localeCompare(b.title||''));
-  if(!f.length){b.innerHTML='<div class="loading" style="color:green">✓ Todos tem promocao!</div>';return;}
+  if(!f.length){b.innerHTML='<div class="loading" style="color:green">✓ Todos tem promocao!</div>'+ignoradosHtml(d);return;}
   b.innerHTML=f.map(it=>{
     const thumb=it.thumbnail?'<img src="'+it.thumbnail+'" />':'📦';
     const sku=(it._sku||it.seller_sku)?'<span style="color:#aaa"> · SKU: '+(it._sku||it.seller_sku)+'</span>':'';
     const cs=it.catalog_listing?(it.status_cat==='winning'?'<span class="pc">🟢 Ganhando</span>':it.status_cat==='competing'?'<span class="ptw">🔴 Perdendo</span>':'<span class="pv">📋 Catalogo</span>'):'';
-    return'<div class="item-row"><div class="thumb">'+thumb+'</div><div class="iinfo"><div class="ititle">'+(it.title||'-')+'</div><div class="imeta">'+it.id+sku+' · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+it.id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/lista/promos?page=1&search='+it.id.replace('MLB','')+' " target="_blank">Promo</a></div></div><div class="prices"><div class="mp">'+fmt(it.price)+'</div>'+cs+'</div></div>';
-  }).join('');
+    return'<div class="item-row"><div class="thumb">'+thumb+'</div><div class="iinfo"><div class="ititle">'+(it.title||'-')+'</div><div class="imeta">'+it.id+sku+' · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+it.id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/lista/promos?page=1&search='+it.id.replace('MLB','')+' " target="_blank">Promo</a> · <a class="alink" href="#" onclick="ignorarPromo(\''+it.id+'\',true);return false" title="Tirar da lista (produto que não pode ter promoção)">Ocultar</a></div></div><div class="prices"><div class="mp">'+fmt(it.price)+'</div>'+cs+'</div></div>';
+  }).join('')+ignoradosHtml(d);
+}
+function ignoradosHtml(d){
+  const L=d.semPromoIgnorados||[];if(!L.length)return'';
+  return '<details style="padding:10px 16px;border-top:1px solid #eee"><summary style="cursor:pointer;font-size:13px;color:#666">🚫 '+L.length+' fora da lista (não podem ter promoção ou ocultados)</summary>'+L.map(it=>'<div class="item-row" style="opacity:.7"><div class="thumb">'+(it.thumbnail?'<img src="'+it.thumbnail+'" />':'📦')+'</div><div class="iinfo"><div class="ititle">'+(it.title||'-')+'</div><div class="imeta">'+it.id+(/mamadeira|chupeta|bicos? (de |para )?(mamadeira|silicone|ortod[oô]ntico)|protetor(es)? de mamilo/i.test(it.title||'')?' · <span style="color:#c62828">proibido promoção (Lei 11.265)</span>':' · <a class="alink" href="#" onclick="ignorarPromo(\''+it.id+'\',false);return false">Voltar para a lista</a>')+'</div></div></div>').join('')+'</details>';
+}
+async function ignorarPromo(id,ignorar){
+  await fetch('/promo/ignorar/'+ci,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,ignorar})});
+  const d=window._dados[ci];
+  if(ignorar){const i=d.semPromo.findIndex(x=>x.id===id);if(i>=0)(d.semPromoIgnorados||(d.semPromoIgnorados=[])).push(...d.semPromo.splice(i,1));}
+  else{const i=(d.semPromoIgnorados||[]).findIndex(x=>x.id===id);if(i>=0)d.semPromo.push(...d.semPromoIgnorados.splice(i,1));}
+  set('tc-sempromo',d.semPromo.length);set('c-sempromo',d.semPromo.length);set('card-sempromo',d.semPromo.length);
+  renderSemPromo();
 }
 
 async function atualizarCustos(){

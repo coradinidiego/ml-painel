@@ -185,6 +185,26 @@ async function meusSellers() {
   return _meusSellers;
 }
 
+// Itens fora da lista "Sem promoção": proibidos de ter promoção por lei (mamadeira, chupeta, bico, protetor de mamilo)
+// e os que você ocultar à mão no painel (promo_ignorar.json, por conta).
+const PROMO_PROIBIDA = /mamadeira|chupeta|bicos? (de |para )?(mamadeira|silicone|ortod[oô]ntico)|protetor(es)? de mamilo/i;
+const ARQ_PROMO_IGN = path.join(DATA, 'promo_ignorar.json');
+function promoIgnorarTudo() { try { return JSON.parse(fs.readFileSync(ARQ_PROMO_IGN)); } catch (e) { return {}; } }
+function promoIgnorar(idx) { return new Set(promoIgnorarTudo()[idx] || []); }
+app.post('/promo/ignorar/:idx', (req, res) => {
+  const idx = String(parseInt(req.params.idx)), { id, ignorar = true } = req.body || {};
+  if (!/^MLB\d+$/.test(String(id || ''))) return res.status(400).json({ ok: false });
+  const t = promoIgnorarTudo(), set = new Set(t[idx] || []);
+  ignorar ? set.add(id) : set.delete(id);
+  t[idx] = [...set]; fs.writeFileSync(ARQ_PROMO_IGN, JSON.stringify(t));
+  const d = dadosCache[idx];
+  if (d) {
+    if (ignorar) { const i = d.semPromo.findIndex(x => x.id === id); if (i >= 0) d.semPromoIgnorados.push(...d.semPromo.splice(i, 1)); }
+    else { const i = d.semPromoIgnorados.findIndex(x => x.id === id); if (i >= 0 && !PROMO_PROIBIDA.test(d.semPromoIgnorados[i].title || '')) d.semPromo.push(...d.semPromoIgnorados.splice(i, 1)); }
+  }
+  res.json({ ok: true });
+});
+
 async function carregarConta(idx) {
   statusCache[idx] = 'carregando';
   progressoCache[idx] = { conta: 0, cat: 0, promo: 0, perguntas: 0 };
@@ -326,6 +346,15 @@ const semPromo = [], comPromo = [];
       progressoCache[idx].promo = (i+1)/allItems.length;
     }
 
+    // Produtos que não podem ter promoção (ex.: mamadeiras/chupetas — Lei 11.265/NBCAL) + itens ocultados à mão
+    {
+      const ign = promoIgnorar(idx);
+      const fora = it => PROMO_PROIBIDA.test(it.title || '') || ign.has(it.id);
+      const foraLista = semPromo.filter(fora);
+      for (const it of foraLista) semPromo.splice(semPromo.indexOf(it), 1);
+      semPromo.ignorados = foraLista;
+    }
+
     // Lucro % no preço atual e no preço para ganhar (custo da planilha + tarifa/frete do ML + imposto)
     try { await require('./custos_ml').calcularMargens(ml, idx, uid, perdendo); }
     catch (e) { console.warn('[margens]', idx, e.message); }
@@ -338,7 +367,7 @@ const semPromo = [], comPromo = [];
       ativos, pausados,
       perguntas,
       perdendo, ganhando, atualizando, grupo,
-      semPromo, comPromo,
+      semPromo, comPromo, semPromoIgnorados: semPromo.ignorados || [],
       catTotal: catIds.length,
       naoListados,
       ultimaAtualizacao: new Date().toLocaleTimeString('pt-BR')
