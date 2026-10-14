@@ -141,6 +141,20 @@ body{background:#f0f2f5;color:#111}
 #canal-sw-shp.on{background:#ee4d2d;color:#fff}
 #canal-sw-amz.on{background:#ff9900;color:#111}
 #amazon-content{display:none}
+#geral-content{display:none}
+.conta-tab.geral{min-width:150px;--cor:#7fb3ff}
+.gtab{width:100%;border-collapse:separate;border-spacing:0;background:#fff;border:1px solid #e6e6e6;border-radius:12px;overflow:hidden;font-size:13px}
+.gtab th{background:#f6f7f9;color:#555;font-weight:600;font-size:12px;text-align:center;padding:9px 8px;border-bottom:1px solid #eee}
+.gtab th.l,.gtab td.l{text-align:left}
+.gtab td{padding:9px 8px;border-bottom:1px solid #f1f1f1;text-align:center;font-variant-numeric:tabular-nums}
+.gtab tr.emp td{background:#0d1b2a;color:#fff;font-weight:700;font-size:13px;padding:8px 12px}
+.gtab .canal{font-weight:600;white-space:nowrap}
+.gtab .n{display:inline-block;min-width:34px;padding:3px 8px;border-radius:8px;font-weight:700;cursor:pointer}
+.gtab .n:hover{outline:2px solid #0d1b2a22}
+.gtab .z{color:#aaa;font-weight:500;cursor:default}
+.gtab .r{background:#FFEBEE;color:#C62828}.gtab .a{background:#FFF3E0;color:#E65100}.gtab .g{background:#E8F5E9;color:#2E7D32}.gtab .b{background:#E3F2FD;color:#1565C0}
+.gtab .nd{color:#bbb;font-size:12px}
+.gwrap{overflow-x:auto}
 @media(max-width:700px){.conta-tab{min-width:180px}.hd .top-bar,.contas{padding-left:16px;padding-right:16px}}
 </style>
 </head><body>
@@ -156,6 +170,13 @@ body{background:#f0f2f5;color:#111}
     <button id="canal-sw-amz" role="tab" style="display:none">Amazon</button>
   </div>
 </header>
+
+<!-- Visão geral: pendências de todas as empresas -->
+<div id="geral-content"><div class="content">
+  <div class="sec-head" style="background:none;border:none;padding:0 0 10px"><span style="font-size:16px;font-weight:700">📊 Pendências de hoje</span><span style="font-size:12px;color:#888" id="geral-upd"></span></div>
+  <div class="gwrap"><table class="gtab" id="geral-tab"><tr><td class="loading">Carregando...</td></tr></table></div>
+  <p style="font-size:12px;color:#888;margin-top:10px">Clique em um número para abrir a lista. <b>Perdendo c/ lucro ≥10%</b> = catálogos/Buy Box que você perde mas dá para baixar ao preço do ganhador mantendo pelo menos 10% de lucro.</p>
+</div></div>
 
 <!-- Conteúdo Shopee (separado do ML) -->
 <div id="shopee-content">
@@ -250,7 +271,8 @@ body{background:#f0f2f5;color:#111}
       <option value="perdendo">🔴 Perdendo Buy Box</option><option value="sem">⚪ Sem Buy Box</option><option value="ganhando">🟢 Ganhando Buy Box</option>
       <option value="semEstoque">🚫 Sem estoque</option><option value="baixo">⚠️ Estoque baixo (≤3)</option><option value="incompleto">🧩 Incompletos</option><option value="inativo">⏸️ Inativos</option><option value="">Todos os anúncios</option>
     </select>
-    <select class="sselect" id="az-fl" onchange="renderAmazon()" title="Lucro no preço da Buy Box"><option value="">Qualquer lucro</option><option value="0">Lucro na Buy Box ≥ 0%</option><option value="10">≥ 10%</option><option value="15">≥ 15%</option><option value="20">≥ 20%</option></select>
+    <select class="sselect" id="az-fl" onchange="renderAmazon()" title="Lucro no preço da Buy Box"><option value="">Qualquer lucro</option><option value="15">🟢 Lucro ≥ 15% (ideal)</option><option value="10">🟠 Lucro ≥ 10% (mínimo)</option><option value="0">Lucro ≥ 0%</option></select>
+    <select class="sselect" id="az-ord" onchange="renderAmazon()" title="Ordenar"><option value="">Ordenar: padrão</option><option value="lucroBB">Maior lucro na Buy Box</option><option value="lucroAtual">Maior lucro atual</option><option value="dif">Menor diferença para ganhar</option><option value="lucroBBasc">Menor lucro na Buy Box</option></select>
     <input class="sinput" id="az-b" placeholder="Buscar por nome, SKU ou ASIN..." oninput="renderAmazon()">
   </div>
   <div class="section"><div class="sec-head"><span id="az-tit">Anúncios</span> <span class="cnt" id="az-c">-</span></div><div id="az-lista"><div class="loading">Carregando...</div></div></div>
@@ -413,6 +435,9 @@ const set=(id,v)=>{const e=el(id);if(e)e.textContent=v;};
 window._dados={};
 
 const bar=el('contas-bar');
+{const g=document.createElement('button');g.className='conta-tab geral';g.id='cb-geral';
+ g.innerHTML='<span class="ct-logo" style="font-size:24px">📊</span><span class="ct-txt"><b>Visão geral</b><small>Todas as contas</small></span>';
+ g.onclick=()=>abrirGeral();bar.appendChild(g);}
 CONTAS.forEach((c,i)=>{
   const btn=document.createElement('button');
   btn.className='conta-tab'+(i===0?' active':'');
@@ -443,7 +468,7 @@ function showTab(name,btn){
 }
 function goTab(idx){showTab(['inicio','perdendo','ganhando','atualizando','sempromo','perguntas'][idx],document.querySelectorAll('.tab')[idx]);}
 function trocarConta(idx,btn){
-  modoShopee=false;
+  modoShopee=false;modoGeral=false;
   ci=idx;
   _estoqueCache=null;
   el('b-estoque').innerHTML='<div class="loading">Clique na aba para carregar...</div>';
@@ -454,6 +479,7 @@ function trocarConta(idx,btn){
   el('top-title').textContent=CONTAS[idx].nome;
   el('ml-content').style.display='block';
   el('shopee-content').style.display='none';
+  el('geral-content').style.display='none';
   el('canal-sw').classList.add('show');
   el('canal-sw-ml').classList.add('on'); el('canal-sw-shp').classList.remove('on'); el('canal-sw-amz').classList.remove('on');
   modoAmazon=false; el('amazon-content').style.display='none'; atualizarBotaoAmz();
@@ -474,15 +500,60 @@ function trocarParaShopee(btn){
   modoAmazon=false; el('amazon-content').style.display='none';
   el('ml-content').style.display='none';
   el('shopee-content').style.display='block';
+  el('geral-content').style.display='none';
   renderShopee();
 }
+
+let modoGeral=false;
+function abrirGeral(){
+  modoGeral=true;modoShopee=false;modoAmazon=false;
+  document.querySelectorAll('.conta-tab').forEach(t=>t.classList.remove('active'));el('cb-geral').classList.add('active');
+  el('top-logo').src='/logo/zagodini';el('top-title').textContent='Visão geral';
+  el('canal-sw').classList.remove('show');
+  ['ml-content','shopee-content','amazon-content'].forEach(i=>el(i).style.display='none');
+  el('geral-content').style.display='block';
+  carregarGeral();
+}
+async function carregarGeral(){
+  try{
+    const r=await fetch('/resumo').then(r=>r.json());
+    const N=(v,cls,acao)=>v==null?'<span class="nd">–</span>':v===0?'<span class="n z">0</span>':'<span class="n '+cls+'" onclick="'+acao+'">'+v+'</span>';
+    const nd=t=>'<td colspan="6" class="nd l">'+t+'</td>';
+    let h='<tr><th class="l">Canal</th><th>Sem promoção</th><th>Sem estoque / pausados</th><th>Perdendo catálogo / Buy Box</th><th>Perdendo c/ lucro ≥10%</th><th>Ganhando</th><th>Outros</th></tr>';
+    for(const e of r.empresas){
+      const i=e.idx,c=e.canais;
+      h+='<tr class="emp"><td colspan="7">'+shpEsc(e.nome)+'</td></tr>';
+      // Mercado Livre
+      const m=c.ml;
+      h+='<tr><td class="l canal">🟡 Mercado Livre</td>'+(m.ok?
+        '<td>'+N(m.semPromo,'a',"irML("+i+",'sempromo')")+'</td><td>'+N(m.pausados,'r',"irML("+i+",'inicio')")+'</td><td>'+N(m.perdendo,'r',"irML("+i+",'perdendo')")+'</td><td>'+N(m.perdendoLucro,'b',"irML("+i+",'perdendo',10)")+'</td><td>'+N(m.ganhando,'g',"irML("+i+",'ganhando')")+'</td><td class="nd">'+m.ativos+' ativos · '+m.catalogo+' em catálogo</td>'
+        :nd('carregando…'))+'</tr>';
+      // Shopee
+      const s=c.shopee;
+      h+='<tr><td class="l canal">🟠 Shopee</td>'+(s.ok?
+        '<td>'+N(s.semPromo,'a',"irShp("+i+",'sempromo')")+'</td><td>'+N(s.semEstoque,'r',"irShp("+i+",'produtos')")+'</td><td><span class="nd">–</span></td><td><span class="nd">–</span></td><td><span class="nd">–</span></td><td class="nd">'+(s.chat?'<span class="n r" onclick="irShp('+i+',\'chat\')">💬 '+s.chat+'</span> chat · ':'')+s.ativos+' ativos</td>'
+        :'<td colspan="6" class="nd l">'+(s.status==='sem_auth'?'não conectada':'carregando…')+'</td>')+'</tr>';
+      // Amazon
+      const a=c.amazon;
+      h+='<tr><td class="l canal">📦 Amazon</td>'+(a.ok?
+        '<td><span class="nd">–</span></td><td>'+N(a.semEstoque,'r',"irAmz("+i+",'semEstoque')")+'</td><td>'+N(a.perdendo,'r',"irAmz("+i+",'perdendo')")+(a.semBB?' <span class="n a" title="Sem Buy Box" onclick="irAmz('+i+',\'sem\')">⚪ '+a.semBB+'</span>':'')+'</td><td>'+N(a.perdendoLucro,'b',"irAmz("+i+",'perdendo','10')")+'</td><td>'+N(a.ganhando,'g',"irAmz("+i+",'ganhando')")+'</td><td class="nd">'+(a.incompletos?'<span class="n a" onclick="irAmz('+i+',\'incompleto\')">🧩 '+a.incompletos+'</span> incompletos · ':'')+a.ativos+' ativos</td>'
+        :'<td colspan="6" class="nd l">'+(a.status==='sem_auth'?'não conectada':'carregando…')+'</td>')+'</tr>';
+    }
+    el('geral-tab').innerHTML=h;
+    set('geral-upd','Atualizado às '+new Date(r.em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}));
+  }catch(e){el('geral-tab').innerHTML='<tr><td class="loading" style="color:#c0392b">Sem conexão com o servidor.</td></tr>';}
+}
+setInterval(()=>{if(modoGeral)carregarGeral();},60000);
+function irML(i,aba,lucroMin){modoGeral=false;trocarConta(i,el('cb-'+i));const b=[...document.querySelectorAll('#ml-content .tab')].find(x=>(x.getAttribute('onclick')||'').includes("'"+aba+"'"));showTab(aba,b);if(lucroMin&&el('fl')){el('fl').value=String(lucroMin);renderPerdendo(0);}}
+function irShp(i,aba){modoGeral=false;trocarConta(i,el('cb-'+i));trocarParaShopee(el('cb-'+i));showShpTab(aba);}
+function irAmz(i,filtro,lucroMin){modoGeral=false;trocarConta(i,el('cb-'+i));trocarParaAmazon(el('cb-'+i));el('az-f').value=filtro;if(el('az-fl'))el('az-fl').value=lucroMin||'';renderAmazon();}
 
 function trocarParaAmazon(btn){
   modoShopee=false;modoAmazon=true;
   document.querySelectorAll('.conta-tab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');
   el('top-logo').src='/logo/'+CONTAS[ci].logo;el('top-title').textContent=CONTAS[ci].nome+' · Amazon';
   el('canal-sw-amz').classList.add('on');el('canal-sw-ml').classList.remove('on');el('canal-sw-shp').classList.remove('on');
-  el('ml-content').style.display='none';el('shopee-content').style.display='none';el('amazon-content').style.display='block';
+  el('ml-content').style.display='none';el('shopee-content').style.display='none';el('geral-content').style.display='none';el('amazon-content').style.display='block';
   if(_azLoja!==SHP_LOJAS[ci]){_azDados=null;_azLoja=SHP_LOJAS[ci];el('az-lista').innerHTML='<div class="loading">Carregando...</div>';}
   carregarAmazon();
 }
@@ -503,7 +574,7 @@ async function atualizarAmazon(){
 }
 function azLucroHtml(a){
   if(a.lucro_ptw_pct!=null)return lucroHtml(a).replace("'No preço para ganhar'","'No preço da Buy Box'");
-  if(a.lucro_atual_pct!=null){const v=a.lucro_atual_pct,cor=v<0?'#c62828':v<10?'#e67e00':'#2e7d32';
+  if(a.lucro_atual_pct!=null){const v=a.lucro_atual_pct,cor=v<0?'#b71c1c':v<10?'#e53935':v<15?'#e67e00':'#2e7d32';
     return '<div style="font-size:12px;margin-top:3px;white-space:nowrap">Lucro: <b class="ctw" style="color:'+cor+'">'+v.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%'+calcTip(a.calc_atual,'Hoje, no seu preço')+'</b></div>';}
   return a.status==='Active'?'<div style="font-size:11px;color:#999;margin-top:2px">Lucro: '+shpEsc(a.margem_obs||'calculando…')+'</div>':'';
 }
@@ -520,7 +591,12 @@ function renderAmazon(){
   let L=g[f]||A;
   if(q)L=L.filter(a=>(a.nome||'').toLowerCase().includes(q)||(a.sku||'').toLowerCase().includes(q)||(a.asin||'').toLowerCase().includes(q));
   const fl=el('az-fl').value;if(fl!=='')L=L.filter(a=>{const v=a.lucro_ptw_pct??a.lucro_atual_pct;return v!=null&&v>=parseFloat(fl);});
-  if(f==='perdendo')L=[...L].sort((x,y)=>((x.preco-(x.bb.preco||0))/x.preco)-((y.preco-(y.bb.preco||0))/y.preco));
+  const ord=el('az-ord').value,lv=(a,k)=>a[k]??-999;
+  if(ord==='lucroBB')L=[...L].sort((x,y)=>lv(y,'lucro_ptw_pct')-lv(x,'lucro_ptw_pct')||lv(y,'lucro_atual_pct')-lv(x,'lucro_atual_pct'));
+  else if(ord==='lucroBBasc')L=[...L].sort((x,y)=>(x.lucro_ptw_pct??x.lucro_atual_pct??999)-(y.lucro_ptw_pct??y.lucro_atual_pct??999));
+  else if(ord==='lucroAtual')L=[...L].sort((x,y)=>lv(y,'lucro_atual_pct')-lv(x,'lucro_atual_pct'));
+  else if(ord==='dif')L=[...L].sort((x,y)=>((x.preco-(x.bb?.preco??x.preco))/x.preco)-((y.preco-(y.bb?.preco??y.preco))/y.preco));
+  else if(f==='perdendo')L=[...L].sort((x,y)=>((x.preco-(x.bb.preco||0))/x.preco)-((y.preco-(y.bb.preco||0))/y.preco));
   else if(f==='baixo')L=[...L].sort((x,y)=>x.qtd-y.qtd);
   set('az-tit',AZ_TIT[f]||'Anúncios');set('az-c',L.length);
   set('az-upd',(d.em?'Atualizado: '+new Date(d.em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+(d.status==='carregando'?' · atualizando agora…':' · atualiza sozinho a cada 2h'));
@@ -749,8 +825,7 @@ function exibirDados(idx){
     });
     return;
   }
-  el('top-logo').src='/logo/'+CONTAS[idx].logo;
-  el('top-title').textContent=CONTAS[idx].nome;
+  if(!modoGeral&&!modoAmazon){el('top-logo').src='/logo/'+CONTAS[idx].logo;el('top-title').textContent=CONTAS[idx].nome;}
   set('card-ativos',d.ativos);set('card-pausados',d.pausados);
   set('r-at',d.ativos);set('r-pa',d.pausados);
   set('card-catalogo',d.catTotal);set('r-tc',d.catTotal);
@@ -819,7 +894,7 @@ function calcTip(c,titulo){
     (c.embalagem?l('Embalagem',m(c.embalagem),1):'')+
     l('Imposto ('+p(c.impostoPct)+')',m(c.imposto),1)+
     (c.rebate?'<div class="ct-l" style="color:#5ee08f"><span>Redução de tarifa ML <small>('+escH(c.campanha)+(c.campanhaMeliPct?' · ML banca '+p(c.campanhaMeliPct):'')+')</small></span><span>+'+m(c.rebate)+'</span></div>':'')+
-    '<div class="ct-t '+(c.lucro<0?'neg':c.pct<10?'mid':'pos')+'"><span>Margem</span><span>'+m(c.lucro)+' ('+p(c.pct)+')</span></div>'+
+    '<div class="ct-t '+(c.lucro<0||c.pct<10?'neg':c.pct<15?'mid':'pos')+'"><span>Margem</span><span>'+m(c.lucro)+' ('+p(c.pct)+')</span></div>'+
     (c.rebate&&c.campanhaStatus&&c.campanhaStatus!=='ativa'?'<div class="ct-n" style="color:#5ee08f">Campanha '+escH(c.campanhaStatus)+' para este anúncio: entre nela em Promoções para valer este preço com a redução.</div>':'')+
     (c.perdeCampanha?'<div class="ct-n" style="color:#ffb547">Neste preço o anúncio sai da campanha “'+escH(c.campanhaNome)+'” e perde a redução de tarifa do ML.</div>':'')+
     (c.nota?'<div class="ct-n">'+escH(c.nota)+'</div>':'<div class="ct-n">Envio e tarifa informados pelo Mercado Livre para este anúncio'+(c.tipoAnuncio?' ('+escH(c.tipoAnuncio)+')':'')+(c.pesoG?' · peso faturável '+c.pesoG+' g':'')+'.</div>')+
@@ -827,7 +902,7 @@ function calcTip(c,titulo){
 }
 function lucroHtml(it){
   const pc=v=>v.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
-  const cor=v=>v<0?'#c62828':v<10?'#e67e00':'#2e7d32';
+  const cor=v=>v<0?'#b71c1c':v<10?'#e53935':v<15?'#e67e00':'#2e7d32';   // 15% ideal · 10% mínimo
   if(it.lucro_ptw_pct==null) return it.margem_obs?'<div style="font-size:11px;color:#999;margin-top:2px">Lucro: '+it.margem_obs+'</div>':'';
   const atual=it.lucro_atual_pct!=null?'<span class="ctw" style="color:'+cor(it.lucro_atual_pct)+'">'+pc(it.lucro_atual_pct)+calcTip(it.calc_atual,'Hoje, no seu preço')+'</span> → ':'';
   const cc=it.calc_campanha;
@@ -1035,7 +1110,7 @@ async function pollDados(){
       if(d.status!=='pronto')todasProntas=false;
       const p=d.progresso||{};
       progTotal+=((p.conta||0)+(p.cat||0)+(p.promo||0)+(p.perguntas||0))/4;
-      if(d.dados){window._dados[i]=d.dados;if(i===ci&&!modoShopee)exibirDados(ci);}
+      if(d.dados){window._dados[i]=d.dados;if(i===ci&&!modoShopee)exibirDados(ci);if(modoGeral&&!window._gT){window._gT=setTimeout(()=>{window._gT=null;carregarGeral();},3000);}}
     }catch(e){}
   }
   const pct=Math.round(progTotal/3*100);
@@ -1080,7 +1155,7 @@ function resetarTimer(){timerSecs=1800;} function iniciarTimer(){
 
 el('top-logo').src='/logo/zagodini';
 el('top-title').textContent='Comercial Zagodini';
-el('canal-sw').classList.add('show');
+abrirGeral();
 iniciarTimer();
 pollDados();
 setInterval(pollDados,5000);

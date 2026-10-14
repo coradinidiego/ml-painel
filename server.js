@@ -185,6 +185,30 @@ async function meusSellers() {
   return _meusSellers;
 }
 
+// ─── Visão geral: pendências de todas as empresas e canais ─────────────────
+app.get('/resumo', (req, res) => {
+  const EMP = [{ id: 'zagodini', nome: 'Comercial Zagodini', ml: 0 }, { id: 'mae', nome: 'Com Amor de Mãe', ml: 1 }, { id: 'lufe', nome: 'Lufe Casa & Decoração', ml: 2 }];
+  const out = EMP.map(e => {
+    const r = { id: e.id, nome: e.nome, idx: e.ml, canais: {} };
+    const d = dadosCache[e.ml];
+    if (d) r.canais.ml = { ok: true, ativos: d.ativos, pausados: d.pausados, semPromo: d.semPromo.length, perdendo: d.perdendo.length, ganhando: d.ganhando.length, catalogo: d.catTotal,
+      perdendoLucro: d.perdendo.filter(x => x.lucro_ptw_pct != null && x.lucro_ptw_pct >= 10).length, em: d.ultimaAtualizacao };
+    else r.canais.ml = { ok: false, status: statusCache[e.ml] || 'carregando' };
+    const S = SHP[e.id];
+    if (S?.cache) { const P = S.cache.produtos; r.canais.shopee = { ok: true, ativos: P.length, semPromo: P.filter(p => p._semPromo && estoqueShp(p) > 0).length, semEstoque: P.filter(p => estoqueShp(p) <= 0).length,
+      chat: (S.cache.conversas || []).filter(c => c.pendente).length, em: S.cache.ultimaAtualizacao }; }
+    else r.canais.shopee = { ok: false, status: S?.status || 'sem_auth' };
+    const A = AZ_ANUNCIOS[e.id];
+    if (A?.anuncios) { const L = A.anuncios, at = L.filter(a => a.status === 'Active');
+      r.canais.amazon = { ok: true, ativos: at.length, semEstoque: L.filter(a => !a.fba && a.qtd <= 0 && a.status !== 'Incomplete').length, inativos: L.filter(a => a.status === 'Inactive').length,
+        incompletos: L.filter(a => a.status === 'Incomplete').length, perdendo: at.filter(a => a.bb?.situacao === 'perdendo').length, semBB: at.filter(a => a.bb?.situacao === 'sem').length,
+        ganhando: at.filter(a => a.bb?.situacao === 'ganhando').length, perdendoLucro: at.filter(a => a.lucro_ptw_pct != null && a.lucro_ptw_pct >= 10).length, em: A.em }; }
+    else r.canais.amazon = { ok: false, status: amazon.loja(e.id).configurada() ? (A?.status || 'aguardando') : 'sem_auth' };
+    return r;
+  });
+  res.json({ empresas: out, em: new Date().toISOString() });
+});
+
 // Itens fora da lista "Sem promoção": proibidos de ter promoção por lei (mamadeira, chupeta, bico, protetor de mamilo)
 // e os que você ocultar à mão no painel (promo_ignorar.json, por conta).
 const PROMO_PROIBIDA = /mamadeira|chupeta|bicos? (de |para )?(mamadeira|silicone|ortod[oô]ntico)|protetor(es)? de mamilo/i;
