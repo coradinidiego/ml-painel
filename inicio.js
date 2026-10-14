@@ -69,8 +69,15 @@ module.exports = function montar(app, ctx) {
       P.em = new Date().toISOString();
     }
   }
-  setTimeout(() => atualizarPendencias().catch(e => console.warn('[inicio] pendências', e.message)), 90e3);
-  setInterval(() => atualizarPendencias().catch(e => console.warn('[inicio] pendências', e.message)), 5 * 60e3);
+  // começa assim que o ML de cada conta carregar: tenta a cada 1 min até todas responderem, depois a cada 5 min
+  let ultPend = 0;
+  setInterval(() => {
+    const faltam = EMP.some(e => PEND[e.id]?.ml?.mensagens == null && PEND[e.id]?.ml?.erroMensagens == null);
+    if (!faltam && Date.now() - ultPend < 5 * 60e3) return;
+    if (!EMP.some(e => dadosCache[e.idx]?.uid)) return;
+    ultPend = Date.now();
+    atualizarPendencias().catch(e => console.warn('[inicio] pendências', e.message));
+  }, 60e3);
 
   // ─── Estoque do ERP ──────────────────────────────────────────────────────
   // Bling: lista de produtos + saldos por depósito (ignora depósitos Full e os que o Bling desconsidera)
@@ -112,7 +119,7 @@ module.exports = function montar(app, ctx) {
   // Depois só busca o que mudou (lista.atualizacoes.estoque). Tudo guardado em disco.
   const TINY = lerJson(ARQ_TINY, { codigos: {}, codTs: 0, saldos: {}, ultimaAtualizacao: null, cheio: 0 });
   const brDataHora = d => { const p = n => String(n).padStart(2, '0'); return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
-  async function erpTiny(skusAnunciados) {
+  async function erpTiny(skusAnunciados, prog = () => {}) {
     const tiny = require('./tiny');
     if (!Object.keys(TINY.codigos).length || Date.now() - TINY.codTs > 24 * 3600e3) {
       const cod = {};
@@ -149,6 +156,7 @@ module.exports = function montar(app, ctx) {
     const ids = [...new Set(skusAnunciados.map(s => achar(TINY.codigos, s)?.id).filter(Boolean))];
     const faltam = ids.filter(id => refazer || !TINY.saldos[id]);
     for (let i = 0; i < faltam.length; i++) {
+      prog(i + 1, faltam.length);
       try {
         const ret = await tiny.chamar('produto.obter.estoque.php', { id: faltam[i] });
         const p = ret.produto || {};
@@ -274,7 +282,7 @@ module.exports = function montar(app, ctx) {
       const ignorados = { full: anuncios.filter(x => x.full).length };
       anuncios = anuncios.filter(x => !x.full);
       R.etapa = e.erp === 'Tiny' ? 'saldos no Tiny' : 'saldos no Bling';
-      const erp = e.erp === 'Tiny' ? await erpTiny(anuncios.map(x => x.sku).filter(Boolean)) : await erpBling(e.idx);
+      const erp = e.erp === 'Tiny' ? await erpTiny(anuncios.map(x => x.sku).filter(Boolean), (i, n) => { R.etapa = `saldos no Tiny (${i} de ${n}, ~${Math.ceil((n - i) * 1.2 / 60)} min)`; }) : await erpBling(e.idx);
       const semSku = [], semErp = [], divs = [], comparados = { ml: 0, shopee: 0, amazon: 0 };
       const bate = (x, r) => { const f = Math.max(0, Math.floor(r.fis)), d = Math.max(0, Math.floor(r.disp)); return x.qtd === f || x.qtd === d; };
       for (const x of anuncios) {
@@ -297,9 +305,18 @@ module.exports = function montar(app, ctx) {
       console.warn('[inicio] estoque', e.id, er.message);
     } finally { rodando[e.id] = false; gravar(ARQ, EST); }
   }
-  async function compararTodas() { for (const e of EMP) await compararEmpresa(e); }
-  setTimeout(() => compararTodas().catch(() => {}), 12 * 60e3);     // depois que ML/Shopee carregaram
-  setInterval(() => compararTodas().catch(() => {}), 30 * 60e3);
+  // Cada empresa roda sozinha (em paralelo): começa assim que o ML dela carregou (e a Shopee, se conectada)
+  // e depois repete a cada 30 min.
+  const ultimaEst = {};
+  const pronta = e => dadosCache[e.idx]?.uid && (!shopee.loja(e.id).getTokens().access_token || SHP[e.id]?.cache || ['erro', 'sem_auth'].includes(SHP[e.id]?.status));
+  setInterval(() => {
+    for (const e of EMP) {
+      if (rodando[e.id] || !pronta(e)) continue;
+      if (ultimaEst[e.id] && Date.now() - ultimaEst[e.id] < 30 * 60e3) continue;
+      ultimaEst[e.id] = Date.now();
+      compararEmpresa(e).catch(() => {});
+    }
+  }, 30e3);
 
   // ─── Rotas ───────────────────────────────────────────────────────────────
   app.get('/inicio', (req, res) => {
@@ -319,7 +336,7 @@ module.exports = function montar(app, ctx) {
           shopee: P.shopee?.semAuth || (!S?.cache && S?.status === 'sem_auth') ? { semAuth: true } : { chat: P.shopee?.chat ?? (S?.cache ? (S.cache.conversas || []).filter(c => c.pendente).length : null) },
           amazon: { conectada: amazon.loja(e.id).configurada() },
         },
-        estoque: { status: R.status || 'aguardando', etapa: R.etapa || null, em: R.em || null, erro: R.erro || null, erros: R.erros || {},
+        estoque: { status: R.status || 'aguardando', etapa: R.etapa || (!R.status ? (dadosCache[e.idx]?.uid ? 'esperando a Shopee carregar' : 'esperando o Mercado Livre carregar') : null), em: R.em || null, erro: R.erro || null, erros: R.erros || {},
           porCanal, total: (R.itens || []).length, comparados: R.comparados || null, semSku: (R.semSku || []).length, semErp: (R.semErp || []).length, ignorados: R.ignorados || {} },
       };
     });
@@ -330,7 +347,7 @@ module.exports = function montar(app, ctx) {
   });
   app.post('/inicio/estoque/atualizar', (req, res) => {
     const alvo = EMP.filter(e => !req.query.emp || e.id === req.query.emp);
-    (async () => { for (const e of alvo) await compararEmpresa(e); })().catch(() => {});
+    for (const e of alvo) { ultimaEst[e.id] = Date.now(); compararEmpresa(e).catch(() => {}); }
     res.json({ ok: true });
   });
   app.get('/debug/inicio', (req, res) => res.json({ PEND, estoque: Object.fromEntries(Object.entries(EST).map(([k, v]) => [k, { ...v, itens: (v.itens || []).length, semSku: (v.semSku || []).length, semErp: (v.semErp || []).length }])), tiny: { codigos: Object.keys(TINY.codigos).length, saldos: Object.keys(TINY.saldos).length, ultimaAtualizacao: TINY.ultimaAtualizacao } }));

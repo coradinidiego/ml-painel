@@ -198,7 +198,7 @@ body{background:#f0f2f5;color:#111}
 <div id="geral-content"><div class="content">
   <div class="sec-head" style="background:none;border:none;padding:0 0 10px"><span style="font-size:16px;font-weight:700">🏠 Início · todas as empresas</span><span style="font-size:12px;color:#888" id="geral-upd"></span></div>
   <div id="ini-cards"><div class="loading">Carregando...</div></div>
-  <p style="font-size:12px;color:#888;margin:8px 0 18px">Clique em um número para abrir a lista. Perguntas e chats são conferidos a cada 5 min; o estoque, a cada 30 min.</p>
+  <p style="font-size:12px;color:#888;margin:8px 0 18px">Clique em um número para abrir a lista. Perguntas e chats são conferidos a cada 5 min; o estoque, a cada 30 min. </p>
 
   <div class="section" id="ini-est">
     <div class="sec-head"><span>📦 Estoque divergente do ERP <span class="cnt" id="ini-est-c">-</span></span>
@@ -595,7 +595,7 @@ async function carregarInicio(){
     const Q=(v,lab,cls,acao,tit)=>{
       if(v==='nc')return '<div class="sq na"><div class="v">—</div><div class="l">'+lab+'<br><small>não conectada</small></div></div>';
       if(v==='err')return '<div class="sq na" title="'+shpEsc(tit||'')+'"><div class="v">⚠️</div><div class="l">'+lab+'</div></div>';
-      if(v==null)return '<div class="sq na" title="'+shpEsc(tit||'carregando')+'"><div class="spin"></div><div class="l">'+lab+'<br><small>carregando…</small></div></div>';
+      if(v==null)return '<div class="sq na" title="'+shpEsc(tit||'carregando')+'"><div class="spin"></div><div class="l">'+lab+'<br><small>'+shpEsc(tit||'carregando…')+'</small></div></div>';
       if(v===0)return '<div class="sq ok"><div class="v">0</div><div class="l">'+lab+'</div></div>';
       return '<div class="sq cl '+cls+'"'+(tit?' title="'+shpEsc(tit)+'"':'')+' onclick="'+acao+'"><div class="v">'+v+'</div><div class="l">'+lab+'</div></div>';
     };
@@ -606,7 +606,7 @@ async function carregarInicio(){
       T.sp+=(sp.ml||0)+(sp.shopee||0);T.pd+=(p.ml.perguntas||0)+(p.ml.mensagens||0)+(p.shopee.chat||0);
       const est=(c,lab)=>{
         if(c==='shopee'&&shpNC||c==='amazon'&&!p.amazon.conectada)return Q('nc',lab);
-        if(!es.em)return Q(es.status==='erro'?'err':null,lab,'','',es.status==='erro'?es.erro:(es.etapa?'conferindo: '+es.etapa:'aguardando a 1ª conferência'));
+        if(!es.em)return Q(es.status==='erro'?'err':null,lab,'','',es.status==='erro'?es.erro:(es.etapa||'na fila'));
         if(es.erros&&es.erros[c]&&!es.porCanal[c])return Q('err',lab,'','',es.erros[c]);
         T.es+=es.porCanal[c];return Q(es.porCanal[c],lab,'r',"irIniEstoque('"+e.id+"','"+c+"')");
       };
@@ -639,7 +639,7 @@ function renderIniEstoque(){
   set('ini-est-c',L.length);
   const b=el('ini-est-b');
   if(!L.length&&Object.values(_iniEst).some(R=>R.status==='carregando')&&!Object.values(_iniEst).some(R=>R.em)){b.innerHTML='<div class="loading" style="display:flex;gap:12px;align-items:center;justify-content:center"><span class="sq" style="height:auto;background:none;padding:0"><span class="spin"></span></span>Conferindo o estoque com o ERP…</div>';return;}
-  if(!L.length){const algum=Object.values(_iniEst).some(R=>R.em);b.innerHTML='<div class="loading" style="color:'+(algum?'green':'#888')+'">'+(algum?'✓ Nenhuma divergência'+(fe||fc||q?' com esse filtro':'')+'.':'<span style="display:inline-flex;gap:12px;align-items:center"><span class="sq" style="height:auto;background:none;padding:0"><span class="spin"></span></span>Aguardando a primeira conferência (começa uns 12 min depois que o servidor sobe).</span>')+'</div>';return;}
+  if(!L.length){const algum=Object.values(_iniEst).some(R=>R.em);b.innerHTML='<div class="loading" style="color:'+(algum?'green':'#888')+'">'+(algum?'✓ Nenhuma divergência'+(fe||fc||q?' com esse filtro':'')+'.':'<span style="display:inline-flex;gap:12px;align-items:center"><span class="sq" style="height:auto;background:none;padding:0"><span class="spin"></span></span>Conferindo o estoque com o ERP pela primeira vez… (começa quando o Mercado Livre de cada empresa termina de carregar)</span>')+'</div>';return;}
   const nomeEmp={zagodini:'Zagodini',mae:'Com Amor de Mãe',lufe:'Lufe'};
   b.innerHTML='<div class="gwrap"><table class="gtab" style="border:none;border-radius:0"><tr><th class="l">Produto</th><th class="l">Empresa · site</th><th>No site</th><th>No ERP<br><small style="font-weight:400">físico / disponível</small></th><th>Diferença</th><th></th></tr>'+
     L.slice(0,500).map(x=>'<tr><td class="l"><div style="font-weight:600;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+shpEsc(x.nome||'')+'">'+shpEsc(x.nome||'-')+'</div><div style="font-size:11px;color:#888">SKU '+shpEsc(x.sku)+(x.nomeVar?' · '+shpEsc(x.nomeVar):'')+(x.kit?' · kit':'')+(x.pausado?' · <span style="color:#c62828">pausado</span>':'')+'</div></td>'+
