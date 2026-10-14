@@ -167,6 +167,8 @@ body{background:#f0f2f5;color:#111}
 .sq .v{font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
 .sq .l{font-size:11.5px;color:#666;margin-top:6px;line-height:1.2}
 .sq.ok .v{color:#b5b5b5}
+.sq .spin{width:26px;height:26px;border:3px solid #dfe3e8;border-top-color:#1565C0;border-radius:50%;animation:girar .8s linear infinite}
+@keyframes girar{to{transform:rotate(360deg)}}
 .sq.na .v{font-size:15px;color:#bbb;font-weight:600}
 .sq.cl{cursor:pointer}.sq.cl:hover{transform:translateY(-2px);border-color:#0d1b2a22}
 .sq.a{background:#FFF3E0}.sq.a .v{color:#E65100}
@@ -593,7 +595,7 @@ async function carregarInicio(){
     const Q=(v,lab,cls,acao,tit)=>{
       if(v==='nc')return '<div class="sq na"><div class="v">—</div><div class="l">'+lab+'<br><small>não conectada</small></div></div>';
       if(v==='err')return '<div class="sq na" title="'+shpEsc(tit||'')+'"><div class="v">⚠️</div><div class="l">'+lab+'</div></div>';
-      if(v==null)return '<div class="sq na" title="'+shpEsc(tit||'carregando')+'"><div class="v">…</div><div class="l">'+lab+'</div></div>';
+      if(v==null)return '<div class="sq na" title="'+shpEsc(tit||'carregando')+'"><div class="spin"></div><div class="l">'+lab+'<br><small>carregando…</small></div></div>';
       if(v===0)return '<div class="sq ok"><div class="v">0</div><div class="l">'+lab+'</div></div>';
       return '<div class="sq cl '+cls+'"'+(tit?' title="'+shpEsc(tit)+'"':'')+' onclick="'+acao+'"><div class="v">'+v+'</div><div class="l">'+lab+'</div></div>';
     };
@@ -636,7 +638,8 @@ function renderIniEstoque(){
   if(q)L=L.filter(x=>(x.sku||'').toLowerCase().includes(q)||(x.nome||'').toLowerCase().includes(q)||(x.anuncio||'').toLowerCase().includes(q));
   set('ini-est-c',L.length);
   const b=el('ini-est-b');
-  if(!L.length){const algum=Object.values(_iniEst).some(R=>R.em);b.innerHTML='<div class="loading" style="color:'+(algum?'green':'#888')+'">'+(algum?'✓ Nenhuma divergência'+(fe||fc||q?' com esse filtro':'')+'.':'Aguardando a primeira conferência (começa uns 12 min depois que o servidor sobe).')+'</div>';return;}
+  if(!L.length&&Object.values(_iniEst).some(R=>R.status==='carregando')&&!Object.values(_iniEst).some(R=>R.em)){b.innerHTML='<div class="loading" style="display:flex;gap:12px;align-items:center;justify-content:center"><span class="sq" style="height:auto;background:none;padding:0"><span class="spin"></span></span>Conferindo o estoque com o ERP…</div>';return;}
+  if(!L.length){const algum=Object.values(_iniEst).some(R=>R.em);b.innerHTML='<div class="loading" style="color:'+(algum?'green':'#888')+'">'+(algum?'✓ Nenhuma divergência'+(fe||fc||q?' com esse filtro':'')+'.':'<span style="display:inline-flex;gap:12px;align-items:center"><span class="sq" style="height:auto;background:none;padding:0"><span class="spin"></span></span>Aguardando a primeira conferência (começa uns 12 min depois que o servidor sobe).</span>')+'</div>';return;}
   const nomeEmp={zagodini:'Zagodini',mae:'Com Amor de Mãe',lufe:'Lufe'};
   b.innerHTML='<div class="gwrap"><table class="gtab" style="border:none;border-radius:0"><tr><th class="l">Produto</th><th class="l">Empresa · site</th><th>No site</th><th>No ERP<br><small style="font-weight:400">físico / disponível</small></th><th>Diferença</th><th></th></tr>'+
     L.slice(0,500).map(x=>'<tr><td class="l"><div style="font-weight:600;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+shpEsc(x.nome||'')+'">'+shpEsc(x.nome||'-')+'</div><div style="font-size:11px;color:#888">SKU '+shpEsc(x.sku)+(x.nomeVar?' · '+shpEsc(x.nomeVar):'')+(x.kit?' · kit':'')+(x.pausado?' · <span style="color:#c62828">pausado</span>':'')+'</div></td>'+
