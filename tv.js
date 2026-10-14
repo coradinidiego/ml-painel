@@ -135,7 +135,7 @@ async function coletarBling(emp, cfg, hoje) {
   for (const p of await blingListar(emp.idx, m.enviado, { dataAlteracaoInicial: hoje, dataAlteracaoFinal: hoje })) {
     linhas.push({ tipo: 'enviado', canal: canalBling(canais, p), prazo: 'hoje' });
   }
-  // Shein e Shopee têm fluxo próprio no Bling: Em aberto = sem nota · Atendido = a empacotar · Verificado = empacotado
+  // Shein, Shopee e TikTok Shop têm fluxo próprio no Bling: Em aberto = sem nota · Atendido = a empacotar · Verificado = empacotado
   let out = linhas;
   for (const canal of Object.keys(FLUXO_VERIFICADO)) {
     try {
@@ -147,7 +147,7 @@ async function coletarBling(emp, cfg, hoje) {
 }
 
 // canal -> como reconhecer o pedido pelo número no marketplace (para achar a loja no Bling)
-const FLUXO_VERIFICADO = { Shein: /^GSH/i, Shopee: /^\d{6}[A-Z0-9]{8}$/i, Amazon: /^\d{3}-\d{7}-\d{7}$/ };
+const FLUXO_VERIFICADO = { Shein: /^GSH/i, Shopee: /^\d{6}[A-Z0-9]{8}$/i, Amazon: /^\d{3}-\d{7}-\d{7}$/, TikTok: /^\d{18,19}$/ };
 
 const SIT = { emAberto: 6, atendido: 9, verificado: 24 };
 
@@ -309,9 +309,9 @@ async function coletarAmazon(emp, hoje, erpLinhas) {
     let tipo = etapaErp[o.AmazonOrderId] || 'emitirNF';
     if (tipo === '_verificado') tipo = 'empacotado';
     if (tipo === 'enviado') tipo = 'empacotado';           // no ERP já saiu, na Amazon ainda não: aguardando coleta
-    // pedido da Amazon já pago entra no trabalho do dia (não vai para "próximos dias"); atrasado se passou do limite
+    // prazo de envio da Amazon (LatestShipDate): passou = atrasado; hoje = hoje; amanhã em diante = próximos dias
     const lim = diaSP(o.LatestShipDate);
-    linhas.push({ tipo, canal: 'Amazon', prazo: lim && lim < hoje ? 'atrasado' : 'hoje' });
+    linhas.push({ tipo, canal: 'Amazon', prazo: !lim ? 'hoje' : lim < hoje ? 'atrasado' : lim > hoje ? 'futuro' : 'hoje' });
   }
   for (const o of d.empacotados || []) linhas.push({ tipo: 'empacotado', canal: 'Amazon', prazo: 'hoje' });   // etiqueta gerada, aguardando coleta
   for (const o of d.enviadosHoje) linhas.push({ tipo: 'enviado', canal: 'Amazon', prazo: 'hoje' });
