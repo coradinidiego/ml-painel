@@ -147,7 +147,7 @@ async function coletarBling(emp, cfg, hoje) {
 }
 
 // canal -> como reconhecer o pedido pelo número no marketplace (para achar a loja no Bling)
-const FLUXO_VERIFICADO = { Shein: /^GSH/i, Shopee: /^\d{6}[A-Z0-9]{8}$/i };
+const FLUXO_VERIFICADO = { Shein: /^GSH/i, Shopee: /^\d{6}[A-Z0-9]{8}$/i, Amazon: /^\d{3}-\d{7}-\d{7}$/ };
 
 const SIT = { emAberto: 6, atendido: 9, verificado: 24 };
 const _lojaCanal = {};   // idx|canal -> { ids:Set, ts }
@@ -176,6 +176,9 @@ async function coletarFluxoBling(emp, canal, canais, hoje, janela) {
     await delay(350);
     add('empacotado', await blingListar(emp.idx, [SIT.verificado], { idLoja, dataAlteracaoInicial: hoje, dataAlteracaoFinal: hoje }));
     await delay(350);
+    // Amazon: a lista de pedidos vem da própria Amazon; aqui só guardamos quais já foram verificados (empacotados)
+    // em qualquer dia da janela, para cruzar pelo número do pedido. "_verificado" não entra na contagem.
+    if (canal === 'Amazon') { add('_verificado', await blingListar(emp.idx, [SIT.verificado], { ...janela, idLoja })); await delay(350); }
   }
   return linhas;
 }
@@ -255,11 +258,13 @@ async function coletarAmazon(emp, hoje, erpLinhas) {
   if (!az.configurada()) return null;                     // sem Amazon conectada: fica com o ERP
   const d = await az.pedidosCache();
   const etapaErp = {};
-  for (const l of erpLinhas) if (l.canal === 'Amazon' && l.num) etapaErp[l.num] = l.tipo;
+  const ordem = { _verificado: 0, emitirNF: 1, aEmpacotar: 2, empacotado: 3, enviado: 4 };
+  for (const l of erpLinhas) if (l.canal === 'Amazon' && l.num && (ordem[l.tipo] ?? 0) >= (ordem[etapaErp[l.num]] ?? -1)) etapaErp[l.num] = l.tipo;
   const linhas = [];
   const diaSP = iso => iso ? new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) : '';
   for (const o of d.abertos) {
     let tipo = etapaErp[o.AmazonOrderId] || 'emitirNF';
+    if (tipo === '_verificado') tipo = 'empacotado';
     if (tipo === 'enviado') tipo = 'empacotado';           // no ERP já saiu, na Amazon ainda não: aguardando coleta
     // pedido da Amazon já pago entra no trabalho do dia (não vai para "próximos dias"); atrasado se passou do limite
     const lim = diaSP(o.LatestShipDate);
