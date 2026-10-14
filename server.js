@@ -66,7 +66,7 @@ async function carregarShopee(chave = 'zagodini') {
           p._varSemPromo = p._variacoes.filter(v => !v.emPromo).length;
         } catch (e) {}
       }
-      p._semPromo = p._promoAtiva.length === 0;
+      p._semPromo = p._promoAtiva.length === 0 && !PROMO_PROIBIDA.test(p.item_name || ''); // mamadeiras etc. não podem ter promoção
     }
   });
   const pedidos = await parte('pedidos', () => shopee_.listarPedidos());
@@ -1841,6 +1841,9 @@ app.post('/shopee/reply-rating', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+// Página Início: pendências e divergência de estoque de todas as empresas
+require('./inicio')(app, { ml, dadosCache, SHP, AZ_ANUNCIOS, extrairSKU, estoqueShp });
 
 // Só as telas são públicas para quem está logado — nunca a pasta inteira (.env, tokens...)
 app.get('/', (req, res) => res.redirect('/painel.html'));

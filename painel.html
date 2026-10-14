@@ -154,6 +154,27 @@ body{background:#f0f2f5;color:#111}
 .gtab .z{color:#aaa;font-weight:500;cursor:default}
 .gtab .r{background:#FFEBEE;color:#C62828}.gtab .a{background:#FFF3E0;color:#E65100}.gtab .g{background:#E8F5E9;color:#2E7D32}.gtab .b{background:#E3F2FD;color:#1565C0}
 .gtab .nd{color:#bbb;font-size:12px}
+.ini-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px}
+.ini-emp{background:#fff;border:1px solid #e6e6e6;border-radius:14px;overflow:hidden;border-top:4px solid var(--cor)}
+.ini-emp-h{display:flex;align-items:center;gap:10px;padding:12px 14px;font-weight:700;font-size:15px}
+.ini-emp-h{font-size:16px;padding:14px}
+.ini-emp-h .ct-logo{width:52px;height:52px}
+.ini-grp{padding:0 14px 12px}
+.ini-grp-t{font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.04em;margin:4px 0 6px}
+.ini-sq{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ini-sq.c2{grid-template-columns:repeat(2,1fr)}.ini-sq.c4{grid-template-columns:repeat(4,1fr)}
+.sq{height:86px;border-radius:12px;background:#f6f7f9;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6px;border:1px solid transparent;transition:transform .1s}
+.sq .v{font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.sq .l{font-size:11.5px;color:#666;margin-top:6px;line-height:1.2}
+.sq.ok .v{color:#b5b5b5}
+.sq.na .v{font-size:15px;color:#bbb;font-weight:600}
+.sq.cl{cursor:pointer}.sq.cl:hover{transform:translateY(-2px);border-color:#0d1b2a22}
+.sq.a{background:#FFF3E0}.sq.a .v{color:#E65100}
+.sq.r{background:#FFEBEE}.sq.r .v{color:#C62828}
+.sq.lk .v{font-size:15px;color:#1565C0}
+.ini-tot{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px}
+.ini-tot .sq{aspect-ratio:auto;padding:14px;background:#0d1b2a}.ini-tot .sq .v{color:#fff;font-size:32px}.ini-tot .sq .l{color:#9fb3c8;font-size:12.5px}
+@media(max-width:600px){.ini-tot{grid-template-columns:1fr}}
 .gwrap{overflow-x:auto}
 @media(max-width:700px){.conta-tab{min-width:180px}.hd .top-bar,.contas{padding-left:16px;padding-right:16px}}
 </style>
@@ -171,11 +192,27 @@ body{background:#f0f2f5;color:#111}
   </div>
 </header>
 
-<!-- Visão geral: pendências de todas as empresas -->
+<!-- Início: todas as empresas -->
 <div id="geral-content"><div class="content">
-  <div class="sec-head" style="background:none;border:none;padding:0 0 10px"><span style="font-size:16px;font-weight:700">📊 Pendências de hoje</span><span style="font-size:12px;color:#888" id="geral-upd"></span></div>
+  <div class="sec-head" style="background:none;border:none;padding:0 0 10px"><span style="font-size:16px;font-weight:700">🏠 Início · todas as empresas</span><span style="font-size:12px;color:#888" id="geral-upd"></span></div>
+  <div id="ini-cards"><div class="loading">Carregando...</div></div>
+  <p style="font-size:12px;color:#888;margin:8px 0 18px">Clique em um número para abrir a lista. Perguntas e chats são conferidos a cada 5 min; o estoque, a cada 30 min.</p>
+
+  <div class="section" id="ini-est">
+    <div class="sec-head"><span>📦 Estoque divergente do ERP <span class="cnt" id="ini-est-c">-</span></span>
+      <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <select class="sselect" id="ini-est-emp" onchange="renderIniEstoque()"><option value="">Todas as empresas</option><option value="zagodini">Comercial Zagodini</option><option value="mae">Com Amor de Mãe</option><option value="lufe">Lufe Casa &amp; Decoração</option></select>
+        <select class="sselect" id="ini-est-canal" onchange="renderIniEstoque()"><option value="">Todos os sites</option><option value="ml">Mercado Livre</option><option value="shopee">Shopee</option><option value="amazon">Amazon</option></select>
+        <input class="sinput" id="ini-est-q" placeholder="Buscar SKU ou nome..." oninput="renderIniEstoque()" style="min-width:180px">
+        <button class="sselect" style="cursor:pointer" onclick="atualizarIniEstoque()" id="ini-est-btn">🔄 Conferir agora</button>
+      </span></div>
+    <div id="ini-est-b"><div class="loading">Carregando...</div></div>
+    <div style="padding:8px 16px 12px;font-size:12px;color:#888;border-top:1px solid #f2f2f2">Compara o estoque de cada anúncio com o saldo do Bling (Zagodini e Com Amor de Mãe) ou do Tiny (Lufe), pelo SKU. Só acusa diferença quando o anúncio não bate nem com o saldo físico nem com o disponível (físico − reservado). Ficam de fora o Full do Mercado Livre e o FBA da Amazon. <span id="ini-est-obs"></span></div>
+  </div>
+
+  <div class="sec-head" style="background:none;border:none;padding:8px 0 10px"><span style="font-size:15px;font-weight:700">📊 Catálogo e Buy Box</span></div>
   <div class="gwrap"><table class="gtab" id="geral-tab"><tr><td class="loading">Carregando...</td></tr></table></div>
-  <p style="font-size:12px;color:#888;margin-top:10px">Clique em um número para abrir a lista. <b>Perdendo c/ lucro ≥10%</b> = catálogos/Buy Box que você perde mas dá para baixar ao preço do ganhador mantendo pelo menos 10% de lucro.</p>
+  <p style="font-size:12px;color:#888;margin-top:10px"><b>Perdendo c/ lucro ≥10%</b> = catálogos/Buy Box que você perde mas dá para baixar ao preço do ganhador mantendo pelo menos 10% de lucro.</p>
 </div></div>
 
 <!-- Conteúdo Shopee (separado do ML) -->
@@ -436,7 +473,7 @@ window._dados={};
 
 const bar=el('contas-bar');
 {const g=document.createElement('button');g.className='conta-tab geral';g.id='cb-geral';
- g.innerHTML='<span class="ct-logo" style="font-size:24px">📊</span><span class="ct-txt"><b>Visão geral</b><small>Todas as contas</small></span>';
+ g.innerHTML='<span class="ct-logo" style="font-size:24px">🏠</span><span class="ct-txt"><b>Início</b><small>Todas as empresas</small></span>';
  g.onclick=()=>abrirGeral();bar.appendChild(g);}
 CONTAS.forEach((c,i)=>{
   const btn=document.createElement('button');
@@ -508,13 +545,14 @@ let modoGeral=false;
 function abrirGeral(){
   modoGeral=true;modoShopee=false;modoAmazon=false;
   document.querySelectorAll('.conta-tab').forEach(t=>t.classList.remove('active'));el('cb-geral').classList.add('active');
-  el('top-logo').src='/logo/zagodini';el('top-title').textContent='Visão geral';
+  el('top-logo').src='/logo/zagodini';el('top-title').textContent='Início';
   el('canal-sw').classList.remove('show');
   ['ml-content','shopee-content','amazon-content'].forEach(i=>el(i).style.display='none');
   el('geral-content').style.display='block';
   carregarGeral();
 }
 async function carregarGeral(){
+  carregarInicio();
   try{
     const r=await fetch('/resumo').then(r=>r.json());
     const N=(v,cls,acao)=>v==null?'<span class="nd">–</span>':v===0?'<span class="n z">0</span>':'<span class="n '+cls+'" onclick="'+acao+'">'+v+'</span>';
@@ -542,6 +580,76 @@ async function carregarGeral(){
     el('geral-tab').innerHTML=h;
     set('geral-upd','Atualizado às '+new Date(r.em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}));
   }catch(e){el('geral-tab').innerHTML='<tr><td class="loading" style="color:#c0392b">Sem conexão com o servidor.</td></tr>';}
+}
+// ─── Início: sem promoção, pendências e estoque por empresa ───
+let _iniEst=null,_iniEmp=[];
+const IDX_EMP={zagodini:0,mae:1,lufe:2};
+const CANAL_NOME={ml:'🟡 Mercado Livre',shopee:'🟠 Shopee',amazon:'📦 Amazon'};
+async function carregarInicio(){
+  try{
+    const r=await fetch('/inicio').then(r=>r.json());_iniEmp=r.empresas;
+    const A=t=>String(t||'').replace(/"/g,'&quot;').replace(/'/g,"\\'");
+    // um quadrado: valor, rótulo, cor quando > 0, ação ao clicar
+    const Q=(v,lab,cls,acao,tit)=>{
+      if(v==='nc')return '<div class="sq na"><div class="v">—</div><div class="l">'+lab+'<br><small>não conectada</small></div></div>';
+      if(v==='err')return '<div class="sq na" title="'+shpEsc(tit||'')+'"><div class="v">⚠️</div><div class="l">'+lab+'</div></div>';
+      if(v==null)return '<div class="sq na" title="'+shpEsc(tit||'carregando')+'"><div class="v">…</div><div class="l">'+lab+'</div></div>';
+      if(v===0)return '<div class="sq ok"><div class="v">0</div><div class="l">'+lab+'</div></div>';
+      return '<div class="sq cl '+cls+'"'+(tit?' title="'+shpEsc(tit)+'"':'')+' onclick="'+acao+'"><div class="v">'+v+'</div><div class="l">'+lab+'</div></div>';
+    };
+    const T={sp:0,pd:0,es:0};
+    let cards='';
+    for(const e of r.empresas){
+      const i=e.idx,sp=e.semPromo,p=e.pend,es=e.estoque,shpNC=sp.shopeeStatus==='sem_auth';
+      T.sp+=(sp.ml||0)+(sp.shopee||0);T.pd+=(p.ml.perguntas||0)+(p.ml.mensagens||0)+(p.shopee.chat||0);
+      const est=(c,lab)=>{
+        if(c==='shopee'&&shpNC||c==='amazon'&&!p.amazon.conectada)return Q('nc',lab);
+        if(!es.em)return Q(es.status==='erro'?'err':null,lab,'','',es.status==='erro'?es.erro:(es.etapa?'conferindo: '+es.etapa:'aguardando a 1ª conferência'));
+        if(es.erros&&es.erros[c]&&!es.porCanal[c])return Q('err',lab,'','',es.erros[c]);
+        T.es+=es.porCanal[c];return Q(es.porCanal[c],lab,'r',"irIniEstoque('"+e.id+"','"+c+"')");
+      };
+      const amz=p.amazon.conectada?'<div class="sq cl lk" title="A Amazon não libera as mensagens dos compradores pela API" onclick="window.open(\'https://sellercentral.amazon.com.br/messaging/inbox\',\'_blank\')"><div class="v">abrir ↗</div><div class="l">Amazon<br>mensagens</div></div>':Q('nc','Amazon');
+      cards+='<div class="ini-emp" style="--cor:'+CONTAS[i].cor+'"><div class="ini-emp-h"><span class="ct-logo"><img src="/logo/'+CONTAS[i].logo+'" alt="" onerror="this.style.display=\'none\'"></span><span>'+shpEsc(e.nome)+'<br><small style="font-weight:500;color:#888;font-size:12px">ERP: '+e.erp+'</small></span></div>'+
+        '<div class="ini-grp"><div class="ini-grp-t">🏷️ Sem promoção</div><div class="ini-sq c2">'+
+          Q(sp.ml,'Mercado Livre','a',"irML("+i+",'sempromo')")+(shpNC?Q('nc','Shopee'):Q(sp.shopee,'Shopee','a',"irShp("+i+",'sempromo')"))+'</div></div>'+
+        '<div class="ini-grp"><div class="ini-grp-t">💬 Pendentes</div><div class="ini-sq c4">'+
+          Q(p.ml.perguntas,'ML<br>perguntas','r',"irML("+i+",'perguntas')")+
+          (p.ml.mensagens==null&&p.ml.erroMensagens?Q('err','ML<br>mensagens','','',p.ml.erroMensagens):Q(p.ml.mensagens,'ML<br>mensagens','r',"window.open('https://www.mercadolivre.com.br/vendas/omni/lista?filters=with_unread_messages','_blank')",'Abre as vendas no site do ML (entre com a conta desta empresa)'))+
+          (p.shopee.semAuth?Q('nc','Shopee<br>chat'):Q(p.shopee.chat,'Shopee<br>chat','r',"irShp("+i+",'chat')"))+amz+'</div></div>'+
+        '<div class="ini-grp"><div class="ini-grp-t">📦 Estoque diferente do '+e.erp+'</div><div class="ini-sq">'+
+          est('ml','Mercado Livre')+est('shopee','Shopee')+est('amazon','Amazon')+'</div></div></div>';
+    }
+    el('ini-cards').innerHTML='<div class="ini-tot"><div class="sq"><div class="v">'+T.sp+'</div><div class="l">🏷️ produtos sem promoção</div></div><div class="sq"><div class="v">'+T.pd+'</div><div class="l">💬 perguntas e mensagens pendentes</div></div><div class="sq"><div class="v">'+T.es+'</div><div class="l">📦 anúncios com estoque divergente</div></div></div><div class="ini-grid">'+cards+'</div>';
+    // observações do estoque (quando foi conferido, o que ficou de fora)
+    el('ini-est-obs').innerHTML=r.empresas.map(e=>{const s=e.estoque;const q=s.status==='carregando'?'conferindo agora ('+(s.etapa||'')+')':s.em?'conferido às '+new Date(s.em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):s.status==='erro'?'erro: '+shpEsc(s.erro||''):'aguardando a 1ª conferência';
+      return '<br><b>'+shpEsc(e.nome)+'</b> ('+e.erp+'): '+q+(s.semSku?' · '+s.semSku+' anúncios sem SKU':'')+(s.semErp?' · '+s.semErp+' SKUs não achados no '+e.erp:'')+(s.ignorados&&s.ignorados.full?' · '+s.ignorados.full+' Full/FBA fora':'')+(Object.keys(s.erros||{}).length?' · ⚠️ '+Object.entries(s.erros).map(([k,v])=>k+': '+shpEsc(v)).join('; '):'');}).join('');
+    const ocup=r.empresas.some(e=>e.estoque.status==='carregando');el('ini-est-btn').disabled=ocup;el('ini-est-btn').textContent=ocup?'⏳ Conferindo…':'🔄 Conferir agora';
+    _iniEst=await fetch('/inicio/estoque').then(r=>r.json());renderIniEstoque();
+  }catch(e){el('ini-cards').innerHTML='<div class="loading" style="color:#c0392b">Sem conexão com o servidor.</div>';}
+}
+function renderIniEstoque(){
+  if(!_iniEst)return;
+  const fe=el('ini-est-emp').value,fc=el('ini-est-canal').value,q=(el('ini-est-q').value||'').toLowerCase();
+  let L=[];
+  for(const [emp,R] of Object.entries(_iniEst))if(!fe||fe===emp)for(const x of R.itens)L.push({...x,emp});
+  if(fc)L=L.filter(x=>x.canal===fc);
+  if(q)L=L.filter(x=>(x.sku||'').toLowerCase().includes(q)||(x.nome||'').toLowerCase().includes(q)||(x.anuncio||'').toLowerCase().includes(q));
+  set('ini-est-c',L.length);
+  const b=el('ini-est-b');
+  if(!L.length){const algum=Object.values(_iniEst).some(R=>R.em);b.innerHTML='<div class="loading" style="color:'+(algum?'green':'#888')+'">'+(algum?'✓ Nenhuma divergência'+(fe||fc||q?' com esse filtro':'')+'.':'Aguardando a primeira conferência (começa uns 12 min depois que o servidor sobe).')+'</div>';return;}
+  const nomeEmp={zagodini:'Zagodini',mae:'Com Amor de Mãe',lufe:'Lufe'};
+  b.innerHTML='<div class="gwrap"><table class="gtab" style="border:none;border-radius:0"><tr><th class="l">Produto</th><th class="l">Empresa · site</th><th>No site</th><th>No ERP<br><small style="font-weight:400">físico / disponível</small></th><th>Diferença</th><th></th></tr>'+
+    L.slice(0,500).map(x=>'<tr><td class="l"><div style="font-weight:600;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+shpEsc(x.nome||'')+'">'+shpEsc(x.nome||'-')+'</div><div style="font-size:11px;color:#888">SKU '+shpEsc(x.sku)+(x.nomeVar?' · '+shpEsc(x.nomeVar):'')+(x.kit?' · kit':'')+(x.pausado?' · <span style="color:#c62828">pausado</span>':'')+'</div></td>'+
+      '<td class="l" style="white-space:nowrap">'+nomeEmp[x.emp]+'<br><small>'+CANAL_NOME[x.canal]+'</small></td><td><b>'+x.qtd+'</b></td><td>'+x.erpFis+(x.erpDisp!==x.erpFis?' / '+x.erpDisp:'')+'</td>'+
+      '<td><span class="n '+(x.diff>0?'a':'r')+'" style="cursor:default" title="'+(x.diff>0?'Site mostra mais do que o ERP tem — risco de vender sem ter':'Site mostra menos do que o ERP tem — venda perdida')+'">'+(x.diff>0?'+':'')+x.diff+'</span></td>'+
+      '<td><a class="alink" href="'+x.link+'" target="_blank" rel="noopener">Abrir ↗</a></td></tr>').join('')+'</table></div>'+(L.length>500?'<div class="loading">Mostrando 500 de '+L.length+'. Use os filtros.</div>':'');
+}
+function irIniEstoque(emp,canal){el('ini-est-emp').value=emp;el('ini-est-canal').value=canal;renderIniEstoque();el('ini-est').scrollIntoView({behavior:'smooth'});}
+async function atualizarIniEstoque(){
+  const emp=el('ini-est-emp').value;
+  el('ini-est-btn').disabled=true;el('ini-est-btn').textContent='⏳ Conferindo…';
+  await fetch('/inicio/estoque/atualizar'+(emp?'?emp='+emp:''),{method:'POST'}).catch(()=>{});
+  setTimeout(carregarInicio,3000);
 }
 setInterval(()=>{if(modoGeral)carregarGeral();},60000);
 function irML(i,aba,lucroMin){modoGeral=false;trocarConta(i,el('cb-'+i));const b=[...document.querySelectorAll('#ml-content .tab')].find(x=>(x.getAttribute('onclick')||'').includes("'"+aba+"'"));showTab(aba,b);if(lucroMin&&el('fl')){el('fl').value=String(lucroMin);renderPerdendo(0);}}
