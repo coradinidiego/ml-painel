@@ -117,6 +117,19 @@ async function coletar(conta, prazoFn) {
   return linhas;
 }
 
+/** Janela de coleta de hoje (Mercado Envios Coleta / cross_docking), da agenda da conta no ML. Cache por dia. */
+const _coleta = {};
+async function coletaHoje(conta) {
+  const hoje = hojeSP(), c = _coleta[conta];
+  if (c && c.dia === hoje) return c.v;
+  const dia = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/Sao_Paulo' }).toLowerCase();
+  const s = await get(conta, `/users/${await uid(conta)}/shipping/schedule/cross_docking`);
+  const d = s?.schedule?.[dia], det = d?.work ? (d.detail || [])[0] : null;
+  const v = det?.from ? { de: det.from, ate: det.to || null, cutoff: det.cutoff || null } : { semColeta: true };
+  _coleta[conta] = { dia: hoje, v };
+  return v;
+}
+
 /** Diagnóstico: quantos pacotes em cada status/substatus (a partir do cache da última coleta). */
 function diagnostico(conta) {
   const hoje = hojeSP(), por = {}, log = {};
@@ -130,4 +143,4 @@ function diagnostico(conta) {
   return { porStatus: por, logistica: log };
 }
 
-module.exports = { coletar, classificar, resumirEnvio, diagnostico };
+module.exports = { coletar, classificar, resumirEnvio, diagnostico, coletaHoje };

@@ -217,7 +217,10 @@ app.get('/resumo', (req, res) => {
 
 // Itens fora da lista "Sem promoção": proibidos de ter promoção por lei (mamadeira, chupeta, bico, protetor de mamilo)
 // e os que você ocultar à mão no painel (promo_ignorar.json, por conta).
-const PROMO_PROIBIDA = /mamadeira|chupeta|bicos? (de |para )?(mamadeira|silicone|ortod[oô]ntico)|protetor(es)? de mamilo/i;
+// Acessórios (aquecedor, esterilizador, escova de mamadeira…) podem ter promoção: só conta se o título não começar por eles.
+const PROMO_PROIBIDA_RE = /mamadeira|chupeta|bicos? (de |para )?(mamadeira|silicone|ortod[oô]ntico)|protetor(es)? de mamilo/i;
+const PROMO_ACESSORIO_RE = /^\s*(kit\s+)?(aquecedor|esterilizador|escova|escovinha|secador|escorredor|porta|organizador|suporte|bolsa|capa|lava|limpador)/i;
+const PROMO_PROIBIDA = { test: t => PROMO_PROIBIDA_RE.test(t || '') && !PROMO_ACESSORIO_RE.test(t || '') };
 const ARQ_PROMO_IGN = path.join(DATA, 'promo_ignorar.json');
 function promoIgnorarTudo() { try { return JSON.parse(fs.readFileSync(ARQ_PROMO_IGN)); } catch (e) { return {}; } }
 function promoIgnorar(idx) { return new Set(promoIgnorarTudo()[idx] || []); }

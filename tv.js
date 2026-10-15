@@ -152,7 +152,7 @@ const FLUXO_VERIFICADO = { Shein: /^GSH/i, Shopee: /^\d{6}[A-Z0-9]{8}$/i, Amazon
 const SIT = { emAberto: 6, atendido: 9, verificado: 24 };
 
 // Status dos pedidos direto na Shopee (só lojas com a Shopee conectada no painel). Cache de 3 min por pedido.
-const _stShp = {};
+const _stShp = {}, _criadoShp = {};   // order_sn -> status / create_time (segundos)
 async function statusShopee(empId, sns) {
   let sp;
   try { sp = require('./shopee').loja(empId); } catch (e) { return null; }
@@ -162,7 +162,7 @@ async function statusShopee(empId, sns) {
   try {
     for (let i = 0; i < faltam.length; i += 50) {
       const d = await sp.shopeeGet('/api/v2/order/get_order_detail', { order_sn_list: faltam.slice(i, i + 50).join(',') });
-      for (const o of d.response?.order_list || []) { out[o.order_sn] = o.order_status; _stShp[o.order_sn] = { st: o.order_status, ts: agora }; }
+      for (const o of d.response?.order_list || []) { out[o.order_sn] = o.order_status; _stShp[o.order_sn] = { st: o.order_status, ts: agora }; if (o.create_time) _criadoShp[o.order_sn] = o.create_time; }
     }
   } catch (e) { console.warn('[tv] status Shopee', empId, e.message); if (!Object.keys(out).length) return null; }
   return out;
@@ -185,9 +185,11 @@ async function coletarFluxoBling(emp, canal, canais, hoje, janela) {
   const linhas = [];
   // pedido já pago entra no trabalho do dia (não vai para "próximos dias"); atrasado se passou da data prevista
   const pz = p => { const d = (p.dataPrevista || '').slice(0, 10); return d && d > '2000-01-01' && d < hoje ? 'atrasado' : 'hoje'; };
-  const add = (tipo, l) => { for (const p of l) linhas.push({ tipo, canal, prazo: tipo === 'empacotado' ? 'hoje' : pz(p), num: String(p.numeroLoja || '') }); };
+  const add = (tipo, l) => { for (const p of l) { const num = String(p.numeroLoja || ''); linhas.push({ tipo, canal, prazo: tipo === 'empacotado' ? 'hoje' : pz(p), num, criado: canal === 'Shopee' ? _criadoShp[num] : undefined }); } };
   for (const idLoja of ids) {
-    add('emitirNF', await blingListar(emp.idx, [SIT.emAberto], { ...janela, idLoja }));
+    const emAberto = await blingListar(emp.idx, [SIT.emAberto], { ...janela, idLoja });
+    if (canal === 'Shopee') await statusShopee(emp.id, emAberto.map(p => String(p.numeroLoja || '')).filter(Boolean)); // hora da compra (corte das 12h)
+    add('emitirNF', emAberto);
     await delay(350);
     let atendidos = await blingListar(emp.idx, [SIT.atendido], { ...janela, idLoja });
     if (canal === 'Shopee') {
@@ -318,14 +320,54 @@ async function coletarAmazon(emp, hoje, erpLinhas) {
   return linhas;
 }
 
+// ─── Cortes de envio ───────────────────────────────────────────────────────
+//  Amazon:  pedidos com envio para hoje precisam estar prontos até 11:30 (alerta a partir de 11:30)
+//  Shopee:  pedidos feitos até 12:00 saem no mesmo dia (alerta a partir de 14:00)
+//  ML:      pacotes para envio hoje prontos antes da coleta (alerta 1h antes do início da coleta, horário da agenda do ML)
+// "Pronto" = já está em A coletar (empacotado) ou enviado. Pendente = Emitir NF ou A empacotar.
+const CORTE = { Amazon: '11:30', ShopeePedido: '12:00', Shopee: '14:00', mlAntes: 60 };
+const TZ = 'America/Sao_Paulo';
+const snDia = n => { const m = /^(\d{2})(\d{2})(\d{2})[A-Z0-9]{8}$/i.exec(n || ''); return m ? `20${m[1]}-${m[2]}-${m[3]}` : ''; };
+function pendenteCorte(l, hoje) {
+  if (l.tipo !== 'emitirNF' && l.tipo !== 'aEmpacotar') return false;
+  if (l.canal === 'Mercado Livre' || l.canal === 'Amazon') return l.prazo === 'hoje' || l.prazo === 'atrasado';
+  if (l.canal === 'Shopee') {
+    if (l.criado) return l.criado < Date.parse(`${hoje}T${CORTE.ShopeePedido}:00-03:00`) / 1000;
+    const d = snDia(l.num); return !!d && d < hoje;   // sem a hora da compra: só os de dias anteriores
+  }
+  return false;
+}
+const hmAgora = () => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: TZ });
+const hmMenos = (hm, min) => { const [h, m] = hm.split(':').map(Number), t = Math.max(0, h * 60 + m - min); return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); };
+function cortes(empresas) {
+  const agora = hmAgora(), domingo = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: TZ }) === 'Sunday';
+  const mlDe = empresas.map(e => e.coletaMl?.de).filter(Boolean).sort()[0] || null;
+  const regras = [
+    { canal: 'Amazon', titulo: 'Amazon', texto: 'envio de hoje pronto até ' + CORTE.Amazon, alertaDesde: CORTE.Amazon, ativo: !domingo && agora >= CORTE.Amazon },
+    { canal: 'Mercado Livre', titulo: 'Mercado Livre', texto: mlDe ? 'coleta às ' + mlDe : 'sem coleta hoje', alertaDesde: mlDe ? hmMenos(mlDe, CORTE.mlAntes) : null, ativo: false },
+    { canal: 'Shopee', titulo: 'Shopee', texto: 'pedidos até ' + CORTE.ShopeePedido + ' saem hoje', alertaDesde: CORTE.Shopee, ativo: !domingo && agora >= CORTE.Shopee },
+  ];
+  const emps = empresas.map(e => {
+    const alerta = { Amazon: regras[0].ativo, Shopee: regras[2].ativo, 'Mercado Livre': !!e.coletaMl?.de && agora >= hmMenos(e.coletaMl.de, CORTE.mlAntes) };
+    return { ...e, alertas: alerta };
+  });
+  regras[1].ativo = emps.some(e => e.alertas['Mercado Livre']);
+  for (const r of regras) {
+    r.pendentes = emps.reduce((s, e) => s + (e.canais.find(c => c.canal === r.canal)?.corte || 0), 0);
+    r.atrasados = emps.reduce((s, e) => s + (e.alertas[r.canal] ? (e.canais.find(c => c.canal === r.canal)?.corte || 0) : 0), 0);
+  }
+  return { regras, empresas: emps, agora };
+}
+
 // ─── Agregação ─────────────────────────────────────────────────────────────
-const zerado = () => ({ emitirNF: 0, aEmpacotar: 0, empacotado: 0, enviado: 0, atrasados: 0, futuros: 0 });
+const zerado = () => ({ emitirNF: 0, aEmpacotar: 0, empacotado: 0, enviado: 0, atrasados: 0, futuros: 0, corte: 0 });
 function agregar(emp, linhas) {
-  const canais = {};
+  const canais = {}, hoje = hojeIso();
   for (const c of emp.canais) canais[c] = { canal: c, ...zerado() };
   for (const l of linhas) {
     if (!MARKETPLACES.includes(l.canal)) continue;   // venda física / balcão / sem marketplace: fora da TV
     const c = canais[l.canal] ||= { canal: l.canal, ...zerado() };
+    if (pendenteCorte(l, hoje)) c.corte++;
     if (l.tipo === 'futuro' || ((l.tipo === 'emitirNF' || l.tipo === 'aEmpacotar') && l.prazo === 'futuro')) { c.futuros++; continue; }
     if (!ETAPAS.includes(l.tipo)) continue;
     c[l.tipo]++;
@@ -343,11 +385,12 @@ const ULTIMAS = {}; // último dado bom por empresa e fonte
 
 async function coletarEmpresa(emp, cfg, hoje, erros, aoParcial) {
   const ant = ULTIMAS[emp.id] || { ml: [], erp: [], okMl: false, okErp: false };
+  const coletaMl = await mlEnvios.coletaHoje(emp.ml).catch(e => { console.warn('[tv] coleta ML', emp.id, e.message); return ant.coletaMl || null; });
   const [rMl, rErp] = await Promise.allSettled([
     mlEnvios.coletar(emp.ml, prazo).then(ml => { aoParcial && aoParcial({ ...agregar(emp, [...ml, ...ant.erp]), carregandoErp: !ant.okErp }); return ml; }),
     emp.erp === 'tiny' ? coletarTiny(cfg, hoje) : coletarBling(emp, cfg, hoje),
   ]);
-  const atual = { ...ant };
+  const atual = { ...ant, coletaMl };
   if (rMl.status === 'fulfilled') Object.assign(atual, { ml: rMl.value, okMl: true });
   else { erros[`${emp.nome} · Mercado Livre`] = rMl.reason?.response?.status === 401 ? 'token do ML expirado' : (rMl.reason?.message || 'erro'); console.warn('[tv] ML', emp.id, rMl.reason?.message); }
   if (rErp.status === 'fulfilled') {
@@ -362,7 +405,7 @@ async function coletarEmpresa(emp, cfg, hoje, erros, aoParcial) {
   }
   else { erros[`${emp.nome} · ${emp.erp === 'tiny' ? 'Tiny' : 'Bling'}`] = rErp.reason?.response?.status === 401 ? 'ERP não autorizado' : (rErp.reason?.message || 'erro'); console.warn('[tv] ERP', emp.id, rErp.reason?.message); }
   ULTIMAS[emp.id] = atual;
-  return { ...agregar(emp, [...atual.ml, ...atual.erp]), fontes: { ml: rMl.status === 'fulfilled', erp: rErp.status === 'fulfilled' } };
+  return { ...agregar(emp, [...atual.ml, ...atual.erp]), coletaMl, fontes: { ml: rMl.status === 'fulfilled', erp: rErp.status === 'fulfilled' } };
 }
 
 async function atualizar() {
@@ -395,7 +438,8 @@ router.get('/fontes/:f', (req, res) => { // fontes servidas pelo próprio painel
 router.get('/dados', (req, res) => {
   ultimoPedido = Date.now();
   if (!ESTADO.atualizadoEm && !rodando) atualizar().catch(e => console.warn('[tv]', e.message));
-  res.json({ ...ESTADO, carregando: !ESTADO.atualizadoEm && !ESTADO.parcial });
+  const ct = ESTADO.empresas?.length ? cortes(ESTADO.empresas) : null;
+  res.json({ ...ESTADO, ...(ct ? { empresas: ct.empresas, cortes: ct.regras } : {}), carregando: !ESTADO.atualizadoEm && !ESTADO.parcial });
 });
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
