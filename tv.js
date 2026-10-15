@@ -343,9 +343,9 @@ function cortes(empresas) {
   const agora = hmAgora(), domingo = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: TZ }) === 'Sunday';
   const mlDe = empresas.map(e => e.coletaMl?.de).filter(Boolean).sort()[0] || null;
   const regras = [
-    { canal: 'Amazon', titulo: 'Amazon', texto: 'envio de hoje pronto até ' + CORTE.Amazon, alertaDesde: CORTE.Amazon, ativo: !domingo && agora >= CORTE.Amazon },
+    { canal: 'Amazon', titulo: 'Amazon', texto: 'pronto até ' + CORTE.Amazon, alertaDesde: CORTE.Amazon, ativo: !domingo && agora >= CORTE.Amazon },
     { canal: 'Mercado Livre', titulo: 'Mercado Livre', texto: mlDe ? 'coleta às ' + mlDe : 'sem coleta hoje', alertaDesde: mlDe ? hmMenos(mlDe, CORTE.mlAntes) : null, ativo: false },
-    { canal: 'Shopee', titulo: 'Shopee', texto: 'pedidos até ' + CORTE.ShopeePedido + ' saem hoje', alertaDesde: CORTE.Shopee, ativo: !domingo && agora >= CORTE.Shopee },
+    { canal: 'Shopee', titulo: 'Shopee', texto: 'pedidos até ' + CORTE.ShopeePedido, alertaDesde: CORTE.Shopee, ativo: !domingo && agora >= CORTE.Shopee },
   ];
   const emps = empresas.map(e => {
     const alerta = { Amazon: regras[0].ativo, Shopee: regras[2].ativo, 'Mercado Livre': !!e.coletaMl?.de && agora >= hmMenos(e.coletaMl.de, CORTE.mlAntes) };
