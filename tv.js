@@ -152,7 +152,7 @@ const FLUXO_VERIFICADO = { Shein: /^GSH/i, Shopee: /^\d{6}[A-Z0-9]{8}$/i, Amazon
 const SIT = { emAberto: 6, atendido: 9, verificado: 24 };
 
 // Status dos pedidos direto na Shopee (só lojas com a Shopee conectada no painel). Cache de 3 min por pedido.
-const _stShp = {}, _criadoShp = {};   // order_sn -> status / create_time (segundos)
+const _stShp = {}, _criadoShp = {}, _carrierShp = {};   // order_sn -> status / create_time (segundos)
 async function statusShopee(empId, sns) {
   let sp;
   try { sp = require('./shopee').loja(empId); } catch (e) { return null; }
@@ -161,8 +161,8 @@ async function statusShopee(empId, sns) {
   for (const sn of sns) { const c = _stShp[sn]; if (c && agora - c.ts < 3 * 60e3) out[sn] = c.st; else faltam.push(sn); }
   try {
     for (let i = 0; i < faltam.length; i += 50) {
-      const d = await sp.shopeeGet('/api/v2/order/get_order_detail', { order_sn_list: faltam.slice(i, i + 50).join(',') });
-      for (const o of d.response?.order_list || []) { out[o.order_sn] = o.order_status; _stShp[o.order_sn] = { st: o.order_status, ts: agora }; if (o.create_time) _criadoShp[o.order_sn] = o.create_time; }
+      const d = await sp.shopeeGet('/api/v2/order/get_order_detail', { order_sn_list: faltam.slice(i, i + 50).join(','), response_optional_fields: 'shipping_carrier' });
+      for (const o of d.response?.order_list || []) { out[o.order_sn] = o.order_status; _stShp[o.order_sn] = { st: o.order_status, ts: agora }; if (o.create_time) _criadoShp[o.order_sn] = o.create_time; if (o.shipping_carrier) _carrierShp[o.order_sn] = o.shipping_carrier; }
     }
   } catch (e) { console.warn('[tv] status Shopee', empId, e.message); if (!Object.keys(out).length) return null; }
   return out;
@@ -185,7 +185,7 @@ async function coletarFluxoBling(emp, canal, canais, hoje, janela) {
   const linhas = [];
   // pedido já pago entra no trabalho do dia (não vai para "próximos dias"); atrasado se passou da data prevista
   const pz = p => { const d = (p.dataPrevista || '').slice(0, 10); return d && d > '2000-01-01' && d < hoje ? 'atrasado' : 'hoje'; };
-  const add = (tipo, l) => { for (const p of l) { const num = String(p.numeroLoja || ''); linhas.push({ tipo, canal, prazo: tipo === 'empacotado' ? 'hoje' : pz(p), num, criado: canal === 'Shopee' ? _criadoShp[num] : undefined, dataPedido: (p.data || '').slice(0, 10) }); } };
+  const add = (tipo, l) => { for (const p of l) { const num = String(p.numeroLoja || ''); linhas.push({ tipo, canal, prazo: tipo === 'empacotado' ? 'hoje' : pz(p), num, criado: canal === 'Shopee' ? _criadoShp[num] : undefined, direta: canal === 'Shopee' && /entrega direta|direct/i.test(_carrierShp[num] || ''), dataPedido: (p.data || '').slice(0, 10) }); } };
   for (const idLoja of ids) {
     const emAberto = await blingListar(emp.idx, [SIT.emAberto], { ...janela, idLoja });
     if (canal === 'Shopee') await statusShopee(emp.id, emAberto.map(p => String(p.numeroLoja || '')).filter(Boolean)); // hora da compra (corte das 12h)
@@ -325,10 +325,19 @@ async function coletarAmazon(emp, hoje, erpLinhas) {
 //  Shopee:  pedidos feitos até 12:00 saem no mesmo dia (alerta a partir de 14:00)
 //  ML:      pacotes para envio hoje prontos antes da coleta (alerta 1h antes do início da coleta, horário da agenda do ML)
 // "Pronto" = já está em A coletar (empacotado) ou enviado. Pendente = Emitir NF ou A empacotar.
-const CORTE = { Amazon: '11:00', ShopeePedido: '12:00', Shopee: '14:00', SheinPedido: '12:00', Shein: '14:00', mlAntes: 60 };
+const CORTE = { Amazon: '11:00', ShopeePedido: '12:00', Shopee: '14:00', SheinPedido: '12:00', Shein: '14:00', Proprio: '14:00', mlAntes: 60 };
 const TZ = 'America/Sao_Paulo';
 const snDia = n => { const m = /^(\d{2})(\d{2})(\d{2})[A-Z0-9]{8}$/i.exec(n || ''); return m ? `20${m[1]}-${m[2]}-${m[3]}` : ''; };
+// Entrega própria (ML Flex / Shopee Entrega Direta): vendido até 14:00 sai no mesmo dia. Pendente = ainda não saiu para entrega.
+function pendenteProprio(l, hoje) {
+  if (!l.flex && !l.direta) return false;
+  if (!['emitirNF', 'aEmpacotar', 'empacotado'].includes(l.tipo)) return false;
+  if (l.flex) return l.prazo === 'hoje' || l.prazo === 'atrasado';
+  if (l.criado) return l.criado < Date.parse(`${hoje}T${CORTE.Proprio}:00-03:00`) / 1000;
+  const d = snDia(l.num) || l.dataPedido; return !!d && d < hoje;
+}
 function pendenteCorte(l, hoje) {
+  if (l.flex || l.direta) return false;
   if (l.tipo !== 'emitirNF' && l.tipo !== 'aEmpacotar') return false;
   if (l.canal === 'Mercado Livre' || l.canal === 'Amazon') return l.prazo === 'hoje' || l.prazo === 'atrasado';
   if (l.canal === 'Shopee') {
@@ -355,7 +364,9 @@ function cortes(empresas) {
     return { ...e, alertas: alerta };
   });
   regras[1].ativo = emps.some(e => e.alertas['Mercado Livre']);
+  const proprio = { 'Mercado Livre': 'Flex', Shopee: 'Entrega Direta' };
   for (const r of regras) {
+    if (proprio[r.canal]) r.proprio = { nome: proprio[r.canal], corte: CORTE.Proprio, pendentes: emps.reduce((s, e) => s + (e.canais.find(c => c.canal === r.canal)?.proprio || 0), 0) };
     r.pendentes = emps.reduce((s, e) => s + (e.canais.find(c => c.canal === r.canal)?.corte || 0), 0);
     r.atrasados = emps.reduce((s, e) => s + (e.alertas[r.canal] ? (e.canais.find(c => c.canal === r.canal)?.corte || 0) : 0), 0);
   }
@@ -363,7 +374,7 @@ function cortes(empresas) {
 }
 
 // ─── Agregação ─────────────────────────────────────────────────────────────
-const zerado = () => ({ emitirNF: 0, aEmpacotar: 0, empacotado: 0, enviado: 0, atrasados: 0, futuros: 0, corte: 0 });
+const zerado = () => ({ emitirNF: 0, aEmpacotar: 0, empacotado: 0, enviado: 0, atrasados: 0, futuros: 0, corte: 0, proprio: 0 });
 function agregar(emp, linhas) {
   const canais = {}, hoje = hojeIso();
   for (const c of emp.canais) canais[c] = { canal: c, ...zerado() };
@@ -371,6 +382,7 @@ function agregar(emp, linhas) {
     if (!MARKETPLACES.includes(l.canal)) continue;   // venda física / balcão / sem marketplace: fora da TV
     const c = canais[l.canal] ||= { canal: l.canal, ...zerado() };
     if (pendenteCorte(l, hoje)) c.corte++;
+    if (pendenteProprio(l, hoje)) c.proprio++;
     if (l.tipo === 'futuro') { c.futuros++; continue; }
     // NF/empacotar com prazo para outro dia continuam na etapa (dá para adiantar), mas não entram no corte de hoje
     if ((l.tipo === 'emitirNF' || l.tipo === 'aEmpacotar') && l.prazo === 'futuro') c.futuros++;

@@ -118,7 +118,8 @@ async function coletar(conta, prazoFn) {
       if (consultas % 20 === 0) { salvar(); await delay(300); }
     }
     const tipo = classificar(s, hoje);
-    if (tipo) linhas.push({ tipo, canal: 'Mercado Livre', prazo: (tipo === 'aEmpacotar' || tipo === 'emitirNF') ? prazoFn(s.limite, hoje) : 'hoje' });
+    const flex = s.logistica === 'self_service';   // Flex: entrega feita pela própria empresa
+    if (tipo) linhas.push({ tipo, canal: 'Mercado Livre', prazo: (tipo === 'aEmpacotar' || tipo === 'emitirNF' || (flex && tipo === 'empacotado')) ? prazoFn(s.limite, hoje) : 'hoje', flex });
   }
   // limpa do cache envios com mais de 30 dias
   for (const [k, v] of Object.entries(c)) if (v.ts && Date.now() - v.ts > 30 * 864e5) delete c[k];

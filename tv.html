@@ -40,6 +40,17 @@ header{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto;gap:.9vw;
 .corte .ct span{font-family:var(--cond);font-size:1.35vw;font-weight:700;color:#d5dbe5;white-space:nowrap;flex:none}
 .corte .st{grid-area:st;font-family:var(--cond);font-weight:800;font-size:1.6vw;line-height:1;white-space:nowrap}
 .corte.ok .st{color:var(--ok)}
+/* entrega própria (Flex / Entrega Direta): alterna com o status normal */
+.st .gira{position:relative;display:block;height:1em}
+.st .gira>span{position:absolute;left:0;top:0;white-space:nowrap}
+.st .gira .b{color:#9fd3ff;opacity:0}
+@media (prefers-reduced-motion:no-preference){
+  .st .gira .a{animation:giraA 10s infinite}
+  .st .gira .b{animation:giraB 10s infinite}
+}
+@media (prefers-reduced-motion:reduce){.st .gira .a{opacity:0}.st .gira .b{opacity:1}}
+@keyframes giraA{0%,45%{opacity:1}50%,95%{opacity:0}100%{opacity:1}}
+@keyframes giraB{0%,45%{opacity:0}50%,95%{opacity:1}100%{opacity:0}}
 .corte.espera .st{color:var(--emp)}
 .corte.alerta{background:linear-gradient(100deg,#e2414f,#ff6b4a)}
 .corte.alerta::before{background:#fff}
@@ -164,7 +175,7 @@ function corte(r, carregando){
   const st = !r.pendentes ? '✓ tudo pronto' : r.atrasados ? `⚠ ${fmt(r.atrasados)} fora do corte` : `${fmt(r.pendentes)} para o corte`;
   return `<div class="corte ${cls}" style="--marca:${CORES[r.canal]}">${logoMkt(r.canal)}
     <div class="ct"><b>${esc(r.titulo)}</b><span>${esc(r.texto)}</span></div>
-    <div class="st">${st}</div></div>`;
+    <div class="st">${r.proprio?.pendentes ? `<span class="gira"><span class="a">${st}</span><span class="b">🛵 ${fmt(r.proprio.pendentes)} ${esc(r.proprio.nome)} hoje</span></span>` : st}</div></div>`;
 }
 function alertasDe(e){
   return (e.canais||[]).filter(c => c.corte > 0 && e.alertas?.[c.canal]).map(c => `${CURTO[c.canal]||c.canal} ${fmt(c.corte)}`);
