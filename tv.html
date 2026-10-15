@@ -48,8 +48,8 @@ header{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:.9vw;align-items:
 .hora{display:flex;align-items:center;font-family:var(--cond);font-weight:700;font-size:3.6vw;line-height:1;padding:0 .4vw 0 1vw;letter-spacing:.01em}
 
 /* faixas por empresa */
-main{display:grid;grid-template-rows:repeat(3,1fr);gap:.9vw;min-height:0}
-.faixa{display:grid;grid-template-columns:13.5vw minmax(0,1fr) minmax(0,1fr) minmax(0,2.3fr) 8.5vw;background:var(--placa);border-radius:1.1vw;overflow:hidden;position:relative;min-height:0}
+main{display:grid;grid-template-rows:repeat(3,1fr) auto;gap:.9vw;min-height:0}
+.faixa{display:grid;grid-template-columns:13.5vw minmax(0,1fr) minmax(0,1fr) minmax(0,2.6fr);background:var(--placa);border-radius:1.1vw;overflow:hidden;position:relative;min-height:0}
 .marca{display:flex;flex-direction:column;justify-content:center;gap:.6vw;padding:0 1.3vw}
 .marca img{width:4vw;height:4vw;border-radius:.8vw;background:#fff;object-fit:contain;padding:.25vw}
 .marca b{font-size:1.45vw;font-weight:700;line-height:1.1}
@@ -95,7 +95,23 @@ main{display:grid;grid-template-rows:repeat(3,1fr);gap:.9vw;min-height:0}
 @media (prefers-reduced-motion:no-preference){.corte.alerta,.faixa.alerta{animation:pulso 1.8s ease-in-out infinite}}
 @keyframes pulso{50%{filter:brightness(1.22)}}
 
-footer{display:flex;justify-content:space-between;font-size:.9vw;color:var(--apagado);font-weight:500}
+footer{display:flex;justify-content:space-between;font-size:.65vw;color:#5d6575;font-weight:500}
+/* total geral (todas as empresas): faixa compacta no fim, alinhada com as colunas de cima */
+.faixa.geral{background:transparent;box-shadow:inset 0 0 0 1px var(--linha)}
+.faixa.geral .marca b{font-size:1.25vw;color:var(--apagado)}
+.faixa.geral .rot{display:none}
+.faixa.geral .est{flex-direction:row;align-items:center;justify-content:flex-start;gap:1vw;padding:.45vw 1.3vw}
+.faixa.geral .est .num{font-size:3.4vw}
+.faixa.geral .chips{margin:0;flex-direction:column;gap:.1vw}
+.faixa.geral .coletar{display:flex;align-items:center;gap:.8vw;padding:.45vw 1.2vw}
+.faixa.geral .coletar>.est{display:none}
+.faixa.geral .mkts{flex:1;display:flex;gap:.6vw}
+.faixa.geral .mkt{flex:1;padding:.45vw .7vw .3vw}
+.faixa.geral .mkt span{font-size:.85vw}
+.faixa.geral .mkt b{font-size:2.3vw}
+.faixa.geral .total{flex-direction:column;align-items:flex-end;border:0;padding:0;gap:.1vw}
+.faixa.geral .total span{font-size:.85vw;white-space:nowrap}
+.faixa.geral .total b{font-size:3.4vw}
 footer .erro{color:var(--emp)}
 .aviso{position:fixed;inset:0;display:grid;place-items:center;background:var(--fundo);font-size:1.8vw;color:var(--apagado);text-align:center;padding:4vw}
 </style>
@@ -151,6 +167,20 @@ function corte(r){
 function alertasDe(e){
   return (e.canais||[]).filter(c => c.corte > 0 && e.alertas?.[c.canal]).map(c => `${CURTO[c.canal]||c.canal} ${fmt(c.corte)}`);
 }
+function geral(emps){
+  const canais = {}, total = {emitirNF:0,aEmpacotar:0,empacotado:0,atrasados:0};
+  for (const e of emps) for (const c of e.canais||[]) {
+    const g = canais[c.canal] ||= {canal:c.canal,emitirNF:0,aEmpacotar:0,empacotado:0,atrasados:0};
+    for (const k in total) { g[k] += c[k]||0; total[k] += c[k]||0; }
+  }
+  const e = { canais:Object.values(canais), total };
+  return `<section class="faixa geral">
+    <div class="marca"><b>Todas as empresas</b></div>
+    ${estacao(e,'emitirNF','nf','Emitir NF')}
+    ${estacao(e,'aEmpacotar','em','A empacotar')}
+    ${coletar(e).replace('Total a coletar','Total geral')}
+  </section>`;
+}
 function faixa(e){
   const t = e.total, pendente = t.emitirNF + t.aEmpacotar, al = alertasDe(e);
   const estado = e.carregando ? 'Carregando…'
@@ -166,10 +196,6 @@ function faixa(e){
     ${estacao(e,'emitirNF','nf','Emitir NF')}
     ${estacao(e,'aEmpacotar','em','A empacotar')}
     ${coletar(e)}
-    <div class="lado">
-      <div><b class="n">${fmt(t.enviado)}</b>enviados hoje</div>
-      <div><b class="n">${fmt(t.futuros)}</b>próximos dias</div>
-    </div>
   </section>`;
 }
 
@@ -180,7 +206,7 @@ async function carregar(){
     const d = await r.json();
     if (d.carregando || !d.empresas?.length) { setTimeout(carregar, 4000); return; }
     $('aviso').style.display = 'none';
-    $('faixas').innerHTML = d.empresas.map(faixa).join('');
+    $('faixas').innerHTML = d.empresas.map(faixa).join('') + geral(d.empresas);
     $('cortes').innerHTML = (d.cortes||[]).map(corte).join('');
     if (d.parcial) setTimeout(carregar, 4000);
     $('atualizado').textContent = d.atualizadoEm && !d.parcial
