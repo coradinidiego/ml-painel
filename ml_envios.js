@@ -11,7 +11,8 @@
  *   empacotado   → "ready_to_ship" com etiqueta impressa, aguardando coleta/postagem
  *                  (printed, in_pickup_list, ready_for_pickup, ready_for_dropoff…)
  *   enviado hoje → entregue à transportadora (picked_up, dropped_off, in_hub…) ou "shipped" hoje
- * Prazo: data limite de despacho do ML (estimated_handling_limit).
+ * Prazo: data limite de despacho do ML — /shipments/{id}/sla (expected_date), o mesmo prazo que aparece no ML.
+ *        (estimated_handling_limit costuma vir vazio; sem data nenhuma o pacote conta como "hoje").
  */
 const axios = require('axios');
 const fs = require('fs');
@@ -104,8 +105,16 @@ async function coletar(conta, prazoFn) {
     const chave = conta + ':' + id;
     let s = c[chave];
     if (!s || !finalizado(s, hoje)) {
+      const ant = s;
       try { s = c[chave] = { ...resumirEnvio(await get(conta, '/shipments/' + id)), ts: Date.now() }; consultas++; }
       catch (e) { if (e.response?.status === 401) throw e; continue; }
+      if (ant?.sla) { s.sla = ant.sla; s.slaTs = ant.slaTs; }
+      // prazo de despacho (SLA) só para o que ainda vai ser preparado; guarda por 30 min
+      if ((s.status === 'handling' || s.status === 'ready_to_ship') && (!s.slaTs || Date.now() - s.slaTs > 30 * 60e3)) {
+        try { const sla = await get(conta, '/shipments/' + id + '/sla'); s.sla = diaSP(sla?.expected_date) || null; s.slaTs = Date.now(); consultas++; }
+        catch (e) { if (e.response?.status === 401) throw e; }
+      }
+      if (s.sla) s.limite = s.sla;
       if (consultas % 20 === 0) { salvar(); await delay(300); }
     }
     const tipo = classificar(s, hoje);

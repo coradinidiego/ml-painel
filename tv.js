@@ -368,7 +368,9 @@ function agregar(emp, linhas) {
     if (!MARKETPLACES.includes(l.canal)) continue;   // venda física / balcão / sem marketplace: fora da TV
     const c = canais[l.canal] ||= { canal: l.canal, ...zerado() };
     if (pendenteCorte(l, hoje)) c.corte++;
-    if (l.tipo === 'futuro' || ((l.tipo === 'emitirNF' || l.tipo === 'aEmpacotar') && l.prazo === 'futuro')) { c.futuros++; continue; }
+    if (l.tipo === 'futuro') { c.futuros++; continue; }
+    // NF/empacotar com prazo para outro dia continuam na etapa (dá para adiantar), mas não entram no corte de hoje
+    if ((l.tipo === 'emitirNF' || l.tipo === 'aEmpacotar') && l.prazo === 'futuro') c.futuros++;
     if (!ETAPAS.includes(l.tipo)) continue;
     c[l.tipo]++;
     if ((l.tipo === 'emitirNF' || l.tipo === 'aEmpacotar') && l.prazo === 'atrasado') c.atrasados++;
