@@ -31,22 +31,21 @@ body{display:grid;grid-template-rows:auto 1fr auto;padding:1.2vw 1.6vw .8vw;gap:
 .n{font-family:var(--cond);font-variant-numeric:tabular-nums}
 
 /* topo: cortes + relógio */
-header{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:.9vw;align-items:stretch}
-.corte{position:relative;display:flex;align-items:center;gap:1vw;background:var(--placa);border-radius:.9vw;padding:.7vw 1.2vw .7vw 1.5vw;overflow:hidden}
+header{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto;gap:.9vw;align-items:stretch}
+.corte{position:relative;display:grid;grid-template-columns:auto 1fr;grid-template-areas:"logo ct" "st st";align-items:center;column-gap:.8vw;row-gap:.35vw;background:var(--placa);border-radius:.9vw;padding:.65vw 1.1vw .65vw 1.4vw;overflow:hidden}
 .corte::before{content:"";position:absolute;left:0;top:0;bottom:0;width:.35vw;background:var(--marca)}
-.corte .ct{flex:1;min-width:0}
-.corte img{width:2.6vw;height:2.6vw;border-radius:.6vw;background:#fff;object-fit:contain;padding:.2vw;flex:none}
-.corte .ct b{display:block;font-size:1.25vw;font-weight:700;line-height:1.1;white-space:nowrap}
-.corte .ct span{display:block;font-size:.9vw;color:var(--apagado);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.corte .st{font-family:var(--cond);font-weight:800;font-size:1.75vw;white-space:nowrap;text-align:right;line-height:1}
-.corte .st small{display:block;font-family:Barlow,sans-serif;font-size:.8vw;font-weight:600;color:var(--apagado);margin-top:.15vw}
+.corte img{grid-area:logo;width:2.6vw;height:2.6vw;border-radius:.6vw;background:#fff;object-fit:contain;padding:.2vw}
+.corte .ct{grid-area:ct;min-width:0;display:flex;align-items:baseline;justify-content:space-between;gap:.5vw}
+.corte .ct b{min-width:0;font-family:var(--cond);font-size:1.55vw;font-weight:700;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.corte .ct span{font-family:var(--cond);font-size:1.35vw;font-weight:700;color:#d5dbe5;white-space:nowrap;flex:none}
+.corte .st{grid-area:st;font-family:var(--cond);font-weight:800;font-size:1.6vw;line-height:1;white-space:nowrap}
 .corte.ok .st{color:var(--ok)}
 .corte.espera .st{color:var(--emp)}
 .corte.alerta{background:linear-gradient(100deg,#e2414f,#ff6b4a)}
 .corte.alerta::before{background:#fff}
-.corte.alerta .ct span,.corte.alerta .st small{color:#ffe4e1}
+.corte.alerta .ct span{color:#ffe4e1}
 .corte.alerta .st{color:#fff}
-.hora{display:flex;align-items:center;font-family:var(--cond);font-weight:700;font-size:3.6vw;line-height:1;padding:0 .4vw 0 1vw;letter-spacing:.01em}
+.hora{display:flex;align-items:center;font-family:var(--cond);font-weight:700;font-size:3.2vw;line-height:1;padding:0 .4vw 0 1vw;letter-spacing:.01em}
 
 /* faixas por empresa */
 main{display:grid;grid-template-rows:repeat(3,1fr) auto;gap:.9vw;min-height:0}
@@ -163,10 +162,9 @@ function corte(r, carregando){
   if (carregando) return `<div class="corte" style="--marca:${CORES[r.canal]}">${logoMkt(r.canal)}<div class="ct"><b>${esc(r.titulo)}</b><span>${esc(r.texto)}</span></div><div class="st" style="color:var(--apagado)">carregando…</div></div>`;
   const cls = !r.pendentes ? 'ok' : r.atrasados ? 'alerta' : 'espera';
   const st = !r.pendentes ? '✓ tudo pronto' : r.atrasados ? `⚠ ${fmt(r.atrasados)} fora do corte` : `${fmt(r.pendentes)} para o corte`;
-  const sub = r.alertaDesde ? (r.atrasados ? 'alerta desde ' : 'alerta às ') + r.alertaDesde : '';
   return `<div class="corte ${cls}" style="--marca:${CORES[r.canal]}">${logoMkt(r.canal)}
     <div class="ct"><b>${esc(r.titulo)}</b><span>${esc(r.texto)}</span></div>
-    <div class="st">${st}<small>${sub}</small></div></div>`;
+    <div class="st">${st}</div></div>`;
 }
 function alertasDe(e){
   return (e.canais||[]).filter(c => c.corte > 0 && e.alertas?.[c.canal]).map(c => `${CURTO[c.canal]||c.canal} ${fmt(c.corte)}`);

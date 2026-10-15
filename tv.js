@@ -185,7 +185,7 @@ async function coletarFluxoBling(emp, canal, canais, hoje, janela) {
   const linhas = [];
   // pedido já pago entra no trabalho do dia (não vai para "próximos dias"); atrasado se passou da data prevista
   const pz = p => { const d = (p.dataPrevista || '').slice(0, 10); return d && d > '2000-01-01' && d < hoje ? 'atrasado' : 'hoje'; };
-  const add = (tipo, l) => { for (const p of l) { const num = String(p.numeroLoja || ''); linhas.push({ tipo, canal, prazo: tipo === 'empacotado' ? 'hoje' : pz(p), num, criado: canal === 'Shopee' ? _criadoShp[num] : undefined }); } };
+  const add = (tipo, l) => { for (const p of l) { const num = String(p.numeroLoja || ''); linhas.push({ tipo, canal, prazo: tipo === 'empacotado' ? 'hoje' : pz(p), num, criado: canal === 'Shopee' ? _criadoShp[num] : undefined, dataPedido: (p.data || '').slice(0, 10) }); } };
   for (const idLoja of ids) {
     const emAberto = await blingListar(emp.idx, [SIT.emAberto], { ...janela, idLoja });
     if (canal === 'Shopee') await statusShopee(emp.id, emAberto.map(p => String(p.numeroLoja || '')).filter(Boolean)); // hora da compra (corte das 12h)
@@ -281,7 +281,7 @@ async function coletarTiny(cfg, hoje) {
     for (const sit of cfg.tiny[etapa] || []) {
       for (const p of await tinyListar(sit, janela)) {
         const info = await canalTiny(p, consultas);
-        linhas.push({ tipo: etapa, canal: info.canal, prazo: prazo(brToIso(p.data_prevista) || info.prevista, hoje), num: String(p.numero_ecommerce || '') });
+        linhas.push({ tipo: etapa, canal: info.canal, prazo: prazo(brToIso(p.data_prevista) || info.prevista, hoje), num: String(p.numero_ecommerce || ''), dataPedido: brToIso(p.data_pedido) });
       }
     }
   }
@@ -325,7 +325,7 @@ async function coletarAmazon(emp, hoje, erpLinhas) {
 //  Shopee:  pedidos feitos até 12:00 saem no mesmo dia (alerta a partir de 14:00)
 //  ML:      pacotes para envio hoje prontos antes da coleta (alerta 1h antes do início da coleta, horário da agenda do ML)
 // "Pronto" = já está em A coletar (empacotado) ou enviado. Pendente = Emitir NF ou A empacotar.
-const CORTE = { Amazon: '11:30', ShopeePedido: '12:00', Shopee: '14:00', mlAntes: 60 };
+const CORTE = { Amazon: '11:00', ShopeePedido: '12:00', Shopee: '14:00', SheinPedido: '12:00', Shein: '14:00', mlAntes: 60 };
 const TZ = 'America/Sao_Paulo';
 const snDia = n => { const m = /^(\d{2})(\d{2})(\d{2})[A-Z0-9]{8}$/i.exec(n || ''); return m ? `20${m[1]}-${m[2]}-${m[3]}` : ''; };
 function pendenteCorte(l, hoje) {
@@ -333,8 +333,9 @@ function pendenteCorte(l, hoje) {
   if (l.canal === 'Mercado Livre' || l.canal === 'Amazon') return l.prazo === 'hoje' || l.prazo === 'atrasado';
   if (l.canal === 'Shopee') {
     if (l.criado) return l.criado < Date.parse(`${hoje}T${CORTE.ShopeePedido}:00-03:00`) / 1000;
-    const d = snDia(l.num); return !!d && d < hoje;   // sem a hora da compra: só os de dias anteriores
+    const d = snDia(l.num) || l.dataPedido; return !!d && d < hoje;   // sem a hora da compra: só os de dias anteriores
   }
+  if (l.canal === 'Shein') return !!l.dataPedido && l.dataPedido < hoje;  // Bling/Tiny só trazem a data do pedido, sem hora
   return false;
 }
 const hmAgora = () => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: TZ });
@@ -343,12 +344,14 @@ function cortes(empresas) {
   const agora = hmAgora(), domingo = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: TZ }) === 'Sunday';
   const mlDe = empresas.map(e => e.coletaMl?.de).filter(Boolean).sort()[0] || null;
   const regras = [
-    { canal: 'Amazon', titulo: 'Amazon', texto: 'pronto até ' + CORTE.Amazon, alertaDesde: CORTE.Amazon, ativo: !domingo && agora >= CORTE.Amazon },
-    { canal: 'Mercado Livre', titulo: 'Mercado Livre', texto: mlDe ? 'coleta às ' + mlDe : 'sem coleta hoje', alertaDesde: mlDe ? hmMenos(mlDe, CORTE.mlAntes) : null, ativo: false },
-    { canal: 'Shopee', titulo: 'Shopee', texto: 'pedidos até ' + CORTE.ShopeePedido, alertaDesde: CORTE.Shopee, ativo: !domingo && agora >= CORTE.Shopee },
+    { canal: 'Amazon', titulo: 'Amazon', corte: CORTE.Amazon, alertaDesde: CORTE.Amazon, ativo: !domingo && agora >= CORTE.Amazon },
+    { canal: 'Mercado Livre', titulo: 'Mercado Livre', corte: mlDe ? hmMenos(mlDe, CORTE.mlAntes) : null, alertaDesde: mlDe ? hmMenos(mlDe, CORTE.mlAntes) : null, ativo: false },
+    { canal: 'Shopee', titulo: 'Shopee', corte: CORTE.ShopeePedido, alertaDesde: CORTE.Shopee, ativo: !domingo && agora >= CORTE.Shopee },
+    { canal: 'Shein', titulo: 'Shein', corte: CORTE.SheinPedido, alertaDesde: CORTE.Shein, ativo: !domingo && agora >= CORTE.Shein },
   ];
+  for (const r of regras) r.texto = r.corte ? 'Corte ' + r.corte : 'sem coleta hoje';
   const emps = empresas.map(e => {
-    const alerta = { Amazon: regras[0].ativo, Shopee: regras[2].ativo, 'Mercado Livre': !!e.coletaMl?.de && agora >= hmMenos(e.coletaMl.de, CORTE.mlAntes) };
+    const alerta = { Amazon: regras[0].ativo, Shopee: regras[2].ativo, Shein: regras[3].ativo, 'Mercado Livre': !!e.coletaMl?.de && agora >= hmMenos(e.coletaMl.de, CORTE.mlAntes) };
     return { ...e, alertas: alerta };
   });
   regras[1].ativo = emps.some(e => e.alertas['Mercado Livre']);
