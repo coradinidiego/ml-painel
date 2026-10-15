@@ -435,6 +435,24 @@ router.get('/fontes/:f', (req, res) => { // fontes servidas pelo próprio painel
   res.set('Cache-Control', 'public, max-age=31536000, immutable');
   res.sendFile(path.join(__dirname, 'node_modules', '@fontsource', m[1], 'files', req.params.f));
 });
+// Ícone oficial de cada marketplace (baixado uma vez do próprio site via serviço de favicons e guardado em disco)
+const DOMINIO_MKT = { ml: 'mercadolivre.com.br', amazon: 'amazon.com.br', shopee: 'shopee.com.br', shein: 'shein.com', tiktok: 'tiktok.com' };
+const _marca = {};
+router.get('/marca/:m', async (req, res) => {
+  const m = String(req.params.m), dom = DOMINIO_MKT[m];
+  if (!dom) return res.status(404).end();
+  const arq = path.join(DATA, 'apuracao_cache', 'marca_' + m + '.png');
+  try {
+    if (!_marca[m]) { try { _marca[m] = fs.readFileSync(arq); } catch (e) {} }
+    if (!_marca[m]) {
+      const r = await require('axios').get(`https://www.google.com/s2/favicons?domain=${dom}&sz=128`, { responseType: 'arraybuffer', timeout: 15000 });
+      _marca[m] = Buffer.from(r.data);
+      try { fs.mkdirSync(path.dirname(arq), { recursive: true }); fs.writeFileSync(arq, _marca[m]); } catch (e) {}
+    }
+    res.set({ 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=604800' });
+    res.send(_marca[m]);
+  } catch (e) { res.status(502).end(); }
+});
 router.get('/dados', (req, res) => {
   ultimoPedido = Date.now();
   if (!ESTADO.atualizadoEm && !rodando) atualizar().catch(e => console.warn('[tv]', e.message));
