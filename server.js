@@ -66,7 +66,8 @@ async function carregarShopee(chave = 'zagodini') {
           p._varSemPromo = p._variacoes.filter(v => !v.emPromo).length;
         } catch (e) {}
       }
-      p._semPromo = p._promoAtiva.length === 0 && !PROMO_PROIBIDA.test(p.item_name || ''); // mamadeiras etc. não podem ter promoção
+      p._promoProibida = PROMO_PROIBIDA.test(p.item_name || ''); // mamadeiras etc. não podem ter promoção
+      shpMarcarOculto(chave, p);
     }
   });
   const pedidos = await parte('pedidos', () => shopee_.listarPedidos());
@@ -231,6 +232,22 @@ app.post('/promo/ignorar/:idx', (req, res) => {
     if (ignorar) { const i = d.semPromo.findIndex(x => x.id === id); if (i >= 0) d.semPromoIgnorados.push(...d.semPromo.splice(i, 1)); }
     else { const i = d.semPromoIgnorados.findIndex(x => x.id === id); if (i >= 0 && !PROMO_PROIBIDA.test(d.semPromoIgnorados[i].title || '')) d.semPromo.push(...d.semPromoIgnorados.splice(i, 1)); }
   }
+  res.json({ ok: true });
+});
+
+// Shopee: itens ocultados à mão da lista "Sem promoção" (mesmo arquivo, chave shopee_<loja>)
+function shpMarcarOculto(chave, p, ign = promoIgnorar('shopee_' + chave)) {
+  p._ocultoPromo = ign.has(String(p.item_id));
+  p._semPromo = (p._promoAtiva || []).length === 0 && !p._promoProibida && !p._ocultoPromo;
+}
+app.post('/shopee/promo/ignorar', (req, res) => {
+  const chave = lojaDe(req), { id, ignorar = true } = req.body || {};
+  if (!/^\d+$/.test(String(id || ''))) return res.status(400).json({ ok: false });
+  const k = 'shopee_' + chave, t = promoIgnorarTudo(), set = new Set(t[k] || []);
+  ignorar ? set.add(String(id)) : set.delete(String(id));
+  t[k] = [...set]; fs.writeFileSync(ARQ_PROMO_IGN, JSON.stringify(t));
+  const p = (SHP[chave]?.cache?.produtos || []).find(x => String(x.item_id) === String(id));
+  if (p) shpMarcarOculto(chave, p, set);
   res.json({ ok: true });
 });
 

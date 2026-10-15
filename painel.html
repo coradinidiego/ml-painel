@@ -807,13 +807,24 @@ function renderShpSemPromo(){
   const V=_shpDados._vendas||{};
   f.sort((a,b)=>ord==='vendas'?(V[b.item_id]||0)-(V[a.item_id]||0):ord==='preco'?shpPreco(b)-shpPreco(a):shpEstoque(b)-shpEstoque(a));
   set('shp-c-sempromo',f.length);
-  if(!f.length){b.innerHTML='<div class="loading" style="color:green">✓ Todos os produtos'+(modo===''?' com estoque':'')+' estão em promoção.</div>';return;}
+  if(!f.length){b.innerHTML='<div class="loading" style="color:green">✓ Todos os produtos'+(modo===''?' com estoque':'')+' estão em promoção.</div>'+shpForaLista();return;}
   b.innerHTML=f.map(p=>{
     const fut=p._promoFutura?.length?'<span class="pv" style="background:#E3F2FD;color:#1565C0">Programada: '+shpEsc(p._promoFutura[0].tipo)+' em '+shpData(p._promoFutura[0].inicio)+'</span> ':'';
     const varInfo=p._variacoes?.length?' · '+p._variacoes.length+' variações':'';
     const vend=V[p.item_id]?' · '+V[p.item_id]+' vendidos em 15 dias':'';
-    return '<div class="item-row"><div class="thumb">'+shpImg(p)+'</div><div class="iinfo"><div class="ititle">'+shpEsc(p.item_name)+'</div><div class="imeta">'+(p.item_sku?'SKU: '+shpEsc(p.item_sku)+' · ':'')+'ID: '+p.item_id+varInfo+vend+' · <a class="alink" href="'+shpLinkEdit(p.item_id)+'" target="_blank" rel="noopener">Editar</a> · <a class="alink" href="https://seller.shopee.com.br/portal/marketing/discount" target="_blank" rel="noopener">Criar promoção</a></div>'+(fut?'<div style="margin-top:4px">'+fut+'</div>':'')+'</div><div class="prices"><div class="mp">'+fmt(shpPreco(p))+'</div><div class="pv">Estoque: '+shpEstoque(p)+'</div></div></div>';
-  }).join('');
+    return '<div class="item-row"><div class="thumb">'+shpImg(p)+'</div><div class="iinfo"><div class="ititle">'+shpEsc(p.item_name)+'</div><div class="imeta">'+(p.item_sku?'SKU: '+shpEsc(p.item_sku)+' · ':'')+'ID: '+p.item_id+varInfo+vend+' · <a class="alink" href="'+shpLinkEdit(p.item_id)+'" target="_blank" rel="noopener">Editar</a> · <a class="alink" href="https://seller.shopee.com.br/portal/marketing/discount" target="_blank" rel="noopener">Criar promoção</a> · <a class="alink" href="#" onclick="ignorarPromoShp(\''+p.item_id+'\',true);return false" title="Tirar da lista (produto que não pode ter promoção)">Ocultar</a></div>'+(fut?'<div style="margin-top:4px">'+fut+'</div>':'')+'</div><div class="prices"><div class="mp">'+fmt(shpPreco(p))+'</div><div class="pv">Estoque: '+shpEstoque(p)+'</div></div></div>';
+  }).join('')+shpForaLista();
+}
+function shpForaLista(){
+  const L=_shpDados.produtos.filter(p=>!(p._promoAtiva||[]).length&&(p._promoProibida||p._ocultoPromo));if(!L.length)return'';
+  return '<details style="padding:10px 16px;border-top:1px solid #eee"><summary style="cursor:pointer;font-size:13px;color:#666">🚫 '+L.length+' fora da lista (não podem ter promoção ou ocultados)</summary>'+L.map(p=>'<div class="item-row" style="opacity:.7"><div class="thumb">'+shpImg(p)+'</div><div class="iinfo"><div class="ititle">'+shpEsc(p.item_name)+'</div><div class="imeta">'+(p.item_sku?'SKU: '+shpEsc(p.item_sku)+' · ':'')+'ID: '+p.item_id+(p._promoProibida?' · <span style="color:#c62828">proibido promoção (Lei 11.265)</span>':' · <a class="alink" href="#" onclick="ignorarPromoShp(\''+p.item_id+'\',false);return false">Voltar para a lista</a>')+'</div></div></div>').join('')+'</details>';
+}
+async function ignorarPromoShp(id,ignorar){
+  const r=await fetch(shpU('/shopee/promo/ignorar'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,ignorar})}).then(r=>r.json()).catch(()=>({}));
+  if(!r.ok){alert('Não consegui salvar. Tente de novo.');return;}
+  const p=_shpDados?.produtos.find(x=>String(x.item_id)===String(id));
+  if(p){p._ocultoPromo=ignorar;p._semPromo=!(p._promoAtiva||[]).length&&!p._promoProibida&&!ignorar;}
+  renderShopee(true);
 }
 
 function renderShpChat(){
