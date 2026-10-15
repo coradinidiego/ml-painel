@@ -156,7 +156,8 @@ function coletar(e){
     <div class="mkts" style="grid-template-columns:repeat(${Math.max(lista.length,4)},minmax(0,1fr))">${blocos}</div>
     <div class="total"><span>Total a coletar</span><b>${fmt(e.total.empacotado)}</b></div></div>`;
 }
-function corte(r){
+function corte(r, carregando){
+  if (carregando) return `<div class="corte" style="--marca:${CORES[r.canal]}"><div class="ct"><b>${esc(r.titulo)}</b><span>${esc(r.texto)}</span></div><div class="st" style="color:var(--apagado)">carregando…</div></div>`;
   const cls = !r.pendentes ? 'ok' : r.atrasados ? 'alerta' : 'espera';
   const st = !r.pendentes ? '✓ tudo pronto' : r.atrasados ? `⚠ ${fmt(r.atrasados)} fora do corte` : `${fmt(r.pendentes)} para o corte`;
   const sub = r.alertaDesde ? (r.atrasados ? 'alerta desde ' : 'alerta às ') + r.alertaDesde : '';
@@ -207,7 +208,7 @@ async function carregar(){
     if (d.carregando || !d.empresas?.length) { setTimeout(carregar, 4000); return; }
     $('aviso').style.display = 'none';
     $('faixas').innerHTML = d.empresas.map(faixa).join('') + geral(d.empresas);
-    $('cortes').innerHTML = (d.cortes||[]).map(corte).join('');
+    $('cortes').innerHTML = (d.cortes||[]).map(r => corte(r, d.parcial)).join('');
     if (d.parcial) setTimeout(carregar, 4000);
     $('atualizado').textContent = d.atualizadoEm && !d.parcial
       ? 'Atualizado às ' + new Date(d.atualizadoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) + '. Atualiza sozinho a cada 1 a 2 minutos.'
