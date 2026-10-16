@@ -87,7 +87,7 @@ function classificar(s, hoje) {
   if (s.status === 'handling') return 'emitirNF';                        // aguardando NF/etiqueta
   if (s.status === 'ready_to_ship') {
     if (s.substatus === 'invoice_pending') return 'emitirNF';
-    if (SUB_ENVIADO.has(s.substatus)) return 'enviado';
+    if (SUB_ENVIADO.has(s.substatus)) return (!s.limite || s.limite >= hoje) ? 'enviado' : null;   // coletado em dia anterior não conta como hoje
     if (SUB_EMPACOTADO.has(s.substatus)) return 'empacotado';
     return 'aEmpacotar';                                                 // ready_to_print, sem substatus
   }
@@ -98,6 +98,11 @@ function classificar(s, hoje) {
 /** Retorna linhas no mesmo formato do tv.js: { tipo, canal, prazo } — uma por pacote. */
 async function coletar(conta, prazoFn) {
   const hoje = hojeSP(), c = cache();
+  // Depois do fim da janela de coleta, pacotes da coleta (cross_docking) com prazo de hoje já foram levados:
+  // o ML só muda o status quando o pacote é escaneado no centro de distribuição (pode levar horas).
+  const col = await coletaHoje(conta).catch(() => null);
+  const agoraHm = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'America/Sao_Paulo' });
+  const coletaPassou = !!col?.ate && agoraHm >= col.ate;
   const ids = await pedidosPagos(conta);
   const linhas = [];
   let consultas = 0;
@@ -117,7 +122,8 @@ async function coletar(conta, prazoFn) {
       if (s.sla) s.limite = s.sla;
       if (consultas % 20 === 0) { salvar(); await delay(300); }
     }
-    const tipo = classificar(s, hoje);
+    let tipo = classificar(s, hoje);
+    if (tipo === 'empacotado' && coletaPassou && s.logistica === 'cross_docking' && s.limite && s.limite <= hoje) tipo = 'enviado';
     const flex = s.logistica === 'self_service';   // Flex: entrega feita pela própria empresa
     if (tipo) linhas.push({ tipo, canal: 'Mercado Livre', prazo: (tipo === 'aEmpacotar' || tipo === 'emitirNF' || (flex && tipo === 'empacotado')) ? prazoFn(s.limite, hoje) : 'hoje', flex });
   }

@@ -152,7 +152,7 @@ const FLUXO_VERIFICADO = { Shein: /^GSH/i, Shopee: /^\d{6}[A-Z0-9]{8}$/i, Amazon
 const SIT = { emAberto: 6, atendido: 9, verificado: 24 };
 
 // Status dos pedidos direto na Shopee (só lojas com a Shopee conectada no painel). Cache de 3 min por pedido.
-const _stShp = {}, _criadoShp = {}, _carrierShp = {};   // order_sn -> status / create_time (segundos)
+const _stShp = {}, _criadoShp = {}, _carrierShp = {}, _coletadoShp = {};   // order_sn -> status / create_time (segundos)
 async function statusShopee(empId, sns) {
   let sp;
   try { sp = require('./shopee').loja(empId); } catch (e) { return null; }
@@ -161,8 +161,8 @@ async function statusShopee(empId, sns) {
   for (const sn of sns) { const c = _stShp[sn]; if (c && agora - c.ts < 3 * 60e3) out[sn] = c.st; else faltam.push(sn); }
   try {
     for (let i = 0; i < faltam.length; i += 50) {
-      const d = await sp.shopeeGet('/api/v2/order/get_order_detail', { order_sn_list: faltam.slice(i, i + 50).join(','), response_optional_fields: 'shipping_carrier' });
-      for (const o of d.response?.order_list || []) { out[o.order_sn] = o.order_status; _stShp[o.order_sn] = { st: o.order_status, ts: agora }; if (o.create_time) _criadoShp[o.order_sn] = o.create_time; if (o.shipping_carrier) _carrierShp[o.order_sn] = o.shipping_carrier; }
+      const d = await sp.shopeeGet('/api/v2/order/get_order_detail', { order_sn_list: faltam.slice(i, i + 50).join(','), response_optional_fields: 'shipping_carrier,pickup_done_time' });
+      for (const o of d.response?.order_list || []) { out[o.order_sn] = o.order_status; _stShp[o.order_sn] = { st: o.order_status, ts: agora }; if (o.create_time) _criadoShp[o.order_sn] = o.create_time; if (o.shipping_carrier) _carrierShp[o.order_sn] = o.shipping_carrier; if (o.pickup_done_time) _coletadoShp[o.order_sn] = o.pickup_done_time; }
     }
   } catch (e) { console.warn('[tv] status Shopee', empId, e.message); if (!Object.keys(out).length) return null; }
   return out;
@@ -217,7 +217,12 @@ async function coletarFluxoBling(emp, canal, canais, hoje, janela) {
     if (canal === 'Shopee') {
       const verif = await blingListar(emp.idx, [SIT.verificado], { ...janela, idLoja });
       const st = await statusShopee(emp.id, verif.map(p => String(p.numeroLoja || '')).filter(Boolean));
-      if (st) aColetar = verif.filter(p => ['PROCESSED', 'RETRY_SHIP', 'READY_TO_SHIP'].includes(st[String(p.numeroLoja || '')]));
+      if (st) {
+        aColetar = verif.filter(p => ['PROCESSED', 'RETRY_SHIP', 'READY_TO_SHIP'].includes(st[String(p.numeroLoja || '')]));
+        // coletados hoje (para o total do dia não zerar depois da coleta)
+        const diaSP = ts => ts ? new Date(ts * 1000).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) : '';
+        add('enviado', verif.filter(p => { const sn = String(p.numeroLoja || ''); return ['SHIPPED', 'TO_CONFIRM_RECEIVE', 'COMPLETED'].includes(st[sn]) && diaSP(_coletadoShp[sn]) === hoje; }));
+      }
     }
     add('empacotado', aColetar ?? await blingListar(emp.idx, [SIT.verificado], { idLoja, dataAlteracaoInicial: hoje, dataAlteracaoFinal: hoje }));
     await delay(350);
