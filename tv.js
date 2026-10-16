@@ -330,7 +330,7 @@ async function coletarAmazon(emp, hoje, erpLinhas) {
 //  Shopee:  pedidos feitos até 12:00 saem no mesmo dia (alerta a partir de 14:00)
 //  ML:      pacotes para envio hoje prontos antes da coleta (alerta 1h antes do início da coleta, horário da agenda do ML)
 // "Pronto" = já está em A coletar (empacotado) ou enviado. Pendente = Emitir NF ou A empacotar.
-const CORTE = { Amazon: '11:00', ShopeePedido: '12:00', Shopee: '14:00', SheinPedido: '12:00', Shein: '14:00', Proprio: '14:00', mlAntes: 60 };
+const CORTE = { Amazon: '11:00', ShopeePedido: '13:00', Shopee: '14:00', SheinPedido: '12:00', Shein: '14:00', Proprio: '14:00', mlAntes: 60 };
 const TZ = 'America/Sao_Paulo';
 const snDia = n => { const m = /^(\d{2})(\d{2})(\d{2})[A-Z0-9]{8}$/i.exec(n || ''); return m ? `20${m[1]}-${m[2]}-${m[3]}` : ''; };
 // Entrega própria (ML Flex / Shopee Entrega Direta): vendido até 14:00 sai no mesmo dia. Pendente = ainda não saiu para entrega.
