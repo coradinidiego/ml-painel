@@ -292,6 +292,11 @@ async function coletarTiny(cfg, hoje) {
     }
   }
   salvarCanalTiny();
+  // Shopee da Lufe conectada no painel: hora da compra (corte das 12h) e Entrega Direta direto da Shopee
+  const shp = linhas.filter(l => l.canal === 'Shopee' && l.num);
+  if (shp.length && await statusShopee('lufe', [...new Set(shp.map(l => l.num))])) {
+    for (const l of shp) { l.criado = _criadoShp[l.num]; l.direta = /entrega direta|direct/i.test(_carrierShp[l.num] || ''); }
+  }
   return linhas;
 }
 
