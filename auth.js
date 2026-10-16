@@ -108,15 +108,77 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:8px;borde
 .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}@media(max-width:640px){.row{grid-template-columns:1fr}}`;
 
 function paginaLogin(erro, next) {
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Painel — Entrar</title><style>${css}
-  .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}.card{background:white;border-radius:14px;padding:32px 28px;width:100%;max-width:380px;box-shadow:0 8px 30px rgba(13,27,42,.12)}</style></head>
-  <body><div class="wrap"><form class="card" method="post" action="/login">
-  <h1>Painel Marketplaces</h1><p class="s">Zagodini · Com Amor de Mãe · Lufe</p>
-  ${erro ? `<div class="msg err">${esc(erro)}</div>` : ''}
-  <input type="hidden" name="next" value="${esc(next || '/')}">
-  <label>E-mail</label><input name="email" type="email" autocomplete="username" required autofocus>
-  <label>Senha</label><input name="senha" type="password" autocomplete="current-password" required>
-  <button style="width:100%">Entrar</button></form></div></body></html>`;
+  const empresas = [['zagodini', 'Zagodini'], ['mae', 'Com Amor de Mãe'], ['lufe', 'Lufe Casa & Decoração']];
+  const mkts = [['ml', 'Mercado Livre'], ['amazon', 'Amazon'], ['shopee', 'Shopee'], ['shein', 'Shein'], ['tiktok', 'TikTok Shop']];
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Painel — Entrar</title><meta name="theme-color" content="#171a20">
+<style>
+@font-face{font-family:"Barlow Condensed";font-weight:700;font-display:swap;src:url(/tv/fontes/barlow-condensed-latin-700-normal.woff2) format("woff2")}
+@font-face{font-family:"Barlow Condensed";font-weight:800;font-display:swap;src:url(/tv/fontes/barlow-condensed-latin-800-normal.woff2) format("woff2")}
+@font-face{font-family:"Barlow";font-weight:500;font-display:swap;src:url(/tv/fontes/barlow-latin-500-normal.woff2) format("woff2")}
+@font-face{font-family:"Barlow";font-weight:600;font-display:swap;src:url(/tv/fontes/barlow-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"Barlow";font-weight:700;font-display:swap;src:url(/tv/fontes/barlow-latin-700-normal.woff2) format("woff2")}
+:root{--fundo:#171a20;--placa:#20242c;--placa2:#272c36;--linha:#363d4b;--texto:#f1f3f6;--apagado:#8d96a6;--ok:#4fd6a4;--erro:#ff5d6e}
+*{box-sizing:border-box;margin:0;padding:0}
+body{min-height:100vh;display:grid;place-items:center;padding:24px 16px;font-family:Barlow,system-ui,-apple-system,sans-serif;color:var(--texto);
+  background:radial-gradient(90vw 60vw at 15% -10%,#252b35 0%,transparent 60%),radial-gradient(70vw 50vw at 110% 120%,#1d2a27 0%,transparent 55%),var(--fundo)}
+.caixa{width:100%;max-width:900px;display:grid;grid-template-columns:1.1fr 1fr;background:var(--placa);border-radius:20px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.45)}
+.lado{position:relative;padding:44px 40px;display:flex;flex-direction:column;gap:30px;background:linear-gradient(160deg,#232833,#1b1f27)}
+.lado::after{content:"";position:absolute;left:0;right:0;bottom:0;height:5px;background:linear-gradient(90deg,#ffe600 0 20%,#ff9900 20% 40%,#ee4d2d 40% 60%,#d9d9d9 60% 80%,#25f4ee 80%)}
+h1{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font-size:44px;line-height:.95;letter-spacing:.005em}
+.lado p{color:var(--apagado);font-size:15px;line-height:1.45;max-width:30ch}
+.emps{display:flex;flex-direction:column;gap:12px}
+.emp{display:flex;align-items:center;gap:14px;font-weight:600;font-size:15px}
+.emp img{width:46px;height:46px;border-radius:12px;background:#fff;object-fit:contain;padding:3px;flex:none}
+.mkts{margin-top:auto;display:flex;gap:10px;align-items:center}
+.mkts img{width:30px;height:30px;border-radius:8px;background:#fff;object-fit:contain;padding:2px;opacity:.9}
+.mkts span{color:var(--apagado);font-size:13px;margin-left:4px}
+form{padding:44px 40px;display:flex;flex-direction:column;justify-content:center;gap:6px}
+form h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:700;font-size:30px;margin-bottom:4px}
+form .s{color:var(--apagado);font-size:14px;margin-bottom:18px}
+label{font-size:13px;font-weight:600;color:#c3cad6;margin-top:10px}
+.campo{position:relative}
+input{width:100%;padding:13px 14px;border:1px solid var(--linha);border-radius:10px;background:var(--fundo);color:var(--texto);font:inherit;font-size:15px;transition:border-color .15s,box-shadow .15s}
+input::placeholder{color:#5f6878}
+input:focus{outline:none;border-color:var(--ok);box-shadow:0 0 0 3px rgba(79,214,164,.18)}
+.ver{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:0;color:var(--apagado);font:inherit;font-size:13px;font-weight:600;padding:6px 8px;cursor:pointer;border-radius:6px}
+.ver:hover,.ver:focus-visible{color:var(--texto);outline:none;background:var(--placa2)}
+button.entrar{margin-top:22px;padding:14px;border:0;border-radius:10px;background:var(--ok);color:#0f1a16;font:inherit;font-size:16px;font-weight:700;cursor:pointer;transition:filter .15s}
+button.entrar:hover{filter:brightness(1.08)}
+button.entrar:focus-visible{outline:3px solid #fff;outline-offset:2px}
+.msg{display:flex;gap:8px;align-items:flex-start;padding:11px 13px;border-radius:10px;background:rgba(255,93,110,.12);border:1px solid rgba(255,93,110,.35);color:#ffb3bc;font-size:14px;margin-bottom:6px}
+.rodape{margin-top:18px;color:#5f6878;font-size:12px}
+@media (max-width:760px){
+  .caixa{grid-template-columns:1fr;max-width:440px}
+  .lado{padding:28px 26px 30px;gap:18px}
+  h1{font-size:34px}
+  .lado p,.mkts{display:none}
+  .emps{flex-direction:row;gap:10px}
+  .emp span{display:none}
+  form{padding:28px 26px 32px}
+}
+</style></head>
+<body><main class="caixa">
+  <section class="lado">
+    <h1>Painel de<br>marketplaces</h1>
+    <p>Vendas, promoções, estoque e expedição das três lojas num lugar só.</p>
+    <div class="emps">${empresas.map(([k, n]) => `<div class="emp"><img src="/logo/${k}" alt="" onerror="this.style.visibility='hidden'"><span>${esc(n)}</span></div>`).join('')}</div>
+    <div class="mkts">${mkts.map(([k, n]) => `<img src="/tv/marca/${k}" alt="${esc(n)}" title="${esc(n)}" onerror="this.remove()">`).join('')}</div>
+  </section>
+  <form method="post" action="/login" autocomplete="on">
+    <h2>Entrar</h2>
+    <p class="s">Use o e-mail e a senha que o administrador cadastrou.</p>
+    ${erro ? `<div class="msg" role="alert">⚠ ${esc(erro)}</div>` : ''}
+    <input type="hidden" name="next" value="${esc(next || '/')}">
+    <label for="email">E-mail</label>
+    <input id="email" name="email" type="email" inputmode="email" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="voce@empresa.com.br" required autofocus>
+    <label for="senha">Senha</label>
+    <div class="campo"><input id="senha" name="senha" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" required style="padding-right:70px">
+      <button type="button" class="ver" aria-controls="senha" onclick="const s=document.getElementById('senha');const v=s.type==='password';s.type=v?'text':'password';this.textContent=v?'Ocultar':'Mostrar'">Mostrar</button></div>
+    <button class="entrar">Entrar</button>
+    <p class="rodape">Esqueceu a senha? Peça para o administrador cadastrar uma nova.</p>
+  </form>
+</main></body></html>`;
 }
 
 const ARQUIVOS_DADOS = {
@@ -211,6 +273,8 @@ function montar(app) {
     if (!ativo()) { req.usuario = null; return next(); }
     const u = lerCookie(req);
     if (u) { req.usuario = u; return next(); }
+    // imagens e fontes usadas na tela de login (não têm dado sensível)
+    if (req.method === 'GET' && /^\/(logo\/[\w-]+|tv\/fontes\/[\w.-]+|tv\/marca\/[\w-]+)$/.test(req.path)) { req.usuario = null; return next(); }
     if (acessoTv(req, res)) { req.usuario = null; return next(); }
     const querHtml = req.method === 'GET' && (req.headers.accept || '').includes('text/html');
     if (querHtml) return res.redirect('/login?next=' + encodeURIComponent(req.originalUrl));
