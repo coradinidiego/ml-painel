@@ -161,8 +161,8 @@ async function statusShopee(empId, sns) {
   for (const sn of sns) { const c = _stShp[sn]; if (c && agora - c.ts < 3 * 60e3) out[sn] = c.st; else faltam.push(sn); }
   try {
     for (let i = 0; i < faltam.length; i += 50) {
-      const d = await sp.shopeeGet('/api/v2/order/get_order_detail', { order_sn_list: faltam.slice(i, i + 50).join(','), response_optional_fields: 'shipping_carrier,pickup_done_time' });
-      for (const o of d.response?.order_list || []) { out[o.order_sn] = o.order_status; _stShp[o.order_sn] = { st: o.order_status, ts: agora }; if (o.create_time) _criadoShp[o.order_sn] = o.create_time; if (o.shipping_carrier) _carrierShp[o.order_sn] = o.shipping_carrier; if (o.pickup_done_time) _coletadoShp[o.order_sn] = o.pickup_done_time; }
+      const d = await sp.shopeeGet('/api/v2/order/get_order_detail', { order_sn_list: faltam.slice(i, i + 50).join(','), response_optional_fields: 'shipping_carrier,pickup_done_time,pay_time' });
+      for (const o of d.response?.order_list || []) { out[o.order_sn] = o.order_status; _stShp[o.order_sn] = { st: o.order_status, ts: agora }; if (o.pay_time || o.create_time) _criadoShp[o.order_sn] = o.pay_time || o.create_time; /* prazo da Shopee conta a partir do pagamento */ if (o.shipping_carrier) _carrierShp[o.order_sn] = o.shipping_carrier; if (o.pickup_done_time) _coletadoShp[o.order_sn] = o.pickup_done_time; }
     }
   } catch (e) { console.warn('[tv] status Shopee', empId, e.message); if (!Object.keys(out).length) return null; }
   return out;
