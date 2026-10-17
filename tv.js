@@ -346,13 +346,25 @@ function pendenteProprio(l, hoje) {
   if (l.criado) return l.criado < Date.parse(`${hoje}T${CORTE.Proprio}:00-03:00`) / 1000;
   const d = snDia(l.num) || l.dataPedido; return !!d && d < hoje;
 }
+// Prazo de envio da Shopee pela tabela oficial ("Limite Envio no Prazo"), a partir da hora do PAGAMENTO.
+//   dia do pagamento:   dom  seg  ter  qua  qui  sex  sáb      (dias a somar)
+const SHP_ATE13  = [2, 1, 0, 0, 0, 0, 2];   // pago até 13h: seg→ter, ter..sex→mesmo dia, sáb→seg, dom→ter
+const SHP_APOS13 = [2, 1, 1, 1, 1, 3, 2];   // pago após 13h: seg..qui→dia seguinte, sex→seg, sáb→seg, dom→ter
+function limiteShopee(ts) {
+  const d = new Date(ts * 1000);
+  const dia = d.toLocaleDateString('sv-SE', { timeZone: TZ });
+  const hm = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: TZ });
+  const wd = new Date(dia + 'T12:00:00Z').getUTCDay();
+  const soma = (hm < CORTE.ShopeePedido ? SHP_ATE13 : SHP_APOS13)[wd];
+  return new Date(Date.parse(dia + 'T12:00:00Z') + soma * 864e5).toISOString().slice(0, 10);
+}
 function pendenteCorte(l, hoje) {
   if (l.flex || l.direta) return false;
   if (l.tipo !== 'emitirNF' && l.tipo !== 'aEmpacotar') return false;
   if (l.canal === 'Mercado Livre' || l.canal === 'Amazon') return l.prazo === 'hoje' || l.prazo === 'atrasado';
   if (l.canal === 'Shopee') {
-    if (l.criado) return l.criado < Date.parse(`${hoje}T${CORTE.ShopeePedido}:00-03:00`) / 1000;
-    const d = snDia(l.num) || l.dataPedido; return !!d && d < hoje;   // sem a hora da compra: só os de dias anteriores
+    if (l.criado) return limiteShopee(l.criado) <= hoje;
+    const d = snDia(l.num) || l.dataPedido; return !!d && d < hoje;   // sem a hora do pagamento: só os de dias anteriores
   }
   if (l.canal === 'Shein') return !!l.dataPedido && l.dataPedido < hoje;  // Bling/Tiny só trazem a data do pedido, sem hora
   return false;
@@ -360,7 +372,8 @@ function pendenteCorte(l, hoje) {
 const hmAgora = () => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: TZ });
 const hmMenos = (hm, min) => { const [h, m] = hm.split(':').map(Number), t = Math.max(0, h * 60 + m - min); return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); };
 function cortes(empresas) {
-  const agora = hmAgora(), domingo = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: TZ }) === 'Sunday';
+  const agora = hmAgora(), diaSem = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: TZ });
+  const domingo = diaSem === 'Sunday' || diaSem === 'Saturday';   // fim de semana: sem corte em nenhum site
   const mlDe = empresas.map(e => e.coletaMl?.de).filter(Boolean).sort()[0] || null;
   const regras = [
     { canal: 'Amazon', titulo: 'Amazon', corte: CORTE.Amazon, alertaDesde: CORTE.Amazon, ativo: !domingo && agora >= CORTE.Amazon },
@@ -368,14 +381,16 @@ function cortes(empresas) {
     { canal: 'Shopee', titulo: 'Shopee', corte: CORTE.ShopeePedido, alertaDesde: CORTE.Shopee, ativo: !domingo && agora >= CORTE.Shopee },
     { canal: 'Shein', titulo: 'Shein', corte: CORTE.SheinPedido, alertaDesde: CORTE.Shein, ativo: !domingo && agora >= CORTE.Shein },
   ];
-  for (const r of regras) r.texto = r.corte ? 'Corte ' + r.corte : 'sem coleta hoje';
+  if (domingo) for (const r of regras) { r.semCorte = true; r.corte = null; }
+  for (const r of regras) r.texto = r.corte ? 'Corte ' + r.corte : 'sem corte hoje';
   const emps = empresas.map(e => {
-    const alerta = { Amazon: regras[0].ativo, Shopee: regras[2].ativo, Shein: regras[3].ativo, 'Mercado Livre': !!e.coletaMl?.de && agora >= hmMenos(e.coletaMl.de, CORTE.mlAntes) };
+    const alerta = { Amazon: regras[0].ativo, Shopee: regras[2].ativo, Shein: regras[3].ativo, 'Mercado Livre': !domingo && !!e.coletaMl?.de && agora >= hmMenos(e.coletaMl.de, CORTE.mlAntes) };
     return { ...e, alertas: alerta };
   });
   regras[1].ativo = emps.some(e => e.alertas['Mercado Livre']);
   const proprio = { 'Mercado Livre': 'Flex', Shopee: 'Entrega Direta' };
   for (const r of regras) {
+    if (r.semCorte) { r.pendentes = 0; r.atrasados = 0; continue; }
     if (proprio[r.canal]) r.proprio = { nome: proprio[r.canal], corte: CORTE.Proprio, pendentes: emps.reduce((s, e) => s + (e.canais.find(c => c.canal === r.canal)?.proprio || 0), 0) };
     r.pendentes = emps.reduce((s, e) => s + (e.canais.find(c => c.canal === r.canal)?.corte || 0), 0);
     r.atrasados = emps.reduce((s, e) => s + (e.alertas[r.canal] ? (e.canais.find(c => c.canal === r.canal)?.corte || 0) : 0), 0);

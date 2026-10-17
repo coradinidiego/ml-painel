@@ -172,6 +172,7 @@ function coletar(e){
 }
 function corte(r, carregando){
   if (carregando) return `<div class="corte" style="--marca:${CORES[r.canal]}">${logoMkt(r.canal)}<div class="ct"><b>${esc(r.titulo)}</b><span>${esc(r.texto)}</span></div><div class="st" style="color:var(--apagado)">carregando…</div></div>`;
+  if (r.semCorte) return `<div class="corte" style="--marca:${CORES[r.canal]}">${logoMkt(r.canal)}<div class="ct"><b>${esc(r.titulo)}</b><span></span></div><div class="st" style="color:var(--apagado)">sem corte hoje</div></div>`;
   const cls = !r.pendentes ? 'ok' : r.atrasados ? 'alerta' : 'espera';
   const st = !r.pendentes ? '✓ tudo pronto' : r.atrasados ? `⚠ ${fmt(r.atrasados)} fora do corte` : `${fmt(r.pendentes)} para o corte`;
   return `<div class="corte ${cls}" style="--marca:${CORES[r.canal]}">${logoMkt(r.canal)}
