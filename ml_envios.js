@@ -62,14 +62,14 @@ async function uid(conta) { return _uid[conta] ||= (await get(conta, '/users/me'
 async function pedidosPagos(conta) {
   const seller = await uid(conta);
   const desde = new Date(Date.now() - DIAS_JANELA * 864e5).toISOString().replace('Z', '-00:00');
-  const ids = new Map(); // shipping id -> 1
+  const ids = new Map(); // shipping id -> número da venda (pacote ou pedido)
   for (let offset = 0; offset < 2000; offset += 50) {
     const d = await get(conta, '/orders/search', { seller, 'order.status': 'paid', 'order.date_created.from': desde, sort: 'date_desc', limit: 50, offset });
-    for (const o of d.results || []) if (o.shipping?.id) ids.set(String(o.shipping.id), 1);
+    for (const o of d.results || []) if (o.shipping?.id) ids.set(String(o.shipping.id), String(o.pack_id || o.id));
     if (!d.results?.length || offset + 50 >= (d.paging?.total || 0)) break;
     await delay(200);
   }
-  return [...ids.keys()];
+  return ids;
 }
 
 function resumirEnvio(s) {
@@ -106,7 +106,7 @@ async function coletar(conta, prazoFn) {
   const ids = await pedidosPagos(conta);
   const linhas = [];
   let consultas = 0;
-  for (const id of ids) {
+  for (const [id, venda] of ids) {
     const chave = conta + ':' + id;
     let s = c[chave];
     if (!s || !finalizado(s, hoje)) {
@@ -130,7 +130,7 @@ async function coletar(conta, prazoFn) {
     if (tipo === 'empacotado' && s.logistica === 'cross_docking' && s.limite && s.limite < hoje && s.slaStatus !== 'delayed') tipo = null;
     let pz = (tipo === 'aEmpacotar' || tipo === 'emitirNF' || tipo === 'empacotado') ? prazoFn(s.limite, hoje) : 'hoje';
     if (s.slaStatus === 'delayed' && tipo !== 'enviado') pz = 'atrasado';          // o próprio ML diz que está atrasado
-    if (tipo) linhas.push({ tipo, canal: 'Mercado Livre', prazo: pz, flex });
+    if (tipo) linhas.push({ tipo, canal: 'Mercado Livre', prazo: pz, flex, num: venda });
   }
   // limpa do cache envios com mais de 30 dias
   for (const [k, v] of Object.entries(c)) if (v.ts && Date.now() - v.ts > 30 * 864e5) delete c[k];

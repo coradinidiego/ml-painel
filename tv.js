@@ -323,7 +323,7 @@ async function coletarAmazon(emp, hoje, erpLinhas) {
     if (tipo === 'enviado') tipo = 'empacotado';           // no ERP já saiu, na Amazon ainda não: aguardando coleta
     // prazo de envio da Amazon (LatestShipDate): passou = atrasado; hoje = hoje; amanhã em diante = próximos dias
     const lim = diaSP(o.LatestShipDate);
-    linhas.push({ tipo, canal: 'Amazon', prazo: !lim ? 'hoje' : lim < hoje ? 'atrasado' : lim > hoje ? 'futuro' : 'hoje' });
+    linhas.push({ tipo, canal: 'Amazon', num: o.AmazonOrderId, prazo: !lim ? 'hoje' : lim < hoje ? 'atrasado' : lim > hoje ? 'futuro' : 'hoje' });
   }
   for (const o of d.empacotados || []) linhas.push({ tipo: 'empacotado', canal: 'Amazon', prazo: 'hoje' });   // etiqueta gerada, aguardando coleta
   for (const o of d.enviadosHoje) linhas.push({ tipo: 'enviado', canal: 'Amazon', prazo: 'hoje' });
@@ -408,7 +408,7 @@ function agregar(emp, linhas) {
     const c = canais[l.canal] ||= { canal: l.canal, ...zerado() };
     if (pendenteCorte(l, hoje)) c.corte++;
     if (pendenteProprio(l, hoje)) c.proprio++;
-    if (['emitirNF', 'aEmpacotar', 'empacotado'].includes(l.tipo) && l.prazo === 'atrasado') c.atrasoTotal++;   // prazo de envio vencido em qualquer etapa
+    if (['emitirNF', 'aEmpacotar', 'empacotado'].includes(l.tipo) && l.prazo === 'atrasado') { c.atrasoTotal++; if (l.num && (c.atrasoVendas ||= []).length < 15) c.atrasoVendas.push(String(l.num)); }   // prazo de envio vencido em qualquer etapa
     if (l.tipo === 'futuro') { c.futuros++; continue; }
     // NF/empacotar com prazo para outro dia continuam na etapa (dá para adiantar), mas não entram no corte de hoje
     if ((l.tipo === 'emitirNF' || l.tipo === 'aEmpacotar') && l.prazo === 'futuro') c.futuros++;
