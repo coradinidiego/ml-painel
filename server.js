@@ -1481,11 +1481,15 @@ async function carregarAnunciosAmazon(k) {
       const offers = pl.Offers || [];
       const win = offers.find(o => o.IsBuyBoxWinner);
       const preco = o => (o?.ListingPrice?.Amount || 0) + (o?.Shipping?.Amount || 0);
+      // como a oferta é entregue: Prime/FBA, prazo de despacho (horas) e estado de origem — explica Buy Box perdida sem ser por preço
+      const envioOferta = o => ({ prime: !!(o.PrimeInformation?.IsPrime || o.PrimeInformation?.IsNationalPrime), envioMin: o.ShippingTime?.minimumHours ?? null,
+        envioMax: o.ShippingTime?.maximumHours ?? null, disp: o.ShippingTime?.availabilityType || null, uf: o.ShipsFrom?.State || null });
       const outros = offers.filter(o => o.SellerId !== eu);
       a.bb = {
         situacao: !win ? 'sem' : win.SellerId === eu ? 'ganhando' : 'perdendo',
         preco: win ? preco(win) : (pl.Summary?.BuyBoxPrices?.[0]?.LandedPrice?.Amount ?? null),
-        ganhador: win && win.SellerId !== eu ? { id: win.SellerId, fba: !!win.IsFulfilledByAmazon, preco: preco(win), nota: win.SellerFeedbackRating?.SellerPositiveFeedbackRating, avaliacoes: win.SellerFeedbackRating?.FeedbackCount } : null,
+        ganhador: win && win.SellerId !== eu ? { id: win.SellerId, fba: !!win.IsFulfilledByAmazon, preco: preco(win), nota: win.SellerFeedbackRating?.SellerPositiveFeedbackRating, avaliacoes: win.SellerFeedbackRating?.FeedbackCount, ...envioOferta(win) } : null,
+        minha: (o => o ? { fba: !!o.IsFulfilledByAmazon, destaque: !!o.IsFeaturedMerchant, ...envioOferta(o) } : null)(offers.find(o => o.SellerId === eu)),
         concorrentes: outros.length,
         menorConcorrente: outros.length ? Math.min(...outros.map(preco)) : null,
       };

@@ -690,6 +690,19 @@ function azLucroHtml(a){
     return '<div style="font-size:12px;margin-top:3px;white-space:nowrap">Lucro: <b class="ctw" style="color:'+cor+'">'+v.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%'+calcTip(a.calc_atual,'Hoje, no seu preço')+'</b></div>';}
   return a.status==='Active'?'<div style="font-size:11px;color:#999;margin-top:2px">Lucro: '+shpEsc(a.margem_obs||'calculando…')+'</div>':'';
 }
+// Por que a Buy Box está com outro vendedor mesmo sendo mais barato
+function azPorque(a){
+  const g=a.bb?.ganhador, m=a.bb?.minha; if(!g) return 'Não baixe o preço: veja prazo de entrega e métricas';
+  const h=x=>x==null?'?':(x<=0?'imediato':x<24?x+'h':Math.round(x/24)+' dia'+(x>=48?'s':''));
+  const r=[];
+  if(g.fba&&!(m&&m.fba)) r.push('Ganhador é <b>FBA</b> (estoque na Amazon)');
+  else if(g.prime&&!(m&&m.prime)) r.push('Ganhador é <b>Prime</b>');
+  if(m&&g.envioMax!=null&&m.envioMax!=null&&g.envioMax<m.envioMax) r.push('Ganhador despacha em <b>'+h(g.envioMax)+'</b>; você em <b>'+h(m.envioMax)+'</b> (reduza o tempo de manuseio)');
+  if(g.uf&&m&&m.uf&&g.uf!==m.uf) r.push('Ganhador envia de '+shpEsc(g.uf)+' (você de '+shpEsc(m.uf)+')');
+  if(g.nota!=null&&g.nota>=95) r.push('Ganhador tem '+g.nota+'% de avaliações positivas');
+  if(!r.length) r.push('Mesmo tipo de envio e prazo: provável <b>métrica da conta</b> ou Buy Box <b>regional</b> (confira Saúde da conta)');
+  return 'Por que perde: '+r.join(' · ');
+}
 function azFiltro(f){el('az-f').value=f;renderAmazon();}
 const AZ_TIT={perdendo:'🔴 Perdendo Buy Box',barato:'🧭 Mais barato, mas perdendo — preço não é o problema: confira prazo de entrega (tempo de manuseio), métricas da conta e a Buy Box em outros CEPs',sem:'⚪ Sem Buy Box (ninguém ganha — geralmente preço acima do aceito pela Amazon)',ganhando:'🟢 Ganhando Buy Box',semEstoque:'🚫 Sem estoque',baixo:'⚠️ Estoque baixo (até 3 unidades)',incompleto:'🧩 Anúncios incompletos (precisam de correção)',inativo:'⏸️ Anúncios inativos','':'Todos os anúncios'};
 function renderAmazon(){
@@ -720,7 +733,7 @@ function renderAmazon(){
     let dir='<div class="mp">Meu: '+fmt(a.preco)+'</div>';
     if(bb&&bb.situacao==='perdendo'){
       const dif=a.preco-bb.preco;
-      dir+='<div class="pw">Buy Box: '+fmt(bb.preco)+'</div>'+(dif>0.009?'<div class="'+(dif<=2?'pc':'ptw')+'">Baixar '+fmt(dif)+'</div>':'<div class="pv" style="background:#FFF3E0;color:#E65100" title="O ganhador está mais caro ou igual: a Amazon está preferindo ele por outro motivo (ex.: FBA/Prime, prazo de entrega ou reputação).">'+(dif<-0.009?'🧭 Mais barato, mas perdendo':'Mesmo preço')+'</div>'+(dif<-0.009?'<div style="font-size:10px;color:#8a5a00;margin-top:2px;max-width:170px;text-align:right">Não baixe o preço: veja prazo de entrega e métricas</div>':''));
+      dir+='<div class="pw">Buy Box: '+fmt(bb.preco)+'</div>'+(dif>0.009?'<div class="'+(dif<=2?'pc':'ptw')+'">Baixar '+fmt(dif)+'</div>':'<div class="pv" style="background:#FFF3E0;color:#E65100" title="O ganhador está mais caro ou igual: a Amazon está preferindo ele por outro motivo (ex.: FBA/Prime, prazo de entrega ou reputação).">'+(dif<-0.009?'🧭 Mais barato, mas perdendo':'Mesmo preço')+'</div>'+(dif<-0.009?'<div style="font-size:10px;color:#8a5a00;margin-top:2px;max-width:200px;text-align:right">'+azPorque(a)+'</div>':''));
     } else if(bb&&bb.situacao==='sem'){dir+='<div class="pv">Sem Buy Box'+(bb.menorConcorrente?' · menor: '+fmt(bb.menorConcorrente):'')+'</div>';}
     else if(bb&&bb.situacao==='ganhando'){dir+='<div class="pv" style="background:#E8F5E9;color:#2E7D32">Ganhando'+(bb.concorrentes?' · '+bb.concorrentes+' concorrente'+(bb.concorrentes>1?'s':''):' · sozinho')+'</div>';}
     dir+=azLucroHtml(a);
