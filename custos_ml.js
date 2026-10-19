@@ -100,8 +100,17 @@ function procurar(mapa, sku) {
   const s = K(sku);
   if (mapa[s] > 0) return mapa[s];
   const semZeros = s.replace(/^0+/, ''); if (mapa[semZeros] > 0) return mapa[semZeros];
-  const m = s.match(/^(.*)-(\d+)$/);                    // kit "SKU-3" = 3 × SKU
-  if (m && mapa[m[1]] > 0) return mapa[m[1]] * parseInt(m[2]);
+  return kitOuComposicao(s, k => mapa[k] > 0 ? mapa[k] : null);
+}
+/** "SKU-3" = 3 × SKU (só sufixo 2..20 sem zero à esquerda; "-02" é variação, não kit);
+ *  "A-B" com A e B cadastrados = composição (soma dos dois). */
+function kitOuComposicao(s, get) {
+  const m = s.match(/^(.*)-(\d+)$/);
+  if (!m) return null;
+  const n = parseInt(m[2]), base = get(m[1]);
+  if (base != null && !/^0/.test(m[2]) && n >= 2 && n <= 20) return base * n;
+  const partes = s.split('-');
+  if (partes.length >= 2 && partes.every(x => x && get(x) != null)) return partes.reduce((t, x) => t + get(x), 0);
   return null;
 }
 /** Custo do SKU: ERP primeiro, planilha de reserva. Retorna { v, fonte } ou null. */
@@ -116,9 +125,7 @@ function custoSku(idx, sku) {
   const s = K(sku);
   if (s in mapa) return mapa[s];
   const semZeros = s.replace(/^0+/, ''); if (semZeros in mapa) return mapa[semZeros];
-  const m = s.match(/^(.*)-(\d+)$/);                    // kit "SKU-3" = 3 × SKU
-  if (m && m[1] in mapa) return mapa[m[1]] * parseInt(m[2]);
-  return null;
+  return kitOuComposicao(s, k => (k in mapa) ? mapa[k] : null);
 }
 
 function aliquota(idx) { return require('./config_empresas').porMlIdx(idx)?.imposto ?? (idx === 2 ? 0.05 : idx === 0 ? 0.11 : 0.09); }

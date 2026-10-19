@@ -183,6 +183,17 @@ async function calcular(empKey, ini, fim) {
     if (c) return [c.v, 'planilha'];
     return [null, 'SEM CUSTO'];
   };
+  // Lufe/Shein sem % na planilha: usa a comissão média que a Shein cobrou nos pedidos do Bling (Zagodini/Mãe)
+  let _txSh = null;
+  const taxaSheinBling = () => {
+    if (_txSh != null) return _txSh;
+    let com = 0, val = 0;
+    for (const i of [0, 1]) for (const d of Object.values(pedBling(i))) {
+      if (canalDe(d._loja, d.numeroLoja) !== 'Shein' || !(d.taxas?.valorBase > 0)) continue;
+      com += num(d.taxas.taxaComissao); val += num(d.taxas.valorBase);
+    }
+    return (_txSh = val > 1000 ? com / val : 0.18);
+  };
   const add = (o) => {
     const lucro = o.receita - o.cmv - o.comissao - o.taxa - o.frete - o.imposto - o.embalagem;
     linhas.push({ ...o, cmv: r2(o.cmv), comissao: r2(o.comissao), taxa: r2(o.taxa), frete: r2(o.frete), imposto: r2(o.imposto), embalagem: r2(o.embalagem),
@@ -241,7 +252,7 @@ async function calcular(empKey, ini, fim) {
         const [cu, origemCusto] = custoDe(sku, canal, s => P.custo(s));
         let t;
         if (canal === 'Amazon') t = tarifasAmazon(p.numero_ecommerce, receita, valPed, sku, q, pu);
-        else { const rg = P.regra(canal, sku); t = { comissao: receita * (rg.rate || 0), taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: 'planilha Lufe' }; }
+        else { const rg = P.regra(canal, sku); t = { comissao: receita * (rg.rate || (canal === 'Shein' ? taxaSheinBling() : 0)), taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: rg.rate ? 'planilha Lufe' : (canal === 'Shein' ? 'média Shein (Bling)' : 'planilha Lufe') }; }
         add({ empresa: E.nome, canal, data: (p.data_pedido || '').split('/').reverse().join('-'), pedido: p.numero, pedidoCanal: p.numero_ecommerce || '', situacao: p.situacao,
           cliente: p.cliente?.nome || '', sku, descricao: it.descricao || '', qtd: q, precoUn: r2(pu), receita, custoUn: cu, origemCusto,
           cmv: (cu || 0) * q, comissao: t.comissao, taxa: t.taxa, frete: t.frete, imposto: receita * aliq, embalagem: i === 0 ? emb : 0, origemTaxa: t.origem });
