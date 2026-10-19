@@ -28,6 +28,7 @@ const bling  = require('./bling');
 const apuracao = require('./apuracao');
 app.use('/apuracao', apuracao.router);
 app.use('/apuracao-tiny', require('./tiny_apuracao').router); // Apuração LUFE (Tiny)
+app.use('/apuracao-mkt', require('./apuracao_mkt').router); // Apuração Amazon / Shein / TikTok (3 empresas)
 app.use('/tv', require('./tv').router); // Painel da TV (expedição)
 
 // ─── Cache Shopee ──────────────────────────────────────────────────────────

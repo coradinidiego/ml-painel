@@ -265,4 +265,29 @@ router.get('/planilhas', (req, res) => {
   }) });
 });
 
-module.exports = { router, calcular, getConfig };
+// ─── Usado pela apuração Amazon / Shein / TikTok (apuracao_mkt.js) ─────────
+async function buscarPeriodo(ini, fim, aoProgresso) {
+  const key = `${ini}_${fim}`;
+  if (jobs[key]?.rodando) { while (jobs[key]?.rodando) { aoProgresso?.(jobs[key]); await delay(1000); } }
+  else {
+    const p = buscar(ini, fim, key);
+    const t = setInterval(() => jobs[key] && aoProgresso?.(jobs[key]), 1000);
+    await p; clearInterval(t);
+  }
+  if (jobs[key]?.erro) throw new Error(jobs[key].erro);
+}
+function pedidosPeriodo(ini, fim) {
+  let per; try { per = JSON.parse(fs.readFileSync(periodoFile(ini, fim))); } catch (e) { return null; }
+  const cache = pedidos();
+  return per.ids.map(id => cache[id]).filter(Boolean);
+}
+function planilhaLufe() {
+  let P; try { P = lerPlanilha(getConfig()); } catch (e) { P = { base: {}, kits: {}, regras: {}, padrao: { Outros: { rate: 0, fixo: 0, insumos: 0, frete: 0 } } }; }
+  const semSufixo = s => { const m = s.match(/^(.*)-(\d+)$/); return m ? [m[1], parseInt(m[2])] : [s, 1]; };
+  return {
+    custo: s => { if (s in P.base) return P.base[s]; if (s in P.kits) return P.kits[s]; const [b, q] = semSufixo(s); return b in P.base ? P.base[b] * q : null; },
+    regra: (canal, s) => { const rr = P.regras[canal] || {}; if (s in rr) return rr[s]; const [b] = semSufixo(s); return rr[b] || P.padrao[canal] || P.padrao['Outros'] || {}; },
+  };
+}
+
+module.exports = { router, calcular, getConfig, buscarPeriodo, pedidosPeriodo, planilhaLufe };
