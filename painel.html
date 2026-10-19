@@ -297,6 +297,7 @@ body{background:#f0f2f5;color:#111}
 <div id="amazon-content"><div class="content">
   <div class="cards">
     <div class="card r" onclick="azFiltro('perdendo')"><div class="icon">🔴</div><div class="num" id="az-perd">-</div><div class="lbl">Perdendo Buy Box</div></div>
+    <div class="card p" onclick="azFiltro('barato')" title="Você está com preço menor que o ganhador e mesmo assim perde: o problema não é preço (prazo de entrega, métricas da conta ou Buy Box regional)"><div class="icon">🧭</div><div class="num" id="az-barato">-</div><div class="lbl">Mais barato, mas perdendo</div></div>
     <div class="card a" onclick="azFiltro('sem')"><div class="icon">⚪</div><div class="num" id="az-sem">-</div><div class="lbl">Sem Buy Box</div></div>
     <div class="card g" onclick="azFiltro('ganhando')"><div class="icon">🟢</div><div class="num" id="az-ganh">-</div><div class="lbl">Ganhando Buy Box</div></div>
     <div class="card b" onclick="azFiltro('')"><div class="icon">📦</div><div class="num" id="az-ativos">-</div><div class="lbl">Anúncios ativos</div></div>
@@ -307,7 +308,7 @@ body{background:#f0f2f5;color:#111}
   </div>
   <div class="sf">
     <select class="sselect" id="az-f" onchange="renderAmazon()">
-      <option value="perdendo">🔴 Perdendo Buy Box</option><option value="sem">⚪ Sem Buy Box</option><option value="ganhando">🟢 Ganhando Buy Box</option>
+      <option value="perdendo">🔴 Perdendo Buy Box</option><option value="barato">🧭 Mais barato, mas perdendo</option><option value="sem">⚪ Sem Buy Box</option><option value="ganhando">🟢 Ganhando Buy Box</option>
       <option value="semEstoque">🚫 Sem estoque</option><option value="baixo">⚠️ Estoque baixo (≤3)</option><option value="incompleto">🧩 Incompletos</option><option value="inativo">⏸️ Inativos</option><option value="">Todos os anúncios</option>
     </select>
     <select class="sselect" id="az-fl" onchange="renderAmazon()" title="Lucro no preço da Buy Box"><option value="">Qualquer lucro</option><option value="15">🟢 Lucro ≥ 15% (ideal)</option><option value="10">🟠 Lucro ≥ 10% (mínimo)</option><option value="0">Lucro ≥ 0%</option></select>
@@ -690,13 +691,14 @@ function azLucroHtml(a){
   return a.status==='Active'?'<div style="font-size:11px;color:#999;margin-top:2px">Lucro: '+shpEsc(a.margem_obs||'calculando…')+'</div>':'';
 }
 function azFiltro(f){el('az-f').value=f;renderAmazon();}
-const AZ_TIT={perdendo:'🔴 Perdendo Buy Box',sem:'⚪ Sem Buy Box (ninguém ganha — geralmente preço acima do aceito pela Amazon)',ganhando:'🟢 Ganhando Buy Box',semEstoque:'🚫 Sem estoque',baixo:'⚠️ Estoque baixo (até 3 unidades)',incompleto:'🧩 Anúncios incompletos (precisam de correção)',inativo:'⏸️ Anúncios inativos','':'Todos os anúncios'};
+const AZ_TIT={perdendo:'🔴 Perdendo Buy Box',barato:'🧭 Mais barato, mas perdendo — preço não é o problema: confira prazo de entrega (tempo de manuseio), métricas da conta e a Buy Box em outros CEPs',sem:'⚪ Sem Buy Box (ninguém ganha — geralmente preço acima do aceito pela Amazon)',ganhando:'🟢 Ganhando Buy Box',semEstoque:'🚫 Sem estoque',baixo:'⚠️ Estoque baixo (até 3 unidades)',incompleto:'🧩 Anúncios incompletos (precisam de correção)',inativo:'⏸️ Anúncios inativos','':'Todos os anúncios'};
 function renderAmazon(){
   const d=_azDados;if(!d)return;
   const A=d.anuncios, at=A.filter(a=>a.status==='Active');
-  const g={perdendo:at.filter(a=>a.bb?.situacao==='perdendo'),sem:at.filter(a=>a.bb?.situacao==='sem'),ganhando:at.filter(a=>a.bb?.situacao==='ganhando'),
+  const azBarato=a=>a.bb?.situacao==='perdendo'&&a.bb.preco>0&&a.preco<a.bb.preco-0.009;
+  const g={perdendo:at.filter(a=>a.bb?.situacao==='perdendo'),barato:at.filter(azBarato),sem:at.filter(a=>a.bb?.situacao==='sem'),ganhando:at.filter(a=>a.bb?.situacao==='ganhando'),
     semEstoque:A.filter(a=>!a.fba&&a.qtd<=0&&a.status!=='Incomplete'),baixo:at.filter(a=>!a.fba&&a.qtd>0&&a.qtd<=3),incompleto:A.filter(a=>a.status==='Incomplete'),inativo:A.filter(a=>a.status==='Inactive'),'':A};
-  set('az-perd',g.perdendo.length);set('az-sem',g.sem.length);set('az-ganh',g.ganhando.length);set('az-ativos',at.length);
+  set('az-perd',g.perdendo.length);set('az-barato',g.barato.length);set('az-sem',g.sem.length);set('az-ganh',g.ganhando.length);set('az-ativos',at.length);
   set('az-semest',g.semEstoque.length);set('az-baixo',g.baixo.length);set('az-inc',g.incompleto.length);set('az-inat',g.inativo.length);
   const f=el('az-f').value,q=(el('az-b').value||'').toLowerCase().trim();
   let L=g[f]||A;
@@ -718,7 +720,7 @@ function renderAmazon(){
     let dir='<div class="mp">Meu: '+fmt(a.preco)+'</div>';
     if(bb&&bb.situacao==='perdendo'){
       const dif=a.preco-bb.preco;
-      dir+='<div class="pw">Buy Box: '+fmt(bb.preco)+'</div>'+(dif>0.009?'<div class="'+(dif<=2?'pc':'ptw')+'">Baixar '+fmt(dif)+'</div>':'<div class="pv" style="background:#FFF3E0;color:#E65100" title="O ganhador está mais caro ou igual: a Amazon está preferindo ele por outro motivo (ex.: FBA/Prime, prazo de entrega ou reputação).">'+(dif<-0.009?'Você já é mais barato':'Mesmo preço')+'</div>');
+      dir+='<div class="pw">Buy Box: '+fmt(bb.preco)+'</div>'+(dif>0.009?'<div class="'+(dif<=2?'pc':'ptw')+'">Baixar '+fmt(dif)+'</div>':'<div class="pv" style="background:#FFF3E0;color:#E65100" title="O ganhador está mais caro ou igual: a Amazon está preferindo ele por outro motivo (ex.: FBA/Prime, prazo de entrega ou reputação).">'+(dif<-0.009?'🧭 Mais barato, mas perdendo':'Mesmo preço')+'</div>'+(dif<-0.009?'<div style="font-size:10px;color:#8a5a00;margin-top:2px;max-width:170px;text-align:right">Não baixe o preço: veja prazo de entrega e métricas</div>':''));
     } else if(bb&&bb.situacao==='sem'){dir+='<div class="pv">Sem Buy Box'+(bb.menorConcorrente?' · menor: '+fmt(bb.menorConcorrente):'')+'</div>';}
     else if(bb&&bb.situacao==='ganhando'){dir+='<div class="pv" style="background:#E8F5E9;color:#2E7D32">Ganhando'+(bb.concorrentes?' · '+bb.concorrentes+' concorrente'+(bb.concorrentes>1?'s':''):' · sozinho')+'</div>';}
     dir+=azLucroHtml(a);
