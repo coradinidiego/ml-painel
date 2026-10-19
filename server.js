@@ -1845,11 +1845,11 @@ async function cicloBoost(k) {
   if (tipo === 'top') escolhidos = top.filter(p => !ocupados.has(String(p.item_id))).slice(0, livres);
   if (tipo === 'novos' || (tipo === 'top' && !escolhidos.length)) {
     tipo = 'novos'; escolhidos = [];
-    if ((st.novos || 0) >= novos.length) st.novos = 0;
+    if (!(st.novos >= 0) || st.novos >= novos.length) st.novos = 0;   // 1ª rodada de novos: índice ainda não existia
     let n = 0;
     while (escolhidos.length < livres && n++ < novos.length) {
       const p = novos[st.novos]; st.novos = (st.novos + 1) % novos.length;
-      if (!ocupados.has(String(p.item_id)) && !escolhidos.includes(p)) escolhidos.push(p);
+      if (p && !ocupados.has(String(p.item_id)) && !escolhidos.includes(p)) escolhidos.push(p);
     }
   }
   if (tipo === 'fila' || !escolhidos.length) {
