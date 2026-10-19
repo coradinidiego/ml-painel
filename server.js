@@ -1489,10 +1489,12 @@ async function carregarAnunciosAmazon(k) {
         situacao: !win ? 'sem' : win.SellerId === eu ? 'ganhando' : 'perdendo',
         preco: win ? preco(win) : (pl.Summary?.BuyBoxPrices?.[0]?.LandedPrice?.Amount ?? null),
         ganhador: win && win.SellerId !== eu ? { id: win.SellerId, fba: !!win.IsFulfilledByAmazon, preco: preco(win), nota: win.SellerFeedbackRating?.SellerPositiveFeedbackRating, avaliacoes: win.SellerFeedbackRating?.FeedbackCount, ...envioOferta(win) } : null,
-        minha: (o => o ? { fba: !!o.IsFulfilledByAmazon, destaque: !!o.IsFeaturedMerchant, ...envioOferta(o) } : null)(offers.find(o => o.SellerId === eu)),
+        minha: (o => o ? { fba: !!o.IsFulfilledByAmazon, destaque: !!o.IsFeaturedMerchant, total: preco(o), frete: o.Shipping?.Amount || 0, ...envioOferta(o) } : null)(offers.find(o => o.SellerId === eu)),
         concorrentes: outros.length,
         menorConcorrente: outros.length ? Math.min(...outros.map(preco)) : null,
       };
+      // A Amazon compara preço + frete. "alvo" = preço do produto que empata com a Buy Box, descontando o MEU frete.
+      if (a.bb.preco > 0) a.bb.alvo = Math.round((a.bb.preco - (a.bb.minha?.frete || 0)) * 100) / 100;
     }
     // Imagens (catálogo da Amazon, 20 ASINs por consulta)
     E.etapa = 'imagens';
@@ -1516,7 +1518,7 @@ async function carregarAnunciosAmazon(k) {
     const pedidosTar = [];
     for (const a of anuncios) if (a.status === 'Active' && a.asin) {
       pedidosTar.push({ asin: a.asin, preco: a.preco, fba: a.fba, id: a.sku + '|atual' });
-      if (a.bb?.situacao === 'perdendo' && a.bb.preco > 0 && a.bb.preco < a.preco) pedidosTar.push({ asin: a.asin, preco: a.bb.preco, fba: a.fba, id: a.sku + '|bb' });
+      if (a.bb?.situacao === 'perdendo' && a.bb.alvo > 0 && a.bb.alvo < a.preco) pedidosTar.push({ asin: a.asin, preco: a.bb.alvo, fba: a.fba, id: a.sku + '|bb' });
     }
     const tar = {};
     E.etapa = 'tarifas';
@@ -1557,8 +1559,8 @@ async function carregarAnunciosAmazon(k) {
       if (a.status !== 'Active') continue;
       const atual = calc(a, a.preco, tar[a.sku + '|atual']);
       if (atual) { a.calc_atual = atual; a.lucro_atual_pct = atual.pct; }
-      if (a.bb?.situacao === 'perdendo' && a.bb.preco > 0) {
-        const bb = a.bb.preco < a.preco ? calc(a, a.bb.preco, tar[a.sku + '|bb']) : atual;
+      if (a.bb?.situacao === 'perdendo' && a.bb.alvo > 0) {
+        const bb = a.bb.alvo < a.preco ? calc(a, a.bb.alvo, tar[a.sku + '|bb']) : atual;
         if (bb) { a.calc_ptw = bb; a.lucro_ptw_pct = bb.pct; }
       }
       if (a.custo == null) a.margem_obs = 'sem custo no Tiny/Bling';
