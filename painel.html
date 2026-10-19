@@ -693,6 +693,9 @@ function azLucroHtml(a){
 // Por que a Buy Box está com outro vendedor mesmo sendo mais barato
 function azPorque(a){
   const g=a.bb?.ganhador, m=a.bb?.minha; if(!g) return 'Não baixe o preço: veja prazo de entrega e métricas';
+  if(!m) return 'Por que perde: sua oferta <b>não aparece entre as elegíveis</b> à Buy Box (confira se está ativa, com estoque e sem bloqueio de preço no Seller Central)';
+  const meu=m.total??a.preco, gp=a.bb.preco;
+  if(gp>0&&(gp-meu)/gp<0.025&&!(g.fba&&!m.fba)&&!(g.prime&&!m.prime)) return 'Por que perde: preços <b>quase iguais</b> (diferença de '+fmt(gp-meu)+') e mesmo tipo de envio: a Amazon <b>reveza</b> a Buy Box entre ofertas parecidas. Baixar não resolve; confira só as métricas da conta.';
   const h=x=>x==null?'?':(x<=0?'imediato':x<24?x+'h':Math.round(x/24)+' dia'+(x>=48?'s':''));
   const r=[];
   if(g.fba&&!(m&&m.fba)) r.push('Ganhador é <b>FBA</b> (estoque na Amazon)');
