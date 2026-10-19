@@ -804,7 +804,7 @@ async function carregarBoost(){
     const b=await fetch(shpU('/shopee/boost')).then(r=>r.json());
     el('boost-ativo').checked=b.ativo!==false;
     const u=b.ultimo;
-    el('boost-info').innerHTML=!u?'Aguardando a primeira rodada (até 10 min).':'<b>Última rodada ('+(u.tipo==='top'?'mais vendidos':'fim da lista '+u.filaPos+'/'+u.filaTotal)+')</b> · '+new Date(u.em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+'<br>'+u.itens.map(i=>'• '+shpEsc(i.nome.slice(0,80))+(i.vendas?' <span style="color:#888">('+i.vendas+' vendidos)</span>':'')).join('<br>')+'<br><span style="color:#888">Próxima rodada: '+(b.proxima==='top'?'mais vendidos':'fim da lista')+'</span>';
+    el('boost-info').innerHTML=!u?'Aguardando a primeira rodada (até 10 min).':'<b>Última rodada ('+(u.tipo==='top'?'mais vendidos':u.tipo==='novos'?'itens novos'+(u.novosTotal?' ('+u.novosTotal+')':''):'fim da lista '+u.filaPos+'/'+u.filaTotal)+')</b> · '+new Date(u.em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+'<br>'+u.itens.map(i=>'• '+shpEsc(i.nome.slice(0,80))+(i.vendas?' <span style="color:#888">('+i.vendas+' vendidos)</span>':'')).join('<br>')+'<br><span style="color:#888">Próxima rodada: '+(b.proxima==='top'?'mais vendidos':b.proxima==='novos'?'itens novos':'fim da lista')+'</span>';
   }catch(e){}
 }
 async function trocarBoost(on){

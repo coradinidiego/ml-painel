@@ -1808,8 +1808,10 @@ app.get('/shopee/auto-avaliacoes', (req, res) => res.json(autoAval[lojaDe(req)] 
 
 // ─── Impulsionar automático (Shopee) ─────────────────────────────────────────
 // A Shopee deixa 5 produtos impulsionados por vez, por 4h. Alterna as rodadas:
-//   rodada "top"  → os 5 mais vendidos (15 dias)
-//   rodada "fila" → os próximos 5 do fim da lista (menos vendidos), andando até zerar e recomeçar
+//   rodada "top"   → os 5 mais vendidos (15 dias)
+//   rodada "novos" → produtos criados nos últimos 30 dias (do mais novo para o mais antigo, em rodízio)
+//   rodada "fila"  → os próximos 5 do fim da lista (menos vendidos), andando até zerar e recomeçar
+//   ordem: mais vendidos → novos → fim da lista → mais vendidos…  (sem novos, pula direto para o fim da lista)
 // Só produtos ativos com estoque. Verifica a cada 10 min e preenche as vagas livres.
 const ARQ_BOOST = path.join(DATA, 'shopee_boost_auto.json');
 let boostSt = (() => { try { return JSON.parse(fs.readFileSync(ARQ_BOOST)); } catch (e) { return {}; } })();
@@ -1833,8 +1835,19 @@ async function cicloBoost(k) {
   const top = porVenda.slice(0, 5);
   const topIds = new Set(top.map(p => String(p.item_id)));
   const fila = porVenda.filter(p => !topIds.has(String(p.item_id))).reverse();   // do menos vendido para cima
+  const limNovo = Date.now() / 1000 - 30 * 86400;
+  const novos = elegiveis.filter(p => (p.create_time || 0) >= limNovo && !topIds.has(String(p.item_id))).sort((a, b) => (b.create_time || 0) - (a.create_time || 0));
   let escolhidos = [], tipo = st.proxima;
   if (tipo === 'top') escolhidos = top.filter(p => !ocupados.has(String(p.item_id))).slice(0, livres);
+  if (tipo === 'novos' || (tipo === 'top' && !escolhidos.length)) {
+    tipo = 'novos'; escolhidos = [];
+    if ((st.novos || 0) >= novos.length) st.novos = 0;
+    let n = 0;
+    while (escolhidos.length < livres && n++ < novos.length) {
+      const p = novos[st.novos]; st.novos = (st.novos + 1) % novos.length;
+      if (!ocupados.has(String(p.item_id)) && !escolhidos.includes(p)) escolhidos.push(p);
+    }
+  }
   if (tipo === 'fila' || !escolhidos.length) {
     tipo = 'fila';
     if (st.fila >= fila.length) st.fila = 0;
@@ -1848,15 +1861,15 @@ async function cicloBoost(k) {
   const r = await sp.impulsionar(escolhidos.map(p => p.item_id));
   const okSet = new Set(r.ok.map(String));
   const feitos = escolhidos.filter(p => okSet.has(String(p.item_id)));
-  st.proxima = tipo === 'top' ? 'fila' : 'top';
-  st.ultimo = { em: new Date().toISOString(), tipo, itens: feitos.map(p => ({ id: p.item_id, nome: p.item_name, vendas: vend[p.item_id] || 0 })), falhas: r.falhas.slice(0, 5), filaPos: st.fila, filaTotal: fila.length };
+  st.proxima = tipo === 'top' ? 'novos' : tipo === 'novos' ? 'fila' : 'top';
+  st.ultimo = { em: new Date().toISOString(), tipo, itens: feitos.map(p => ({ id: p.item_id, nome: p.item_name, vendas: vend[p.item_id] || 0 })), falhas: r.falhas.slice(0, 5), filaPos: st.fila, filaTotal: fila.length, novosTotal: novos.length };
   st.historico = [st.ultimo, ...(st.historico || [])].slice(0, 20);
   salvarBoost();
   console.log('[boost] ' + k + ' ' + tipo + ': ' + feitos.length + ' impulsionados, ' + r.falhas.length + ' falhas');
   if (feitos.length) {
     try {
       const esc = t => String(t ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-      await require('./telegram').sendTelegram('🚀 <b>Shopee impulsionados - ' + esc(sp.nome) + '</b>\n' + (tipo === 'top' ? '🏆 Rodada: mais vendidos' : '🔁 Rodada: fim da lista (' + (st.fila || fila.length) + '/' + fila.length + ')') + '\n\n' +
+      await require('./telegram').sendTelegram('🚀 <b>Shopee impulsionados - ' + esc(sp.nome) + '</b>\n' + (tipo === 'top' ? '🏆 Rodada: mais vendidos' : tipo === 'novos' ? '🆕 Rodada: itens novos (' + novos.length + ' criados nos últimos 30 dias)' : '🔁 Rodada: fim da lista (' + (st.fila || fila.length) + '/' + fila.length + ')') + '\n\n' +
         feitos.map(p => '• ' + esc(p.item_name.slice(0, 70)) + (vend[p.item_id] ? ' <i>(' + vend[p.item_id] + ' vendidos)</i>' : '')).join('\n'));
     } catch (e) {}
   }
