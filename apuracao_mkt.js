@@ -368,7 +368,7 @@ async function rodarAuto(motivo) {
   if (_autoRodando) return;
   _autoRodando = true;
   const [ini, fim] = periodoAuto(), hoje = ymd(hojeSP());
-  const st = { data: hoje, ini, fim, inicio: new Date().toISOString(), fimExec: null, motivo, erros: {} };
+  const st = { data: hoje, ini, fim, inicio: new Date().toISOString(), fimExec: null, motivo, erros: {}, ok: lerJson(ARQ_AUTO, {})?.ok || null };
   try { fs.mkdirSync(path.dirname(ARQ_AUTO), { recursive: true }); fs.writeFileSync(ARQ_AUTO, JSON.stringify(st)); } catch (e) {}
   try {
     const d = new Date(ini + 'T12:00:00Z');
@@ -386,6 +386,7 @@ async function rodarAuto(motivo) {
     delete st.fase;
   } catch (e) { st.erros.geral = e.message; }
   st.fimExec = new Date().toISOString();
+  st.ok = { ini, fim, em: st.fimExec };   // último período completo (a tela abre nele enquanto a próxima rodada roda)
   try { fs.writeFileSync(ARQ_AUTO, JSON.stringify(st)); } catch (e) {}
   if (Object.keys(st.erros).length) try { require('./telegram').sendTelegram('⚠️ Apuração automática (' + ini + ' a ' + fim + ') com erro: ' + Object.entries(st.erros).map(([k, v]) => k + ': ' + v).join(' | ')); } catch (e) {}
   _autoRodando = false;
