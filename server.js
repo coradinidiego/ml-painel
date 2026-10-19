@@ -1866,15 +1866,21 @@ async function cicloBoost(k) {
   st.historico = [st.ultimo, ...(st.historico || [])].slice(0, 20);
   salvarBoost();
   console.log('[boost] ' + k + ' ' + tipo + ': ' + feitos.length + ' impulsionados, ' + r.falhas.length + ' falhas');
-  if (feitos.length) {
-    try {
-      const esc = t => String(t ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-      await require('./telegram').sendTelegram('🚀 <b>Shopee impulsionados - ' + esc(sp.nome) + '</b>\n' + (tipo === 'top' ? '🏆 Rodada: mais vendidos' : tipo === 'novos' ? '🆕 Rodada: itens novos (' + novos.length + ' criados nos últimos 30 dias)' : '🔁 Rodada: fim da lista (' + (st.fila || fila.length) + '/' + fila.length + ')') + '\n\n' +
-        feitos.map(p => '• ' + esc(p.item_name.slice(0, 70)) + (vend[p.item_id] ? ' <i>(' + vend[p.item_id] + ' vendidos)</i>' : '')).join('\n'));
-    } catch (e) {}
-  }
+  // Telegram só em caso de erro (nenhum item impulsionado na rodada); o registro de cada rodada fica no painel
+  if (!feitos.length) await avisarErroBoost(k, sp.nome, 'nenhum item impulsionado: ' + (r.falhas.map(f => f.erro || f.msg || JSON.stringify(f)).slice(0, 2).join('; ') || 'sem detalhe'));
 }
-async function boostTodas() { for (const k of Object.keys(SHP)) await cicloBoost(k).catch(e => console.log('[boost] ' + k + ' erro: ' + e.message)); }
+const _ultErroBoost = {};
+async function avisarErroBoost(k, nome, msg) {
+  const st = boostSt[k] ||= { ativo: true, proxima: 'top', fila: 0, historico: [] };
+  st.historico = [{ em: new Date().toISOString(), tipo: 'erro', erro: String(msg).slice(0, 200), itens: [] }, ...(st.historico || [])].slice(0, 20);
+  salvarBoost();
+  const chave = k + '|' + String(msg).slice(0, 60);
+  if (_ultErroBoost[chave] && Date.now() - _ultErroBoost[chave] < 6 * 3600e3) return;   // mesmo erro: no máximo 1 aviso a cada 6h
+  _ultErroBoost[chave] = Date.now();
+  try { const esc = t => String(t ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    await require('./telegram').sendTelegram('⚠️ <b>Impulsionar Shopee com erro - ' + esc(nome) + '</b>\n' + esc(msg)); } catch (e) {}
+}
+async function boostTodas() { for (const k of Object.keys(SHP)) await cicloBoost(k).catch(e => { console.log('[boost] ' + k + ' erro: ' + e.message); return avisarErroBoost(k, SHP[k]?.cache?.nome || k, e.message); }); }
 setInterval(boostTodas, 10 * 60 * 1000);
 setTimeout(boostTodas, 3 * 60 * 1000);
 app.get('/shopee/boost', (req, res) => res.json(boostSt[lojaDe(req)] || { ativo: true }));

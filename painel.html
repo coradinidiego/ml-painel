@@ -805,6 +805,13 @@ async function carregarBoost(){
     el('boost-ativo').checked=b.ativo!==false;
     const u=b.ultimo;
     el('boost-info').innerHTML=!u?'Aguardando a primeira rodada (até 10 min).':'<b>Última rodada ('+(u.tipo==='top'?'mais vendidos':u.tipo==='novos'?'itens novos'+(u.novosTotal?' ('+u.novosTotal+')':''):'fim da lista '+u.filaPos+'/'+u.filaTotal)+')</b> · '+new Date(u.em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+'<br>'+u.itens.map(i=>'• '+shpEsc(i.nome.slice(0,80))+(i.vendas?' <span style="color:#888">('+i.vendas+' vendidos)</span>':'')).join('<br>')+'<br><span style="color:#888">Próxima rodada: '+(b.proxima==='top'?'mais vendidos':b.proxima==='novos'?'itens novos':'fim da lista')+'</span>';
+    // registro das últimas rodadas (substitui as mensagens do Telegram)
+    const H=(b.historico||[]).slice(0,8);
+    if(H.length){
+      const nomeT=t=>t==='top'?'🏆 Mais vendidos':t==='novos'?'🆕 Itens novos':t==='erro'?'⚠️ Erro':'🔁 Fim da lista';
+      el('boost-info').innerHTML+='<div style="margin-top:10px;border-top:1px solid #eee;padding-top:8px"><b style="font-size:12px;color:#555">Registro das rodadas</b>'+
+        H.map(x=>'<div style="font-size:12px;color:'+(x.tipo==='erro'?'#c62828':'#555')+';padding:2px 0">✓ '+new Date(x.em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' · '+nomeT(x.tipo)+' · '+(x.tipo==='erro'?shpEsc(x.erro||''):(x.itens||[]).length+' impulsionado'+((x.itens||[]).length===1?'':'s')+((x.falhas||[]).length?' · '+x.falhas.length+' falha(s)':''))+'</div>').join('')+'</div>';
+    }
   }catch(e){}
 }
 async function trocarBoost(on){
