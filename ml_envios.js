@@ -115,7 +115,7 @@ async function coletar(conta, prazoFn) {
       catch (e) { if (e.response?.status === 401) throw e; continue; }
       if (ant?.slaTs) { s.sla = ant.sla; s.slaTs = ant.slaTs; s.slaStatus = ant.slaStatus; }
       // prazo de despacho (SLA) só para o que ainda vai ser preparado; guarda por 30 min
-      if ((s.status === 'handling' || s.status === 'ready_to_ship') && (!s.slaTs || Date.now() - s.slaTs > 30 * 60e3)) {
+      if ((s.status === 'handling' || s.status === 'ready_to_ship') && (!s.slaTs || s.slaStatus === undefined || Date.now() - s.slaTs > 30 * 60e3)) {
         try { const sla = await get(conta, '/shipments/' + id + '/sla'); s.sla = diaSP(sla?.expected_date) || null; s.slaStatus = sla?.status || null; s.slaTs = Date.now(); consultas++; }
         catch (e) { if (e.response?.status === 401) throw e; }
       }
