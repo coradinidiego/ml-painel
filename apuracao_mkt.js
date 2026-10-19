@@ -75,8 +75,8 @@ async function financeiroAmazon(empKey, ini, fim, job) {
   const az = amazon.loja(EMP[empKey].amazon);
   if (!az.configurada()) return null;
   const amt = x => Number(x?.CurrencyAmount ?? x?.Amount ?? 0);
-  // lançamentos saem no envio: busca do início do período até 15 dias depois do fim
-  const ate = new Date(Math.min(Date.now() - 5 * 60e3, Date.parse(fim + 'T23:59:59-03:00') + 15 * 864e5)).toISOString();
+  // lançamentos saem no envio e devoluções chegam depois: busca até 45 dias depois do fim
+  const ate = new Date(Math.min(Date.now() - 5 * 60e3, Date.parse(fim + 'T23:59:59-03:00') + 45 * 864e5)).toISOString();
   const desde = new Date(Date.parse(ini + 'T00:00:00-03:00')).toISOString();
   const ped = {};   // AmazonOrderId -> { com, tarifas, frete, principal, devolucao }
   let next = null, pg = 0;
@@ -85,7 +85,7 @@ async function financeiroAmazon(empKey, ini, fim, job) {
     const d = await az.get('/finances/v0/financialEvents', next ? { NextToken: next } : { PostedAfter: desde, PostedBefore: ate, MaxResultsPerPage: 100 });
     const fe = d.payload?.FinancialEvents || {};
     for (const s of fe.ShipmentEventList || []) {
-      const P = ped[s.AmazonOrderId] ||= { com: 0, tarifas: 0, frete: 0, principal: 0, devolucao: 0 };
+      const P = ped[s.AmazonOrderId] ||= { com: 0, tarifas: 0, frete: 0, principal: 0, devolucao: 0, estorno: 0 };
       for (const it of s.ShipmentItemList || []) {
         P.principal += (it.ItemChargeList || []).filter(c => c.ChargeType === 'Principal').reduce((a, c) => a + amt(c.ChargeAmount), 0);
         for (const f of it.ItemFeeList || []) { const v = -amt(f.FeeAmount); if (f.FeeType === 'Commission') P.com += v; else P.tarifas += v; }
@@ -94,11 +94,14 @@ async function financeiroAmazon(empKey, ini, fim, job) {
     for (const s of fe.ServiceFeeEventList || []) {
       if (!s.AmazonOrderId) continue;
       const v = (s.FeeList || []).reduce((a, f) => a - amt(f.FeeAmount), 0);
-      (ped[s.AmazonOrderId] ||= { com: 0, tarifas: 0, frete: 0, principal: 0, devolucao: 0 }).frete += v;
+      (ped[s.AmazonOrderId] ||= { com: 0, tarifas: 0, frete: 0, principal: 0, devolucao: 0, estorno: 0 }).frete += v;
     }
     for (const s of fe.RefundEventList || []) {
-      const P = ped[s.AmazonOrderId] ||= { com: 0, tarifas: 0, frete: 0, principal: 0, devolucao: 0 };
-      for (const it of s.ShipmentItemAdjustmentList || []) P.devolucao -= (it.ItemChargeAdjustmentList || []).filter(c => c.ChargeType === 'Principal').reduce((a, c) => a + amt(c.ChargeAmount), 0);
+      const P = ped[s.AmazonOrderId] ||= { com: 0, tarifas: 0, frete: 0, principal: 0, devolucao: 0, estorno: 0 };
+      for (const it of s.ShipmentItemAdjustmentList || []) {
+        P.devolucao -= (it.ItemChargeAdjustmentList || []).filter(c => c.ChargeType === 'Principal').reduce((a, c) => a + amt(c.ChargeAmount), 0);
+        P.estorno += (it.ItemFeeAdjustmentList || []).reduce((a, f) => a + amt(f.FeeAmount), 0);   // comissão devolvida (+) menos taxa de reembolso (−)
+      }
     }
     next = d.payload?.NextToken; pg++;
     if (job) job.fase = `Amazon ${EMP[empKey].nome}: financeiro pág. ${pg} (${Object.keys(ped).length} pedidos)`;
@@ -109,6 +112,17 @@ async function financeiroAmazon(empKey, ini, fim, job) {
 
 // ─── Busca (em segundo plano) ──────────────────────────────────────────────
 const jobs = {};
+const arqSit = idx => path.join(DATA, 'apuracao_cache', `apmkt_sit_${idx}.json`);
+async function situacoesBling(idx) {
+  const c = bling.client(idx), out = {};
+  const mods = (await c.get('/situacoes/modulos')).data?.data || [];
+  const vendas = mods.find(m => /venda/i.test(m.nome || m.descricao || '')) || mods[0];
+  if (vendas) for (const x of (await c.get(`/situacoes/modulos/${vendas.id}`)).data?.data || []) out[x.id] = x.nome || x.descricao || String(x.id);
+  return out;
+}
+// pedido que não entra na apuração: cancelado / devolvido / estornado (Bling: nome da situação; Tiny: texto)
+const FORA = /cancel|devolv|estorn|reembols|desfeit/i;
+
 async function buscar(empKey, ini, fim) {
   const key = `${empKey}_${ini}_${fim}`, E = EMP[empKey];
   const job = jobs[key] = { rodando: true, fase: 'Iniciando...', pct: 1, erro: null, cancelar: false };
@@ -135,6 +149,7 @@ async function buscar(empKey, ini, fim) {
         job.fase = `Listando pedidos do Bling: ${dias[i]} (${lista.length})`; job.pct = 2 + Math.round(18 * (i + 1) / dias.length);
         await delay(350);
       }
+      try { gravarJson(arqSit(E.idx), await situacoesBling(E.idx)); } catch (e) { console.warn('[apuracao-mkt] situações', e.message); }
       const doCanal = lista.filter(p => p.situacao?.id !== 12 && canalDe(canais[p.loja?.id], p.numeroLoja));
       const cache = pedBling(E.idx);
       const faltam = doCanal.filter(p => !cache[p.id] || cache[p.id].situacao?.id !== p.situacao?.id);
@@ -194,10 +209,23 @@ async function calcular(empKey, ini, fim) {
     }
     return (_txSh = val > 1000 ? com / val : 0.18);
   };
+  const fora = [];   // pedidos cancelados / devolvidos que saíram da apuração
   const add = (o) => {
-    const lucro = o.receita - o.cmv - o.comissao - o.taxa - o.frete - o.imposto - o.embalagem;
-    linhas.push({ ...o, cmv: r2(o.cmv), comissao: r2(o.comissao), taxa: r2(o.taxa), frete: r2(o.frete), imposto: r2(o.imposto), embalagem: r2(o.embalagem),
-      lucro: r2(lucro), pct: o.receita ? r2(lucro / o.receita * 100) : 0 });
+    // Amazon devolvida (financeiro): estorna a venda; o produto volta (custo e imposto saem na mesma proporção)
+    o.devolucao = 0;
+    if (o.canal === 'Amazon') {
+      const F = finPed[o.pedidoCanal];
+      if (F?.devolucao > 0) {
+        const base = F.principal > 0 ? F.principal : o._valPed || o.receita;
+        const p = o._valPed > 0 ? o.receita / o._valPed : 1, fr = Math.min(1, F.devolucao / base);
+        o.devolucao = F.devolucao * p; o.cmv *= 1 - fr; o.imposto *= 1 - fr; o.taxa -= (F.estorno || 0) * p;
+        o.origemTaxa += fr >= 0.999 ? ' · devolvido' : ' · devolução parcial';
+      }
+    }
+    delete o._valPed;
+    const lucro = o.receita - o.devolucao - o.cmv - o.comissao - o.taxa - o.frete - o.imposto - o.embalagem;
+    linhas.push({ ...o, devolucao: r2(o.devolucao), cmv: r2(o.cmv), comissao: r2(o.comissao), taxa: r2(o.taxa), frete: r2(o.frete), imposto: r2(o.imposto), embalagem: r2(o.embalagem),
+      lucro: r2(lucro), pct: (o.receita - o.devolucao) ? r2(lucro / (o.receita - o.devolucao) * 100) : 0 });
   };
   // Amazon: rateia as tarifas do pedido pelos itens (proporcional ao valor)
   const tarifasAmazon = (numLoja, valItem, valPed, sku, qtd, precoUn) => {
@@ -215,9 +243,12 @@ async function calcular(empKey, ini, fim) {
     if (!per) return { pendente: true };
     const cache = pedBling(E.idx);
     const fixoSh = mapaPlanilha('fixo_por_sku.json', E.conta, 'Shein');
+    const sits = lerJson(arqSit(E.idx), {});
     for (const id of per.ids) {
       const p = cache[id]; if (!p || p.situacao?.id === 12) continue;
       const canal = canalDe(p._loja, p.numeroLoja); if (!canal) continue;
+      const nomeSit = sits[p.situacao?.id] || '';
+      if (FORA.test(nomeSit)) { fora.push({ empresa: E.nome, canal, data: (p.data || '').slice(0, 10), pedido: p.numero, pedidoCanal: p.numeroLoja || '', situacao: nomeSit, valor: num(p.total) }); continue; }
       const itens = p.itens || [];
       const valPed = itens.reduce((s, it) => s + num(it.valor) * (num(it.quantidade) || 1), 0);
       const com = num(p.taxas?.taxaComissao), fre = num(p.taxas?.custoFrete);
@@ -231,9 +262,9 @@ async function calcular(empKey, ini, fim) {
           const fx = canal === 'Shein' ? procurar(fixoSh, sku) : null;
           t = { comissao: com * prop, taxa: (typeof fx === 'number' ? fx : 0) * q, frete: fre * prop, origem: 'Bling' + (fx ? ' + fixo planilha' : '') };
         }
-        add({ empresa: E.nome, canal, data: (p.data || '').slice(0, 10), pedido: p.numero, pedidoCanal: p.numeroLoja || '', situacao: p.situacao?.valor ?? '',
+        add({ empresa: E.nome, canal, data: (p.data || '').slice(0, 10), pedido: p.numero, pedidoCanal: p.numeroLoja || '', situacao: nomeSit || (p.situacao?.valor ?? ''),
           cliente: p.contato?.nome || '', sku, descricao: it.descricao || '', qtd: q, precoUn: r2(pu), receita, custoUn: cu, origemCusto,
-          cmv: (cu || 0) * q, comissao: t.comissao, taxa: t.taxa, frete: t.frete, imposto: receita * aliq, embalagem: i === 0 ? emb : 0, origemTaxa: t.origem });
+          cmv: (cu || 0) * q, comissao: t.comissao, taxa: t.taxa, frete: t.frete, imposto: receita * aliq, embalagem: i === 0 ? emb : 0, origemTaxa: t.origem, _valPed: valPed });
       });
     }
   } else {
@@ -242,8 +273,8 @@ async function calcular(empKey, ini, fim) {
     if (!lista) return { pendente: true };
     const P = tiny.planilhaLufe();
     for (const p of lista) {
-      if (p.situacao === 'Cancelado') continue;
       const canal = canalDe(p.ecommerce?.nomeEcommerce, p.numero_ecommerce); if (!canal) continue;
+      if (FORA.test(p.situacao || '')) { fora.push({ empresa: E.nome, canal, data: (p.data_pedido || '').split('/').reverse().join('-'), pedido: p.numero, pedidoCanal: p.numero_ecommerce || '', situacao: p.situacao, valor: num(p.total_pedido) }); continue; }
       const tp = num(p.total_produtos), tped = num(p.total_pedido), fator = tp ? tped / tp : 1;
       const itens = p.itens || [];
       const valPed = itens.reduce((s, x) => s + num(x.item?.valor_unitario) * fator * num(x.item?.quantidade), 0);
@@ -255,22 +286,22 @@ async function calcular(empKey, ini, fim) {
         else { const rg = P.regra(canal, sku); t = { comissao: receita * (rg.rate || (canal === 'Shein' ? taxaSheinBling() : 0)), taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: rg.rate ? 'planilha Lufe' : (canal === 'Shein' ? 'média Shein (Bling)' : 'planilha Lufe') }; }
         add({ empresa: E.nome, canal, data: (p.data_pedido || '').split('/').reverse().join('-'), pedido: p.numero, pedidoCanal: p.numero_ecommerce || '', situacao: p.situacao,
           cliente: p.cliente?.nome || '', sku, descricao: it.descricao || '', qtd: q, precoUn: r2(pu), receita, custoUn: cu, origemCusto,
-          cmv: (cu || 0) * q, comissao: t.comissao, taxa: t.taxa, frete: t.frete, imposto: receita * aliq, embalagem: i === 0 ? emb : 0, origemTaxa: t.origem });
+          cmv: (cu || 0) * q, comissao: t.comissao, taxa: t.taxa, frete: t.frete, imposto: receita * aliq, embalagem: i === 0 ? emb : 0, origemTaxa: t.origem, _valPed: valPed });
       });
     }
   }
-  return { linhas, amazonFinanceiro: fin?.geradoEm || null };
+  return { linhas, fora, amazonFinanceiro: fin?.geradoEm || null };
 }
 
 function resumir(linhas) {
-  const campos = ['receita', 'cmv', 'comissao', 'taxa', 'frete', 'imposto', 'embalagem', 'lucro'];
+  const campos = ['receita', 'devolucao', 'cmv', 'comissao', 'taxa', 'frete', 'imposto', 'embalagem', 'lucro'];
   const grupo = () => ({ pedidos: new Set(), itens: 0, ...Object.fromEntries(campos.map(c => [c, 0])) });
   const por = {}, tot = grupo();
   for (const l of linhas) {
     const k = l.empresa + '|' + l.canal, g = por[k] ||= { empresa: l.empresa, canal: l.canal, ...grupo() };
     for (const o of [g, tot]) { o.pedidos.add(l.empresa + l.pedido); o.itens += l.qtd; for (const c of campos) o[c] += l[c]; }
   }
-  const fecha = o => ({ ...o, pedidos: o.pedidos.size, ...Object.fromEntries(campos.map(c => [c, r2(o[c])])), pct: o.receita ? r2(o.lucro / o.receita * 100) : 0 });
+  const fecha = o => ({ ...o, pedidos: o.pedidos.size, ...Object.fromEntries(campos.map(c => [c, r2(o[c])])), pct: (o.receita - o.devolucao) ? r2(o.lucro / (o.receita - o.devolucao) * 100) : 0 });
   return { grupos: Object.values(por).map(fecha).sort((a, b) => b.receita - a.receita), total: fecha(tot) };
 }
 
@@ -302,16 +333,16 @@ router.get('/resultado', async (req, res) => {
   try {
     const [ini, fim] = periodo(req.query);
     const emps = req.query.emp === 'todas' ? Object.keys(EMP) : [req.query.emp].filter(e => EMP[e]);
-    const linhas = [], pendentes = [], amz = {};
+    const linhas = [], pendentes = [], amz = {}, fora = [];
     for (const e of emps) {
       const r = await calcular(e, ini, fim);
-      if (r.pendente) pendentes.push(EMP[e].nome); else { linhas.push(...r.linhas); amz[EMP[e].nome] = r.amazonFinanceiro; }
+      if (r.pendente) pendentes.push(EMP[e].nome); else { linhas.push(...r.linhas); fora.push(...r.fora); amz[EMP[e].nome] = r.amazonFinanceiro; }
     }
     const canal = CANAIS.includes(req.query.canal) ? req.query.canal : null;
     const L = (canal ? linhas.filter(l => l.canal === canal) : linhas).sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : 0);
     const semCusto = {};
     for (const l of L) if (l.custoUn == null) { const s = semCusto[l.empresa + '|' + l.sku] ||= { empresa: l.empresa, canal: l.canal, sku: l.sku, descricao: l.descricao, qtd: 0, receita: 0 }; s.qtd += l.qtd; s.receita = r2(s.receita + l.receita); }
-    res.json({ ini, fim, pendentes, amazonFinanceiro: amz, ...resumir(L), semCusto: Object.values(semCusto).sort((a, b) => b.receita - a.receita), linhas: L });
+    res.json({ ini, fim, pendentes, amazonFinanceiro: amz, ...resumir(L), semCusto: Object.values(semCusto).sort((a, b) => b.receita - a.receita), foraApuracao: canal ? fora.filter(f => f.canal === canal) : fora, linhas: L });
   } catch (e) { res.status(400).json({ erro: e.message }); }
 });
 // diagnóstico (admin): um pedido do Bling por canal, para conferir as taxas que vêm
@@ -324,6 +355,7 @@ router.get('/debug-pedido', async (req, res) => {
 
 // ─── Automático: todo dia depois da meia-noite (horário de Brasília) ─────────
 // Dia 2..31 → do dia 1 do mês até ontem. Dia 1 → o mês anterior inteiro (fecha o mês).
+// Depois reapura o mês anterior inteiro (devoluções, cancelamentos e estornos que chegam depois).
 const ARQ_AUTO = path.join(DATA, 'apuracao_cache', 'apmkt_auto.json');
 const hojeSP = () => new Date(Date.now() - 3 * 3600e3);          // Brasil sem horário de verão
 const ymd = d => d.toISOString().slice(0, 10);
@@ -339,11 +371,19 @@ async function rodarAuto(motivo) {
   const st = { data: hoje, ini, fim, inicio: new Date().toISOString(), fimExec: null, motivo, erros: {} };
   try { fs.mkdirSync(path.dirname(ARQ_AUTO), { recursive: true }); fs.writeFileSync(ARQ_AUTO, JSON.stringify(st)); } catch (e) {}
   try {
-    await Promise.all(Object.keys(EMP).map(async e => {
-      const j = jobs[`${e}_${ini}_${fim}`]; if (j?.rodando) return;
-      await buscar(e, ini, fim);
-      const r = jobs[`${e}_${ini}_${fim}`]; if (r?.erro) st.erros[e] = r.erro;
-    }));
+    const d = new Date(ini + 'T12:00:00Z');
+    const antIni = ymd(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1))), antFim = ymd(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 0)));
+    st.anterior = { ini: antIni, fim: antFim };
+    for (const [a, b, rot] of [[ini, fim, ''], [antIni, antFim, ' (mês anterior)']]) {
+      st.fase = 'Apurando ' + a + ' a ' + b + rot;
+      try { fs.writeFileSync(ARQ_AUTO, JSON.stringify(st)); } catch (e) {}
+      await Promise.all(Object.keys(EMP).map(async e => {
+        const j = jobs[`${e}_${a}_${b}`]; if (j?.rodando) return;
+        await buscar(e, a, b);
+        const r = jobs[`${e}_${a}_${b}`]; if (r?.erro) st.erros[e + rot] = r.erro;
+      }));
+    }
+    delete st.fase;
   } catch (e) { st.erros.geral = e.message; }
   st.fimExec = new Date().toISOString();
   try { fs.writeFileSync(ARQ_AUTO, JSON.stringify(st)); } catch (e) {}
