@@ -109,6 +109,7 @@ function kitOuComposicao(s, get) {
   if (!m) return null;
   const n = parseInt(m[2]), base = get(m[1]);
   if (base != null && !/^0/.test(m[2]) && n >= 2 && n <= 20) return base * n;
+  if (base != null && (/^0/.test(m[2]) || n === 1)) return base;   // "-01", "-02": variação do mesmo produto
   const partes = s.split('-');
   if (partes.length >= 2 && partes.every(x => x && get(x) != null)) return partes.reduce((t, x) => t + get(x), 0);
   return null;
