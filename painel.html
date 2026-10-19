@@ -197,6 +197,7 @@ body{background:#f0f2f5;color:#111}
 <!-- Apuração Amazon / Shein / TikTok — todas as empresas (ML e Shopee: Mercado Turbo) -->
 <div id="apmkt-content" style="display:none"><div class="content">
   <div class="sec-head" style="background:none;border:none;padding:0 0 10px"><span style="font-size:16px;font-weight:700">📊 Apuração · Amazon, Shein e TikTok</span><span style="font-size:12px;color:#888">Mercado Livre e Shopee: Mercado Turbo</span></div>
+  <div id="am-auto" style="font-size:12px;color:#666;margin:-4px 0 10px"></div>
   <div id="am-alerta"></div>
   <div style="background:white;border-radius:10px;border:1px solid #eee;padding:14px 18px;margin-bottom:14px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
     <div><label class="tl-lbl">Empresa</label><select id="am-emp" class="tl-in"><option value="todas">Todas</option><option value="zagodini">Zagodini</option><option value="mae">Com Amor de Mãe</option><option value="lufe">Lufe</option></select></div>
@@ -3265,10 +3266,23 @@ function abrirApuracao(){
     const h=new Date();for(let i=0;i<12;i++){const d=new Date(h.getFullYear(),h.getMonth()-i,1);const v=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
       el('am-mes').insertAdjacentHTML('beforeend','<option value="'+v+'">'+d.toLocaleDateString('pt-BR',{month:'long',year:'numeric'})+'</option>');}
     el('am-mes').selectedIndex=1;amMes();
+    amAuto();
   }
   if(typeof alertaCustos==='function'){el('am-alerta').innerHTML='';}
 }
-function amMes(){const [a,m]=el('am-mes').value.split('-').map(Number);const fim=new Date(a,m,0);el('am-ini').value=el('am-mes').value+'-01';el('am-fim').value=el('am-mes').value+'-'+String(fim.getDate()).padStart(2,'0');}
+// apuração automática (todo dia após a meia-noite: do dia 1 até ontem; no dia 1, o mês anterior inteiro)
+async function amAuto(){
+  const a=await fetch('/apuracao-mkt/auto').then(r=>r.json()).catch(()=>null);if(!a)return;
+  const u=a.ultima,br=d=>d.split('-').reverse().join('/');
+  const p=(u&&u.fimExec)?u:null;
+  const ini=p?p.ini:a.proximo.ini,fim=p?p.fim:a.proximo.fim,mes=ini.slice(0,7);
+  if([...el('am-mes').options].some(o=>o.value===mes))el('am-mes').value=mes;
+  el('am-ini').value=ini;el('am-fim').value=fim;
+  el('am-auto').innerHTML='🕛 Automático todo dia após a meia-noite. '+(a.rodando||(u&&!u.fimExec)?'<b>Gerando agora</b> ('+br(u?u.ini:ini)+' a '+br(u?u.fim:fim)+')…':
+    p?'Última: <b>'+br(p.ini)+' a '+br(p.fim)+'</b>, gerada em '+new Date(p.fimExec).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})+(Object.keys(p.erros||{}).length?' <span style="color:#c62828">· com erro: '+shpEsc(Object.entries(p.erros).map(([k,v])=>k+': '+v).join(' | '))+'</span>':''):'Ainda não rodou.');
+  if(p)amVer();
+}
+function amMes(){const [a,m]=el('am-mes').value.split('-').map(Number);let fim=new Date(a,m,0);const ontem=new Date(Date.now()-864e5);if(fim>ontem)fim=ontem;const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');el('am-ini').value=el('am-mes').value+'-01';el('am-fim').value=iso(fim);}
 const amQ=()=>'emp='+el('am-emp').value+'&ini='+el('am-ini').value+'&fim='+el('am-fim').value;
 async function amBuscar(){
   const r=await fetch('/apuracao-mkt/iniciar?'+amQ(),{method:'POST'}).then(r=>r.json()).catch(e=>({erro:String(e)}));

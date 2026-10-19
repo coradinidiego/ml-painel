@@ -322,4 +322,46 @@ router.get('/debug-pedido', async (req, res) => {
   res.json(p ? { numeroLoja: p.numeroLoja, loja: p._loja, situacao: p.situacao, taxas: p.taxas, total: p.total, totalProdutos: p.totalProdutos, transporte: p.transporte?.frete, itens: (p.itens || []).map(i => ({ codigo: i.codigo, valor: i.valor, quantidade: i.quantidade, precoCompra: i.precoCompra })) } : { nada: true });
 });
 
+// ─── Automático: todo dia depois da meia-noite (horário de Brasília) ─────────
+// Dia 2..31 → do dia 1 do mês até ontem. Dia 1 → o mês anterior inteiro (fecha o mês).
+const ARQ_AUTO = path.join(DATA, 'apuracao_cache', 'apmkt_auto.json');
+const hojeSP = () => new Date(Date.now() - 3 * 3600e3);          // Brasil sem horário de verão
+const ymd = d => d.toISOString().slice(0, 10);
+function periodoAuto() {
+  const h = hojeSP(), ontem = new Date(h.getTime() - 864e5);
+  return [ymd(new Date(Date.UTC(ontem.getUTCFullYear(), ontem.getUTCMonth(), 1))), ymd(ontem)];
+}
+let _autoRodando = false;
+async function rodarAuto(motivo) {
+  if (_autoRodando) return;
+  _autoRodando = true;
+  const [ini, fim] = periodoAuto(), hoje = ymd(hojeSP());
+  const st = { data: hoje, ini, fim, inicio: new Date().toISOString(), fimExec: null, motivo, erros: {} };
+  try { fs.mkdirSync(path.dirname(ARQ_AUTO), { recursive: true }); fs.writeFileSync(ARQ_AUTO, JSON.stringify(st)); } catch (e) {}
+  try {
+    await Promise.all(Object.keys(EMP).map(async e => {
+      const j = jobs[`${e}_${ini}_${fim}`]; if (j?.rodando) return;
+      await buscar(e, ini, fim);
+      const r = jobs[`${e}_${ini}_${fim}`]; if (r?.erro) st.erros[e] = r.erro;
+    }));
+  } catch (e) { st.erros.geral = e.message; }
+  st.fimExec = new Date().toISOString();
+  try { fs.writeFileSync(ARQ_AUTO, JSON.stringify(st)); } catch (e) {}
+  if (Object.keys(st.erros).length) try { require('./telegram').sendTelegram('⚠️ Apuração automática (' + ini + ' a ' + fim + ') com erro: ' + Object.entries(st.erros).map(([k, v]) => k + ': ' + v).join(' | ')); } catch (e) {}
+  _autoRodando = false;
+}
+// confere a cada 10 min: entre 00:15 e 06:00, se ainda não rodou hoje (ou se o servidor reiniciou no meio)
+setInterval(() => {
+  const h = hojeSP(), min = h.getUTCHours() * 60 + h.getUTCMinutes();
+  if (min < 15 || min > 360) return;
+  const st = lerJson(ARQ_AUTO, {});
+  if (st.data === ymd(h) && st.fimExec) return;
+  rodarAuto(st.data === ymd(h) ? 'retomada' : 'agendada');
+}, 10 * 60e3).unref?.();
+router.get('/auto', (req, res) => {
+  const st = lerJson(ARQ_AUTO, null), [ini, fim] = periodoAuto();
+  res.json({ ultima: st, proximo: { ini, fim }, rodando: _autoRodando });
+});
+router.post('/auto/rodar', (req, res) => { rodarAuto('manual'); res.json({ ok: true }); });
+
 module.exports = { router };
