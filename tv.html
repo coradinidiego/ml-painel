@@ -198,18 +198,22 @@ function geral(emps){
     ${coletar(e).replace('Total a coletar','Feitos hoje')}
   </section>`;
 }
+function atrasosDe(e){
+  return (e.canais||[]).filter(c => c.atrasoTotal > 0).map(c => `${CURTO[c.canal]||c.canal} ${fmt(c.atrasoTotal)}`);
+}
 function faixa(e){
-  const t = e.total, pendente = t.emitirNF + t.aEmpacotar, al = alertasDe(e);
+  const t = e.total, pendente = t.emitirNF + t.aEmpacotar, al = alertasDe(e), at = atrasosDe(e), nAt = t.atrasoTotal || 0;
   const estado = e.carregando ? 'Carregando…'
     : e.carregandoErp ? 'Carregando outros canais…'
     : pendente === 0 && t.empacotado > 0 ? 'Tudo empacotado, aguardando coleta'
     : pendente === 0 && t.enviado > 0 ? 'Tudo enviado'
     : pendente === 0 ? 'Sem pedidos pendentes'
     : `${fmt(pendente)} para preparar`;
-  return `<section class="faixa ${e.carregando?'carregando':''} ${e.desatualizado?'velho':''} ${al.length?'alerta':''}">
+  return `<section class="faixa ${e.carregando?'carregando':''} ${e.desatualizado?'velho':''} ${(al.length||nAt)?'alerta':''}">
     <div class="marca"><img src="/logo/${esc(e.logo)}" alt=""><b>${esc(e.nome)}</b>${al.length
       ? `<span class="estado alerta">⚠ Fora do corte: ${esc(al.join(', '))}</span>`
-      : `<span class="estado ${pendente===0&&!e.carregando?'pronto':''}">${estado}</span>`}</div>
+      : `<span class="estado ${pendente===0&&!e.carregando?'pronto':''}">${estado}</span>`}${nAt
+      ? `<span class="estado alerta">⚠ ${fmt(nAt)} atrasado${nAt>1?'s':''}: ${esc(at.join(', '))}</span>` : ''}</div>
     ${estacao(e,'emitirNF','nf','Emitir NF')}
     ${estacao(e,'aEmpacotar','em','A empacotar')}
     ${coletar(e)}

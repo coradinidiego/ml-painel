@@ -399,7 +399,7 @@ function cortes(empresas) {
 }
 
 // ─── Agregação ─────────────────────────────────────────────────────────────
-const zerado = () => ({ emitirNF: 0, aEmpacotar: 0, empacotado: 0, enviado: 0, atrasados: 0, futuros: 0, corte: 0, proprio: 0 });
+const zerado = () => ({ emitirNF: 0, aEmpacotar: 0, empacotado: 0, enviado: 0, atrasados: 0, atrasoTotal: 0, futuros: 0, corte: 0, proprio: 0 });
 function agregar(emp, linhas) {
   const canais = {}, hoje = hojeIso();
   for (const c of emp.canais) canais[c] = { canal: c, ...zerado() };
@@ -408,6 +408,7 @@ function agregar(emp, linhas) {
     const c = canais[l.canal] ||= { canal: l.canal, ...zerado() };
     if (pendenteCorte(l, hoje)) c.corte++;
     if (pendenteProprio(l, hoje)) c.proprio++;
+    if (['emitirNF', 'aEmpacotar', 'empacotado'].includes(l.tipo) && l.prazo === 'atrasado') c.atrasoTotal++;   // prazo de envio vencido em qualquer etapa
     if (l.tipo === 'futuro') { c.futuros++; continue; }
     // NF/empacotar com prazo para outro dia continuam na etapa (dá para adiantar), mas não entram no corte de hoje
     if ((l.tipo === 'emitirNF' || l.tipo === 'aEmpacotar') && l.prazo === 'futuro') c.futuros++;

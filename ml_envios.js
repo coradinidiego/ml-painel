@@ -113,19 +113,24 @@ async function coletar(conta, prazoFn) {
       const ant = s;
       try { s = c[chave] = { ...resumirEnvio(await get(conta, '/shipments/' + id)), ts: Date.now() }; consultas++; }
       catch (e) { if (e.response?.status === 401) throw e; continue; }
-      if (ant?.sla) { s.sla = ant.sla; s.slaTs = ant.slaTs; }
+      if (ant?.slaTs) { s.sla = ant.sla; s.slaTs = ant.slaTs; s.slaStatus = ant.slaStatus; }
       // prazo de despacho (SLA) só para o que ainda vai ser preparado; guarda por 30 min
       if ((s.status === 'handling' || s.status === 'ready_to_ship') && (!s.slaTs || Date.now() - s.slaTs > 30 * 60e3)) {
-        try { const sla = await get(conta, '/shipments/' + id + '/sla'); s.sla = diaSP(sla?.expected_date) || null; s.slaTs = Date.now(); consultas++; }
+        try { const sla = await get(conta, '/shipments/' + id + '/sla'); s.sla = diaSP(sla?.expected_date) || null; s.slaStatus = sla?.status || null; s.slaTs = Date.now(); consultas++; }
         catch (e) { if (e.response?.status === 401) throw e; }
       }
       if (s.sla) s.limite = s.sla;
       if (consultas % 20 === 0) { salvar(); await delay(300); }
     }
     let tipo = classificar(s, hoje);
-    if (tipo === 'empacotado' && coletaPassou && s.logistica === 'cross_docking' && s.limite && s.limite <= hoje) tipo = 'enviado';
+    // só presume coletado o pacote com prazo HOJE que o ML não marcou como atrasado (prazo vencido = não foi levado)
+    if (tipo === 'empacotado' && coletaPassou && s.logistica === 'cross_docking' && s.limite === hoje && s.slaStatus !== 'delayed') tipo = 'enviado';
     const flex = s.logistica === 'self_service';   // Flex: entrega feita pela própria empresa
-    if (tipo) linhas.push({ tipo, canal: 'Mercado Livre', prazo: (tipo === 'aEmpacotar' || tipo === 'emitirNF' || (flex && tipo === 'empacotado')) ? prazoFn(s.limite, hoje) : 'hoje', flex });
+    // aguardando coleta com prazo de dia anterior: se o ML não diz que está atrasado, foi coletado e só não foi escaneado ainda
+    if (tipo === 'empacotado' && s.logistica === 'cross_docking' && s.limite && s.limite < hoje && s.slaStatus !== 'delayed') tipo = null;
+    let pz = (tipo === 'aEmpacotar' || tipo === 'emitirNF' || tipo === 'empacotado') ? prazoFn(s.limite, hoje) : 'hoje';
+    if (s.slaStatus === 'delayed' && tipo !== 'enviado') pz = 'atrasado';          // o próprio ML diz que está atrasado
+    if (tipo) linhas.push({ tipo, canal: 'Mercado Livre', prazo: pz, flex });
   }
   // limpa do cache envios com mais de 30 dias
   for (const [k, v] of Object.entries(c)) if (v.ts && Date.now() - v.ts > 30 * 864e5) delete c[k];
