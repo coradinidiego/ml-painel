@@ -815,6 +815,23 @@ async function carregarBoost(){
       el('boost-info').innerHTML+='<div style="margin-top:10px;border-top:1px solid #eee;padding-top:8px"><b style="font-size:12px;color:#555">Registro das rodadas</b>'+
         H.map(x=>'<div style="font-size:12px;color:'+(x.tipo==='erro'?'#c62828':'#555')+';padding:2px 0">✓ '+new Date(x.em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' · '+nomeT(x.tipo)+' · '+(x.tipo==='erro'?shpEsc(x.erro||''):(x.itens||[]).length+' impulsionado'+((x.itens||[]).length===1?'':'s')+((x.falhas||[]).length?' · '+x.falhas.length+' falha(s)':''))+'</div>').join('')+'</div>';
     }
+    // resultado: visualizações e vendas durante o impulsionamento x ritmo normal
+    const R=await fetch(shpU('/shopee/boost/resultados')).then(r=>r.json()).catch(()=>null);
+    if(R){
+      const L=R.resultados||[], nAt=Object.keys(R.ativos||{}).length;
+      const comBase=L.filter(x=>x.viewsNormal!=null), vB=comBase.reduce((s,x)=>s+x.views,0), vN=comBase.reduce((s,x)=>s+x.viewsNormal,0);
+      const vend=L.reduce((s,x)=>s+(x.vendas||0),0);
+      const nomeT=t=>t==='top'?'🏆':t==='novos'?'🆕':'🔁';
+      let html='<div style="margin-top:10px;border-top:1px solid #eee;padding-top:8px"><b style="font-size:12px;color:#555">📈 Resultado dos impulsionamentos</b>';
+      if(!L.length) html+='<div style="font-size:12px;color:#888;padding:3px 0">Medindo'+(nAt?' '+nAt+' produto(s) impulsionado(s) agora':'')+'. O primeiro resultado aparece quando um impulsionamento termina (4h). A comparação com o ritmo normal precisa de 2 dias de fotos diárias'+(R.dias?' (hoje: '+R.dias+')':'')+'.</div>';
+      else {
+        html+='<div style="font-size:12px;color:#333;padding:3px 0">'+L.length+' impulsionamentos medidos · <b>'+L.reduce((s,x)=>s+x.views,0)+'</b> visualizações · <b>'+vend+'</b> venda(s) durante'+
+          (comBase.length&&vN>0?' · <b style="color:'+(vB>vN?'#2e7d32':'#c62828')+'">'+(vB>=vN?'+':'')+Math.round((vB/vN-1)*100)+'%</b> visualizações vs ritmo normal':comBase.length?'':' · comparação com ritmo normal a partir do 2º dia')+'</div>';
+        html+='<table style="width:100%;font-size:11px;border-collapse:collapse;margin-top:4px"><tr style="color:#888;text-align:left"><th></th><th>Produto</th><th style="text-align:right">Visualiz.</th><th style="text-align:right">Normal</th><th style="text-align:right">Vendas</th></tr>'+
+          L.slice(0,12).map(x=>'<tr style="border-top:1px solid #f2f2f2"><td>'+nomeT(x.tipo)+'</td><td>'+shpEsc((x.nome||'').slice(0,42))+'<div style="color:#999">'+new Date(x.inicio).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' · '+x.horas+'h</div></td><td style="text-align:right"><b>'+x.views+'</b></td><td style="text-align:right;color:#888">'+(x.viewsNormal==null?'–':x.viewsNormal)+'</td><td style="text-align:right">'+(x.vendas||0)+'</td></tr>').join('')+'</table>';
+      }
+      el('boost-info').innerHTML+=html+'</div>';
+    }
   }catch(e){}
 }
 async function trocarBoost(on){

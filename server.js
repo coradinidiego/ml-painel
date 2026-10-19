@@ -1826,6 +1826,7 @@ async function cicloBoost(k) {
   if (st.ativo === false) return;
   const atuais = await sp.impulsionados();
   const ocupados = new Set(atuais.map(x => String(x.item_id)));
+  await medirBoost(k, sp, st, ocupados, C).catch(e => console.log('[boost] medição ' + k + ': ' + e.message));
   const livres = 5 - atuais.length;
   if (livres <= 0) return;
   // vendas por item (15 dias)
@@ -1837,7 +1838,7 @@ async function cicloBoost(k) {
   const top = porVenda.slice(0, 5);
   const topIds = new Set(top.map(p => String(p.item_id)));
   const fila = porVenda.filter(p => !topIds.has(String(p.item_id))).reverse();   // do menos vendido para cima
-  const limNovo = Date.now() / 1000 - 30 * 86400;
+  const limNovo = Date.now() / 1000 - 60 * 86400;   // item novo = criado nos últimos 60 dias
   const novos = elegiveis.filter(p => (p.create_time || 0) >= limNovo && !topIds.has(String(p.item_id))).sort((a, b) => (b.create_time || 0) - (a.create_time || 0));
   let escolhidos = [], tipo = st.proxima;
   if (tipo === 'top') escolhidos = top.filter(p => !ocupados.has(String(p.item_id))).slice(0, livres);
@@ -1863,6 +1864,14 @@ async function cicloBoost(k) {
   const r = await sp.impulsionar(escolhidos.map(p => p.item_id));
   const okSet = new Set(r.ok.map(String));
   const feitos = escolhidos.filter(p => okSet.has(String(p.item_id)));
+  // medição: anota visualizações e vendas no início do impulsionamento
+  if (feitos.length) {
+    try {
+      const ex = await extraShp(sp, feitos.map(p => p.item_id));
+      const M = st.medicao ||= { ativos: {}, resultados: [] };
+      for (const p of feitos) { const x = ex[p.item_id]; if (x) M.ativos[p.item_id] = { nome: p.item_name, tipo, t0: Date.now(), v0: x.views, s0: x.sale }; }
+    } catch (e) { console.log('[boost] medição início ' + k + ': ' + e.message); }
+  }
   st.proxima = tipo === 'top' ? 'novos' : tipo === 'novos' ? 'fila' : 'top';
   st.ultimo = { em: new Date().toISOString(), tipo, itens: feitos.map(p => ({ id: p.item_id, nome: p.item_name, vendas: vend[p.item_id] || 0 })), falhas: r.falhas.slice(0, 5), filaPos: st.fila, filaTotal: fila.length, novosTotal: novos.length };
   st.historico = [st.ultimo, ...(st.historico || [])].slice(0, 20);
@@ -1871,6 +1880,48 @@ async function cicloBoost(k) {
   // Telegram só em caso de erro (nenhum item impulsionado na rodada); o registro de cada rodada fica no painel
   if (!feitos.length) await avisarErroBoost(k, sp.nome, 'nenhum item impulsionado: ' + (r.falhas.map(f => f.erro || f.msg || JSON.stringify(f)).slice(0, 2).join('; ') || 'sem detalhe'));
 }
+// ─── Medição do impulsionamento: visualizações e vendas durante as 4h vs o ritmo normal do produto ───
+async function extraShp(sp, ids) {
+  const out = {};
+  for (let i = 0; i < ids.length; i += 50) {
+    const d = await sp.shopeeGet('/api/v2/product/get_item_extra_info', { item_id_list: ids.slice(i, i + 50).join(',') });
+    for (const x of d.response?.item_list || []) out[x.item_id] = { views: x.views || 0, sale: x.sale || 0 };
+  }
+  return out;
+}
+async function medirBoost(k, sp, st, ocupados, C) {
+  const M = st.medicao ||= { ativos: {}, resultados: [] };
+  const agora = Date.now(), hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  // foto diária das visualizações de todos os produtos (base para o ritmo normal)
+  if (M.fotoDia !== hoje && C.produtos?.length) {
+    const ex = await extraShp(sp, C.produtos.map(p => p.item_id));
+    M.fotos = { ...(M.fotos || {}), [hoje]: Object.fromEntries(Object.entries(ex).map(([id, x]) => [id, x.views])) };
+    const dias = Object.keys(M.fotos).sort(); while (dias.length > 15) delete M.fotos[dias.shift()];
+    M.fotoDia = hoje;
+  }
+  // impulsionamentos que terminaram: mede o ganho
+  const fim = Object.keys(M.ativos).filter(id => !ocupados.has(String(id)) || agora - M.ativos[id].t0 > 4.5 * 3600e3);
+  if (!fim.length) { salvarBoost(); return; }
+  const ex = await extraShp(sp, fim);
+  const dias = Object.keys(M.fotos || {}).sort();
+  for (const id of fim) {
+    const a = M.ativos[id], x = ex[id]; delete M.ativos[id];
+    if (!x) continue;
+    const horas = Math.max(0.5, (agora - a.t0) / 3600e3);
+    // ritmo normal: visualizações por hora entre a foto mais antiga e a mais recente (até 15 dias)
+    let base = null;
+    if (dias.length >= 2) { const d0 = dias[0], d1 = dias[dias.length - 1], v0 = M.fotos[d0][id], v1 = M.fotos[d1][id];
+      const h = (Date.parse(d1) - Date.parse(d0)) / 3600e3; if (v0 != null && v1 != null && h > 0) base = Math.max(0, (v1 - v0) / h); }
+    M.resultados.unshift({ id, nome: a.nome, tipo: a.tipo, inicio: new Date(a.t0).toISOString(), horas: Math.round(horas * 10) / 10,
+      views: Math.max(0, x.views - a.v0), vendas: Math.max(0, x.sale - a.s0), viewsNormal: base == null ? null : Math.round(base * horas * 10) / 10 });
+  }
+  M.resultados = M.resultados.slice(0, 200);
+  salvarBoost();
+}
+app.get('/shopee/boost/resultados', (req, res) => {
+  const M = boostSt[lojaDe(req)]?.medicao || {};
+  res.json({ resultados: M.resultados || [], ativos: M.ativos || {}, dias: Object.keys(M.fotos || {}).length });
+});
 const _ultErroBoost = {};
 async function avisarErroBoost(k, nome, msg) {
   const st = boostSt[k] ||= { ativo: true, proxima: 'top', fila: 0, historico: [] };
@@ -1885,7 +1936,7 @@ async function avisarErroBoost(k, nome, msg) {
 async function boostTodas() { for (const k of Object.keys(SHP)) await cicloBoost(k).catch(e => { console.log('[boost] ' + k + ' erro: ' + e.message); return avisarErroBoost(k, SHP[k]?.cache?.nome || k, e.message); }); }
 setInterval(boostTodas, 10 * 60 * 1000);
 setTimeout(boostTodas, 3 * 60 * 1000);
-app.get('/shopee/boost', (req, res) => res.json(boostSt[lojaDe(req)] || { ativo: true }));
+app.get('/shopee/boost', (req, res) => { const { medicao, ...b } = boostSt[lojaDe(req)] || { ativo: true }; res.json(b); });
 app.post('/shopee/boost/ativo', (req, res) => {
   const k = lojaDe(req); const st = boostSt[k] ||= { ativo: true, proxima: 'top', fila: 0 };
   st.ativo = !!req.body?.ativo; salvarBoost();
