@@ -299,7 +299,7 @@ module.exports = function montar(app, ctx) {
       R.etapa = e.erp === 'Tiny' ? 'saldos no Tiny' : 'saldos no Bling';
       const erp = e.erp === 'Tiny' ? await erpTiny(anuncios.map(x => x.sku).filter(Boolean), (i, n) => { R.etapa = `saldos no Tiny (${i} de ${n}, ~${Math.ceil((n - i) * 1.2 / 60)} min)`; }) : await erpBling(e.idx);
       const semSku = [], semErp = [], divs = [], comparados = { ml: 0, shopee: 0, amazon: 0 };
-      const bate = (x, r) => { const f = Math.max(0, Math.floor(r.fis)), d = Math.max(0, Math.floor(r.disp)); return x.qtd === f || x.qtd === d; };
+      const bate = (x, r) => { const f = Math.max(0, Math.floor(r.fis)), d = Math.max(0, Math.floor(r.disp)); return x.qtd >= Math.min(f, d) && x.qtd <= Math.max(f, d); };   // entre o disponível e o físico = pedidos em andamento, não é divergência
       for (const x of anuncios) {
         if (!x.sku) { semSku.push(x); continue; }
         const r = achar(erp, x.sku);
@@ -309,7 +309,7 @@ module.exports = function montar(app, ctx) {
       }
       R.etapa = 'conferindo divergências';
       await reconferir(e, divs);
-      const itens = divs.filter(x => ![x.qtd, ...(x.qtdAlt || [])].some(q => q === x.erpFis || q === x.erpDisp))
+      const itens = divs.filter(x => ![x.qtd, ...(x.qtdAlt || [])].some(q => q >= Math.min(x.erpFis, x.erpDisp) && q <= Math.max(x.erpFis, x.erpDisp)))
         .map(x => { const q = x.relampago ? x.relampago.normal : x.qtd; return { ...x, qtd: q, diff: q - x.erpDisp }; });
       itens.sort((p, q) => Math.abs(q.diff) - Math.abs(p.diff));
       const curto = x => ({ canal: x.canal, anuncio: x.anuncio, nome: x.nome, sku: x.sku, link: x.link, nomeVar: x.nomeVar });
