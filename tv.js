@@ -57,27 +57,6 @@ function getCfg() {
 }
 function salvarCfg(c) { fs.writeFileSync(ARQ_CFG, JSON.stringify({ ...c, versao: 2 }, null, 2)); }
 
-// ─── Avisos manuais (/tv/avisos) ───────────────────────────────────────────
-//  atrasados: pedidos que a TV deve mostrar como atrasados (mesmo que o sistema não perceba) — ficam até alguém tirar
-//  enviados:  pedidos que já saíram mas o marketplace ainda não atualizou — saem da TV (somem sozinhos após 15 dias)
-const ARQ_AVISOS = path.join(DATA, 'tv_avisos.json');
-function getAvisos() {
-  let a;
-  try { a = JSON.parse(fs.readFileSync(ARQ_AVISOS)); }
-  catch (e) {
-    a = { // primeiros avisos (pedidos pelo Diego em 20/10/2026)
-      atrasados: [{ num: 'GSH19608U00MJBM', canal: 'Shein', nota: 'Pedido SHEIN atrasado — avisado pelo Diego', em: '2026-10-20' }],
-      enviados: [{ num: '2000015518776219', canal: 'Mercado Livre', empresa: 'zagodini', nota: 'Já foi enviado (ML ainda não atualizou)', em: '2026-10-20' }],
-    };
-    salvarAvisos(a);
-  }
-  a.atrasados ||= []; a.enviados ||= [];
-  const limite = isoMenosDias(hojeIso(), 15);
-  a.enviados = a.enviados.filter(x => !x.em || x.em >= limite);
-  return a;
-}
-function salvarAvisos(a) { try { fs.mkdirSync(path.dirname(ARQ_AVISOS), { recursive: true }); fs.writeFileSync(ARQ_AVISOS, JSON.stringify(a, null, 2)); } catch (e) { console.warn('[tv] avisos', e.message); } }
-
 // ─── Utilidades ────────────────────────────────────────────────────────────
 function canalDe(nome) {
   const s = String(nome || '').toLowerCase();
@@ -425,10 +404,7 @@ function cortes(empresas) {
 // ─── Agregação ─────────────────────────────────────────────────────────────
 const zerado = () => ({ emitirNF: 0, aEmpacotar: 0, empacotado: 0, enviado: 0, atrasados: 0, atrasoTotal: 0, futuros: 0, corte: 0, proprio: 0 });
 function agregar(emp, linhas) {
-  const canais = {}, hoje = hojeIso(), av = getAvisos();
-  const jaEnviados = new Set(av.enviados.map(x => String(x.num)));
-  linhas = linhas.filter(l => !l.num || !jaEnviados.has(String(l.num)));   // marcado em /tv/avisos como já enviado
-  const numsEmp = new Set(linhas.map(l => String(l.num || '')).filter(Boolean));
+  const canais = {}, hoje = hojeIso();
   for (const c of emp.canais) canais[c] = { canal: c, ...zerado() };
   for (const l of linhas) {
     if (!MARKETPLACES.includes(l.canal)) continue;   // venda física / balcão / sem marketplace: fora da TV
@@ -442,13 +418,6 @@ function agregar(emp, linhas) {
     if (!ETAPAS.includes(l.tipo)) continue;
     c[l.tipo]++;
     if ((l.tipo === 'emitirNF' || l.tipo === 'aEmpacotar') && l.prazo === 'atrasado') c.atrasados++;
-  }
-  // avisos manuais de atraso desta empresa (empresa escolhida no aviso, ou o pedido apareceu nas linhas dela)
-  for (const a of av.atrasados) {
-    if (a.empresa ? a.empresa !== emp.id : !numsEmp.has(String(a.num))) continue;
-    const c = canais[a.canal || 'Outros'] ||= { canal: a.canal || 'Outros', ...zerado() };
-    if ((c.atrasoVendas || []).includes(String(a.num))) continue;
-    c.atrasoTotal++; (c.atrasoVendas ||= []).unshift(String(a.num));
   }
   const lista = Object.values(canais).filter(c => emp.canais.includes(c.canal) || ETAPAS.some(k => c[k]) || c.futuros);
   const total = lista.reduce((t, c) => { for (const k in t) t[k] += c[k]; return t; }, zerado());
@@ -481,20 +450,6 @@ async function ajustarShein(emp, linhas) {
     return true;
   });
 }
-// Aviso de atraso sem empresa: descobre de quem é o pedido (linhas da empresa ou API da SHEIN) e grava no aviso
-async function acharEmpresaAvisos(emp, linhas) {
-  const av = getAvisos(), soltos = av.atrasados.filter(a => !a.empresa);
-  if (!soltos.length) return;
-  const nums = new Set(linhas.map(l => String(l.num || '')));
-  let mudou = false;
-  for (const a of soltos) {
-    if (nums.has(String(a.num))) { a.empresa = emp.id; mudou = true; continue; }
-    if (a.canal === 'Shein' && require('./shein').autorizada(emp.id)) {
-      try { const C = await require('./shein').detalhes(emp.id, [a.num], { idadeMin: 60 }); if (C[a.num]) { a.empresa = emp.id; mudou = true; } } catch (e) {}
-    }
-  }
-  if (mudou) salvarAvisos(av);
-}
 async function coletarEmpresa(emp, cfg, hoje, erros, aoParcial) {
   const ant = ULTIMAS[emp.id] || { ml: [], erp: [], okMl: false, okErp: false };
   const coletaMl = await mlEnvios.coletaHoje(emp.ml).catch(e => { console.warn('[tv] coleta ML', emp.id, e.message); return ant.coletaMl || null; });
@@ -515,7 +470,6 @@ async function coletarEmpresa(emp, cfg, hoje, erros, aoParcial) {
     }
     // SHEIN conectada: hora do pagamento, prazo de envio e status direto da SHEIN
     try { erp = await ajustarShein(emp, erp); } catch (e) { console.warn('[tv] SHEIN', emp.id, e.message); }
-    try { await acharEmpresaAvisos(emp, [...(atual.ml || []), ...erp]); } catch (e) { console.warn('[tv] avisos', emp.id, e.message); }
     Object.assign(atual, { erp, okErp: true });
   }
   else { erros[`${emp.nome} · ${emp.erp === 'tiny' ? 'Tiny' : 'Bling'}`] = rErp.reason?.response?.status === 401 ? 'ERP não autorizado' : (rErp.reason?.message || 'erro'); console.warn('[tv] ERP', emp.id, rErp.reason?.message); }
@@ -572,9 +526,7 @@ router.get('/dados', (req, res) => {
   ultimoPedido = Date.now();
   if (!ESTADO.atualizadoEm && !rodando) atualizar().catch(e => console.warn('[tv]', e.message));
   const ct = ESTADO.empresas?.length ? cortes(ESTADO.empresas) : null;
-  const ids = new Set(EMPRESAS.map(e => e.id));
-  const avisosSoltos = getAvisos().atrasados.filter(a => !ids.has(a.empresa)).map(a => ({ canal: a.canal, num: a.num }));
-  res.json({ ...ESTADO, ...(ct ? { empresas: ct.empresas, cortes: ct.regras } : {}), avisosSoltos, carregando: !ESTADO.atualizadoEm && !ESTADO.parcial });
+  res.json({ ...ESTADO, ...(ct ? { empresas: ct.empresas, cortes: ct.regras } : {}), carregando: !ESTADO.atualizadoEm && !ESTADO.parcial });
 });
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -594,7 +546,7 @@ router.get('/config', async (req, res) => {
     <b>Em aberto</b> → Emitir NF · <b>Atendido</b> → A empacotar · <b>Verificado</b> → A coletar. O Mercado Livre vem direto da API do ML.
     A Amazon usa a lista de pedidos da própria Amazon (com o prazo de envio) e o Bling só para saber a etapa.</p></div>`;
   res.send(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Configurar TV</title><style>${CSS}</style></head><body>
-  <div class="top"><b>📺 Configurar painel da TV</b><span style="flex:1"></span><a href="/tv" target="_blank">Abrir TV</a><a href="/tv/avisos">Avisos</a><a href="/tv/diagnostico">Diagnóstico ML</a><a href="/conta">⚙️ Conta</a></div>
+  <div class="top"><b>📺 Configurar painel da TV</b><span style="flex:1"></span><a href="/tv" target="_blank">Abrir TV</a><a href="/tv/diagnostico">Diagnóstico ML</a><a href="/conta">⚙️ Conta</a></div>
   ${req.query.ok ? '<div class="box" style="background:#e8f5e9;color:#2e7d32">Configuração salva. A TV atualiza em até 2 minutos.</div>' : ''}
   <form method="post" action="/tv/config"><div class="box"><p class="s">O Mercado Livre vem direto da API do ML. Aqui você diz, para os pedidos da Lufe no Tiny, em que etapa da expedição cada situação está: <b>Emitir NF</b> → <b>A empacotar</b> → <b>A coletar</b>. <b>Enviado</b> conta só o que mudou para essa situação hoje.</p></div>
   ${blocos}<div class="box" style="text-align:right"><button>Salvar</button></div></form></body></html>`);
@@ -615,40 +567,6 @@ router.post('/config', express.urlencoded({ extended: false }), (req, res) => {
   salvarCfg(cfg);
   ESTADO = { atualizadoEm: null, empresas: [], erros: {} };
   res.redirect('/tv/config?ok=1');
-});
-
-// ─── Avisos manuais: qualquer pessoa logada no painel ──────────────────────
-const podeAvisar = req => !!req.usuario || !require('./auth').ativo();
-router.get('/avisos', (req, res) => {
-  if (!podeAvisar(req)) return res.status(403).send('Entre no painel para mexer nos avisos.');
-  const av = getAvisos(), nomeEmp = id => EMPRESAS.find(e => e.id === id)?.nome || '<i style="color:#999">descobrindo…</i>';
-  const linha = (tipo, a) => `<tr><td><b>${esc(a.num)}</b></td><td>${esc(a.canal || '')}</td><td>${a.empresa ? esc(nomeEmp(a.empresa)) : nomeEmp()}</td><td>${esc(a.nota || '')}</td><td>${esc(a.em || '')}</td>
-    <td><form method="post" action="/tv/avisos" style="margin:0"><input type="hidden" name="acao" value="remover"><input type="hidden" name="tipo" value="${tipo}"><input type="hidden" name="num" value="${esc(a.num)}"><button style="padding:6px 12px;background:#c62828">Tirar</button></form></td></tr>`;
-  const tab = (tipo, l, vazio) => `<table><tr><th>Pedido</th><th>Canal</th><th>Empresa</th><th>Nota</th><th>Desde</th><th></th></tr>${l.map(a => linha(tipo, a)).join('') || `<tr><td colspan=6 style="color:#999">${vazio}</td></tr>`}</table>`;
-  const opts = `<option value="">Descobrir sozinho</option>` + EMPRESAS.map(e => `<option value="${e.id}">${esc(e.nome)}</option>`).join('');
-  res.send(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Avisos da TV</title><style>${CSS} input,select{padding:9px;border:1px solid #ccc;border-radius:8px;font-size:14px}</style></head><body>
-  <div class="top"><b>📺 Avisos da TV</b><span style="flex:1"></span><a href="/tv" target="_blank">Abrir TV</a><a href="/conta">⚙️ Conta</a></div>
-  ${req.query.ok ? '<div class="box" style="background:#e8f5e9;color:#2e7d32">Salvo. A TV mostra na próxima atualização (até 1 minuto).</div>' : ''}
-  <div class="box"><h2>⚠ Atrasados (aparecem no alerta vermelho da empresa)</h2><p class="s">Ficam na TV até alguém clicar em <b>Tirar</b>.</p>${tab('atrasados', av.atrasados, 'Nenhum aviso de atraso.')}</div>
-  <div class="box"><h2>✓ Já enviados (saem da TV)</h2><p class="s">Para pedidos que já saíram mas o marketplace ainda mostra como pendente/atrasado. Somem desta lista sozinhos depois de 15 dias.</p>${tab('enviados', av.enviados, 'Nenhum.')}</div>
-  <form method="post" action="/tv/avisos" class="box" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><input type="hidden" name="acao" value="incluir">
-    <input name="num" placeholder="Número do pedido" required style="min-width:200px">
-    <select name="tipo"><option value="atrasados">Avisar como atrasado</option><option value="enviados">Já foi enviado (tirar da TV)</option></select>
-    <select name="empresa">${opts}</select>
-    <input name="nota" placeholder="Observação (opcional)" style="flex:1;min-width:160px"><button>Incluir</button></form></body></html>`);
-});
-router.post('/avisos', express.urlencoded({ extended: false }), (req, res) => {
-  if (!podeAvisar(req)) return res.status(403).send('Entre no painel para mexer nos avisos.');
-  const tipo = req.body.tipo === 'enviados' ? 'enviados' : 'atrasados', num = String(req.body.num || '').trim().toUpperCase().replace(/^#/, '');
-  if (!num) return res.redirect('/tv/avisos');
-  const av = getAvisos();
-  av[tipo] = av[tipo].filter(a => String(a.num).toUpperCase() !== num);
-  if (req.body.acao === 'incluir') {
-    const empresa = EMPRESAS.some(e => e.id === req.body.empresa) ? req.body.empresa : undefined;
-    av[tipo].push({ num, canal: canalPeloNumero(num) || 'Outros', ...(empresa ? { empresa } : {}), nota: String(req.body.nota || '').slice(0, 120), em: hojeIso(), por: req.usuario?.email || undefined });
-  }
-  salvarAvisos(av);
-  res.redirect('/tv/avisos?ok=1');
 });
 
 // Diagnóstico das situações do Bling (admin): /tv/bling-situacoes/0

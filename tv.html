@@ -195,7 +195,7 @@ function corte(r, carregando){
 function alertasDe(e){
   return (e.canais||[]).filter(c => c.corte > 0 && e.alertas?.[c.canal]).map(c => `${CURTO[c.canal]||c.canal} ${fmt(c.corte)}`);
 }
-function geral(emps, soltos){
+function geral(emps){
   // Total do dia: "a coletar" + o que já foi coletado/enviado hoje (não zera depois da coleta)
   const canais = {}, total = {emitirNF:0,aEmpacotar:0,empacotado:0,atrasados:0};
   for (const e of emps) for (const c of e.canais||[]) {
@@ -205,8 +205,7 @@ function geral(emps, soltos){
   }
   const e = { canais:Object.values(canais), total };
   return `<section class="faixa geral">
-    <div class="marca"><b>Todas as empresas</b>${soltos?.length
-      ? `<span class="estado alerta">⚠ ${fmt(soltos.length)} atrasado${soltos.length>1?'s':''}</span>${letreiro({canais:soltos.map(a=>({canal:a.canal,atrasoVendas:[a.num]}))})}` : ''}</div>
+    <div class="marca"><b>Todas as empresas</b></div>
     ${estacao(e,'emitirNF','nf','Emitir NF')}
     ${estacao(e,'aEmpacotar','em','A empacotar')}
     ${coletar(e).replace('Total a coletar','Feitos hoje')}
@@ -247,7 +246,7 @@ async function carregar(){
     const d = await r.json();
     if (d.carregando || !d.empresas?.length) { setTimeout(carregar, 4000); return; }
     $('aviso').style.display = 'none';
-    $('faixas').innerHTML = d.empresas.map(faixa).join('') + geral(d.empresas, d.avisosSoltos);
+    $('faixas').innerHTML = d.empresas.map(faixa).join('') + geral(d.empresas);
     $('cortes').innerHTML = (d.cortes||[]).map(r => corte(r, d.parcial)).join('');
     if (d.parcial) setTimeout(carregar, 4000);
     $('atualizado').textContent = d.atualizadoEm && !d.parcial
