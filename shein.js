@@ -195,7 +195,7 @@ async function estoques(loja, skuCodes) {
 async function atualizarEstoque(loja, skuCode, qtd, deposito) {
   const d = await api(loja, '/open-api/gsp/goods/change-inventory', { updateSkuInventoryQuantityRequests: [{ skuCode, saleInventory: Math.max(0, Math.floor(qtd)), ...(deposito ? { warehouseCode: deposito } : {}) }] });
   if (String(d.code) !== '0') throw new Error('SHEIN: ' + (d.msg || JSON.stringify(d).slice(0, 200)));
-  const falha = (d.info?.failList || d.info?.failureList || []).find?.(x => x);
+  const falha = (d.info?.failedList || d.info?.failList || []).find?.(x => x);
   if (falha) throw new Error('SHEIN: ' + JSON.stringify(falha).slice(0, 200));
   return d;
 }

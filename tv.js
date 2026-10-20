@@ -366,7 +366,10 @@ function pendenteCorte(l, hoje) {
     if (l.criado) return limiteShopee(l.criado) <= hoje;
     const d = snDia(l.num) || l.dataPedido; return !!d && d < hoje;   // sem a hora do pagamento: só os de dias anteriores
   }
-  if (l.canal === 'Shein') return !!l.dataPedido && l.dataPedido < hoje;  // Bling/Tiny só trazem a data do pedido, sem hora
+  if (l.canal === 'Shein') {
+    if (l.criado) return l.criado < Date.parse(`${hoje}T${CORTE.SheinPedido}:00-03:00`) / 1000;   // pago até 12h (API da SHEIN) sai hoje
+    return !!l.dataPedido && l.dataPedido < hoje;  // sem a API: Bling/Tiny só trazem a data do pedido, sem hora
+  }
   return false;
 }
 const hmAgora = () => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: TZ });
@@ -426,6 +429,27 @@ let ESTADO = { atualizadoEm: null, empresas: [], erros: {} };
 let ultimoPedido = 0, rodando = false;
 const ULTIMAS = {}; // último dado bom por empresa e fonte
 
+// Pedidos SHEIN do ERP conferidos na API da SHEIN (cache de 10 min):
+//  · já coletado/enviado/entregue/reembolsado na SHEIN → sai da TV (ficou esquecido no ERP)
+//  · pagamento (corte 12h) e prazo de envio da SHEIN → pendente do dia / atrasado
+const SHEIN_FORA = new Set([3, 4, 5, 6, 8, 9]);   // 3 aguardando envio SHEIN (já coletado), 4 enviado, 5 entregue, 6 reembolsado, 8 perdido, 9 recusado
+async function ajustarShein(emp, linhas) {
+  const shein = require('./shein');
+  if (!shein.autorizada(emp.id)) return linhas;
+  const nums = linhas.filter(l => l.canal === 'Shein' && /^GSH/i.test(l.num || '') && ['emitirNF', 'aEmpacotar', 'empacotado'].includes(l.tipo)).map(l => l.num);
+  if (!nums.length) return linhas;
+  const C = await shein.detalhes(emp.id, nums, { idadeMin: 10 });
+  const agora = Date.now();
+  return linhas.filter(l => {
+    if (l.canal !== 'Shein' || !C[l.num]) return true;
+    const P = C[l.num];
+    if (SHEIN_FORA.has(P.st)) return false;
+    if (P.pago) l.criado = Math.floor(Date.parse(P.pago) / 1000);
+    if (P.prazoEnvio && l.tipo !== 'empacotado') l.prazo = Date.parse(P.prazoEnvio) < agora ? 'atrasado' : 'hoje';
+    l.sheinApi = true;
+    return true;
+  });
+}
 async function coletarEmpresa(emp, cfg, hoje, erros, aoParcial) {
   const ant = ULTIMAS[emp.id] || { ml: [], erp: [], okMl: false, okErp: false };
   const coletaMl = await mlEnvios.coletaHoje(emp.ml).catch(e => { console.warn('[tv] coleta ML', emp.id, e.message); return ant.coletaMl || null; });
@@ -444,6 +468,8 @@ async function coletarEmpresa(emp, cfg, hoje, erros, aoParcial) {
         if (az) erp = [...erp.filter(l => l.canal !== 'Amazon'), ...az];
       } catch (e) { erros[`${emp.nome} · Amazon`] = e.message; console.warn('[tv] Amazon', emp.id, e.message); }
     }
+    // SHEIN conectada: hora do pagamento, prazo de envio e status direto da SHEIN
+    try { erp = await ajustarShein(emp, erp); } catch (e) { console.warn('[tv] SHEIN', emp.id, e.message); }
     Object.assign(atual, { erp, okErp: true });
   }
   else { erros[`${emp.nome} · ${emp.erp === 'tiny' ? 'Tiny' : 'Bling'}`] = rErp.reason?.response?.status === 401 ? 'ERP não autorizado' : (rErp.reason?.message || 'erro'); console.warn('[tv] ERP', emp.id, rErp.reason?.message); }
