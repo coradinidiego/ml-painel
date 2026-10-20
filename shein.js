@@ -132,8 +132,9 @@ async function detalhes(loja, nums, { idadeMin = 360, prog } = {}) {
 /** Lista de pedidos por data (de/até: Date) — queryType 1 = data do pedido, 2 = atualização; status opcional */
 async function listarPedidos(loja, de, ate, { queryType = 1, status } = {}) {
   const out = [];
-  for (let t0 = de.getTime(); t0 < ate.getTime(); t0 += 7 * 864e5) {         // janelas de 7 dias
-    const t1 = Math.min(ate.getTime(), t0 + 7 * 864e5);
+  const J = 47 * 3600e3;                                                         // a SHEIN aceita no máximo 48h por consulta
+  for (let t0 = de.getTime(); t0 < ate.getTime(); t0 += J) {
+    const t1 = Math.min(ate.getTime(), t0 + J);
     for (let page = 1; page <= 200; page++) {
       const d = await api(loja, '/open-api/order/order-list', { queryType, startTime: cn(new Date(t0)), endTime: cn(new Date(t1)), page, pageSize: 30, ...(status ? { orderStatus: status } : {}) });
       const L = d.info?.orderList || [];
