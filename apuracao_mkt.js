@@ -259,7 +259,9 @@ async function calcular(empKey, ini, fim) {
         let t;
         if (canal === 'Amazon') t = tarifasAmazon(p.numeroLoja, receita, valPed, sku, q, pu);
         else {
-          const fx = canal === 'Shein' ? procurar(fixoSh, sku) : null;
+          // custo fixo da Shein por SKU: planilha de precificação (OneDrive) → planilha antiga
+          let fx = null;
+          if (canal === 'Shein') { const mp = cm.fixosCanal(E.idx, 'Shein'), k2 = sku.toUpperCase(); fx = mp[k2] ?? mp[k2.replace(/^0+/, '')] ?? procurar(fixoSh, sku); }
           t = { comissao: com * prop, taxa: (typeof fx === 'number' ? fx : 0) * q, frete: fre * prop, origem: 'Bling' + (fx ? ' + fixo planilha' : '') };
         }
         add({ empresa: E.nome, canal, data: (p.data || '').slice(0, 10), pedido: p.numero, pedidoCanal: p.numeroLoja || '', situacao: nomeSit || (p.situacao?.valor ?? ''),

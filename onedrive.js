@@ -108,4 +108,37 @@ router.get('/publico', soAdmin, async (req, res) => {
   res.json({ ok: true, via: r.via.slice(0, 80), abas: wb.SheetNames.map(n => { const rows = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: null }); return { aba: n, linhas: rows.length, inicio: rows.slice(0, 6) }; }) });
 });
 
-module.exports = { router, lerPlanilha, idCompartilhamento, baixarPublico };
+// ─── Planilhas de precificação no OneDrive → cópia local que o painel já usa (custos_ml.PLANILHAS) ───
+// Sincroniza a cada 3h (e ao iniciar). Links em DATA/onedrive_planilhas.json: { "0": link, "1": link, ... }
+const ARQ_PL = path.join(DATA, 'onedrive_planilhas.json');
+const lerPl = () => { try { return JSON.parse(fs.readFileSync(ARQ_PL)); } catch (e) { return { links: {}, sync: {} }; } };
+async function sincronizar(soIdx) {
+  const cfg = lerPl(), nomes = require('./custos_ml').PLANILHAS;
+  cfg.sync ||= {};
+  for (const [idx, link] of Object.entries(cfg.links || {})) {
+    if (soIdx != null && String(soIdx) !== idx) continue;
+    try {
+      const r = await baixarPublico(link);
+      if (!r.ok) throw new Error('download recusado (' + r.log.map(l => l.status || l.erro).join(', ') + ') — o link precisa ser "Qualquer pessoa com o link"');
+      XLSX.read(r.buf, { type: 'buffer' });   // valida antes de trocar
+      const dest = path.join(DATA, nomes[idx]), tmp = dest + '.tmp';
+      fs.writeFileSync(tmp, r.buf); fs.renameSync(tmp, dest);
+      cfg.sync[idx] = { em: new Date().toISOString(), bytes: r.buf.length, ok: true };
+    } catch (e) { cfg.sync[idx] = { em: new Date().toISOString(), ok: false, erro: e.message }; console.warn('[onedrive] planilha', idx, e.message); }
+  }
+  try { fs.writeFileSync(ARQ_PL, JSON.stringify(cfg, null, 1)); } catch (e) {}
+  return cfg.sync;
+}
+setTimeout(() => sincronizar().catch(() => {}), 20e3);
+setInterval(() => sincronizar().catch(() => {}), 3 * 3600e3).unref?.();
+router.get('/planilhas', soAdmin, (req, res) => { const c = lerPl(); res.json({ contas: Object.keys(c.links || {}), sync: c.sync || {} }); });
+router.post('/planilhas', soAdmin, express.json(), async (req, res) => {
+  const idx = String(req.body?.idx ?? req.query.idx), link = req.body?.link || req.query.link;
+  if (!require('./custos_ml').PLANILHAS[idx]) return res.status(400).json({ erro: 'idx inválido' });
+  const c = lerPl(); c.links ||= {}; if (link) c.links[idx] = link; else delete c.links[idx];
+  fs.writeFileSync(ARQ_PL, JSON.stringify(c, null, 1));
+  res.json({ ok: true, sync: link ? await sincronizar(idx) : null });
+});
+router.post('/planilhas/sincronizar', soAdmin, async (req, res) => res.json(await sincronizar()));
+
+module.exports = { router, sincronizar, lerPlanilha, idCompartilhamento, baixarPublico };

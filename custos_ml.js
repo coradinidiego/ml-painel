@@ -61,6 +61,33 @@ function custosConta(idx) {
   _custos[idx] = { mtime, mapa };
   return mapa;
 }
+
+// ─── Custo fixo por SKU de uma aba de canal (ex.: Shein "Custo Fixo") ───────
+const _fixos = {};
+function fixosCanal(idx, canal) {
+  const arq = path.join(DATA, PLANILHAS[idx] || '');
+  let mtime; try { mtime = fs.statSync(arq).mtimeMs; } catch (e) { return {}; }
+  const ck = idx + '|' + canal;
+  if (_fixos[ck]?.mtime === mtime) return _fixos[ck].mapa;
+  const mapa = {};
+  try {
+    const wb = XLSX.readFile(arq);
+    const re = new RegExp('^\\s*' + canal.replace(/\s+/g, '\\s*') + '\\s*$', 'i');
+    const aba = wb.SheetNames.find(n => re.test(n));
+    if (aba) {
+      const linhas = XLSX.utils.sheet_to_json(wb.Sheets[aba], { header: 1, raw: true, defval: null });
+      for (let i = 0; i < Math.min(8, linhas.length); i++) {
+        const r = linhas[i] || [], cCod = r.findIndex(c => /^(c[oó]d(igo)?|sku)$/i.test(String(c || '').trim()));
+        const cFx = r.findIndex(c => /^custo\s*fixo$/i.test(String(c || '').trim()));
+        if (cCod < 0 || cFx < 0) continue;
+        for (const l of linhas.slice(i + 1)) { const sku = K(l[cCod]); const v = num(l[cFx]); if (sku && !(sku in mapa) && v != null && v >= 0 && v < 100) mapa[sku] = v; }
+        break;
+      }
+    }
+  } catch (e) { console.warn('[custos] fixos', idx, canal, e.message); }
+  _fixos[ck] = { mtime, mapa };
+  return mapa;
+}
 // ─── Custos do ERP (Bling / Tiny), cache de 6h em memória e em disco ───────
 const _erp = {};
 async function custosErp(idx) {
@@ -236,4 +263,4 @@ async function calcularMargens(ml, idx, uid, itens) {
 
 function recarregarErp(idx) { if (_erp[idx]) _erp[idx].ts = 0; }
 
-module.exports = { recarregarErp, calcularMargens, custoSku, custosConta, custosErp, custoComFonte, aliquota };
+module.exports = { PLANILHAS, fixosCanal, recarregarErp, calcularMargens, custoSku, custosConta, custosErp, custoComFonte, aliquota };
