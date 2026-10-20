@@ -31,6 +31,7 @@ app.use('/apuracao-tiny', require('./tiny_apuracao').router); // Apuração LUFE
 app.use('/apuracao-mkt', require('./apuracao_mkt').router); // Apuração Amazon / Shein / TikTok (3 empresas)
 app.use('/tv', require('./tv').router); // Painel da TV (expedição)
 app.use('/onedrive', require('./onedrive').router); // planilhas do OneDrive (Microsoft Graph)
+app.use('/shein', require('./shein').router); // SHEIN Open Platform (Autooperação)
 
 // ─── Cache Shopee ──────────────────────────────────────────────────────────
 // Um estado por loja Shopee (zagodini, mae, lufe)
