@@ -335,7 +335,7 @@ module.exports = function montar(app, ctx) {
     syncCfg.on = req.query.on === '1' || req.body?.on === true; gravar(ARQ_SYNC_CFG, syncCfg); res.json(syncCfg);
   });
   app.get('/inicio/estoque/sync', (req, res) => res.json({ auto: syncCfg.on, itens: SYNC }));         // "emp|sku" -> { em, n, status, aguardaAte, canal, erpId }
-  const OBS = 'Painel: reenviar estoque aos canais (entrada/saída técnica de 1 un.)';
+  const OBS = 'Painel: reenviar estoque aos canais (balanço com o mesmo saldo)';
   // Bling: 3 requisições/s — repete em 429 com espera crescente
   async function blingReq(c, metodo, url, arg) {
     for (let t = 0; ; t++) {
@@ -356,13 +356,10 @@ module.exports = function montar(app, ctx) {
       const D = (S?.depositos || []).filter(d => !ign.has(String(d.id))).sort((a, b) => num(b.saldoFisico) - num(a.saldoFisico));
       const dep = D[0]?.id || deps.find(d => d.padrao && !ign.has(String(d.id)))?.id || deps.find(d => !ign.has(String(d.id)))?.id;
       if (!dep) throw new Error('sem depósito');
-      await blingReq(c, 'post', '/estoques', { produto: { id }, deposito: { id: dep }, operacao: 'E', quantidade: 1, preco: 0, custo: 0, observacoes: OBS });
-      await delay(1500);
-      // a saída precisa acontecer de qualquer jeito (senão o saldo fica +1): insiste até 5 min
-      for (let t = 0; ; t++) {
-        try { await blingReq(c, 'post', '/estoques', { produto: { id }, deposito: { id: dep }, operacao: 'S', quantidade: 1, preco: 0, custo: 0, observacoes: OBS }); break; }
-        catch (er) { if (t >= 20) { console.error('[sync] ATENÇÃO: entrada sem saída', idx, id, dep, er.message); throw new Error('entrada de 1 un. feita mas a saída falhou — produto ' + id + ' ficou +1 no Bling'); } await delay(15000); }
-      }
+      // balanço com o mesmo saldo do depósito: registra o movimento (o Bling reenvia aos canais) sem mudar o número
+      // (entrada+saída fazia o Bling mandar só o valor intermediário +1 para a Shopee)
+      const saldoDep = D.find(d => String(d.id) === String(dep))?.saldoFisico ?? 0;
+      await blingReq(c, 'post', '/estoques', { produto: { id }, deposito: { id: dep }, operacao: 'B', quantidade: num(saldoDep), preco: 0, custo: 0, observacoes: OBS });
       await delay(1000);
     }
     return alvos.length;
