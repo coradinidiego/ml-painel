@@ -83,7 +83,8 @@ module.exports = function montar(app, ctx) {
   // Bling: lista de produtos + saldos por depósito (ignora depósitos Full e os que o Bling desconsidera)
   async function erpBling(idx) {
     const bling = require('./bling'), c = bling.client(idx);
-    const deps = await bling.getDepositos(idx);
+    const deps = (await blingReq(c, 'get', '/depositos')).data?.data || [];
+    if (!deps.length) throw new Error('Bling não devolveu os depósitos — conferência cancelada');
     const ignorar = new Set(deps.filter(d => /full/i.test(d.descricao || '') || d.desconsiderarSaldo === true).map(d => String(d.id)));
     const prods = [];
     for (let pagina = 1; pagina <= 200; pagina++) {
@@ -433,11 +434,11 @@ module.exports = function montar(app, ctx) {
     try { const c = require('./bling').client(e.idx); res.json((await blingReq(c, 'get', '/estoques/saldos', { params: { idsProdutos: [req.query.id] } })).data); } catch (er) { res.status(500).json({ erro: er.message }); }
   });
   // reparo (admin): refaz o saldo do Bling com cuidado e regrava no site os anúncios atualizados desde ?desde=ISO
-  app.post('/inicio/estoque/reparar', async (req, res) => {
+  app.post('/inicio/estoque/reparar', require('express').json({ limit: '1mb' }), async (req, res) => {
     if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
     const e = EMP.find(x => x.id === req.query.emp); if (!e || e.erp === 'Tiny') return res.status(400).json({ erro: 'empresa inválida' });
     const desde = Date.parse(req.query.desde || '') || 0;
-    const alvo = (EST[e.id]?.itens || []).filter(x => x.sync?.em && x.sync.em >= desde && /atualizado/.test(x.sync.status || ''));
+    const alvo = Array.isArray(req.body?.itens) ? req.body.itens.filter(x => x.canal !== 'amazon') : (EST[e.id]?.itens || []).filter(x => x.sync?.em && x.sync.em >= desde && /atualizado/.test(x.sync.status || '') && x.canal !== 'amazon');
     try {
       const erp = await erpBling(e.idx);
       const out = [];
