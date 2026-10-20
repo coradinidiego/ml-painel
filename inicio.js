@@ -101,7 +101,7 @@ module.exports = function montar(app, ctx) {
     // saldos por depósito, 50 produtos por consulta
     const porId = Object.fromEntries(Object.values(mapa).map(x => [String(x.id), x]));
     const ids = Object.keys(porId);
-    let falhou = 0;
+    let falhou = 0, semPermissao = false;
     for (let i = 0; i < ids.length; i += 50) {
       try {
         const r = await blingReq(c, 'get', '/estoques/saldos', { params: { idsProdutos: ids.slice(i, i + 50) } });
@@ -112,11 +112,13 @@ module.exports = function montar(app, ctx) {
           else { x.fis = num(s.saldoFisicoTotal); x.disp = num(s.saldoVirtualTotal); }
           x.fonteSaldo = 'depositos';
         }
-      } catch (e) { falhou++; if (falhou === 1) console.warn('[inicio] Bling saldos', idx, e.response?.status, e.message); }
+      } catch (e) { if (e.response?.status === 403) { semPermissao = true; break; } falhou++; if (falhou === 1) console.warn('[inicio] Bling saldos', idx, e.response?.status, e.message); }
       await delay(350);
     }
     // sem o saldo por depósito o total inclui o Full: não dá para confiar na comparação
     if (falhou) throw new Error('Bling não devolveu o saldo por depósito de ' + falhou + ' lote(s) — conferência cancelada');
+    // sem permissão de Estoques no app do Bling: compara pelo saldo total, mas não sincroniza sozinho (o total pode incluir o Full)
+    Object.defineProperty(mapa, '_semDeposito', { value: semPermissao || !deps.length, enumerable: false });
     return mapa;
   }
 
@@ -317,10 +319,11 @@ module.exports = function montar(app, ctx) {
       const itens = divs.filter(x => ![x.qtd, ...(x.qtdAlt || [])].some(q => q >= Math.min(x.erpFis, x.erpDisp) && q <= Math.max(x.erpFis, x.erpDisp)))
         .map(x => { const q = x.relampago ? x.relampago.normal : x.qtd; return { ...x, qtd: q, diff: q - x.erpDisp }; });
       itens.sort((p, q) => Math.abs(q.diff) - Math.abs(p.diff));
+      if (e.erp !== 'Tiny' && erp._semDeposito) R.avisoSync = 'Sincronização automática desligada nesta empresa: o app do Bling não tem permissão de Estoques/Depósitos (precisa autorizar de novo com esse escopo).'; else delete R.avisoSync;
       if (e.erp !== 'Tiny' && syncCfg.on && itens.length > 40) console.warn(`[sync] ${e.id}: ${itens.length} divergências — anormal, sincronização automática suspensa nesta rodada`);
-      if (e.erp !== 'Tiny' && syncCfg.on && itens.length <= 40) { R.etapa = 'pedindo ao Bling para sincronizar'; await sincronizarDivergencias(e, itens).catch(er => console.warn('[sync] ' + e.id, er.message)); }
+      if (e.erp !== 'Tiny' && syncCfg.on && itens.length <= 40 && !erp._semDeposito) { R.etapa = 'pedindo ao Bling para sincronizar'; await sincronizarDivergencias(e, itens).catch(er => console.warn('[sync] ' + e.id, er.message)); }
       const curto = x => ({ canal: x.canal, anuncio: x.anuncio, nome: x.nome, sku: x.sku, link: x.link, nomeVar: x.nomeVar });
-      Object.assign(R, { status: 'pronto', em: new Date().toISOString(), erp: e.erp, itens, comparados, ignorados,
+      Object.assign(R, { status: 'pronto', erro: null, em: new Date().toISOString(), erp: e.erp, itens, comparados, ignorados,
         semSku: semSku.map(curto), semErp: semErp.map(curto), erros, duracaoSeg: Math.round((Date.now() - R.inicio) / 1000), etapa: null });
       console.log(`[inicio] estoque ${e.id}: ${itens.length} divergências em ${Object.values(comparados).reduce((a, b) => a + b, 0)} anúncios comparados`);
     } catch (er) {
@@ -419,7 +422,8 @@ module.exports = function montar(app, ctx) {
         // saldo atual do Bling (pode ter vendido durante a oferta)
         const c = require('./bling').client(e.idx);
         const sd = (await blingReq(c, 'get', '/estoques/saldos', { params: { idsProdutos: [S.erpId] } })).data?.data?.[0];
-        const deps = await require('./bling').getDepositos(e.idx);
+        const deps = (await blingReq(c, 'get', '/depositos')).data?.data || [];
+        if (!deps.length) throw new Error('sem depósitos do Bling');
         const ign = new Set(deps.filter(d => /full/i.test(d.descricao || '') || d.desconsiderarSaldo === true).map(d => String(d.id)));
         const D = (sd?.depositos || []).filter(d => !ign.has(String(d.id)));
         let disp = D.length ? D.reduce((a, d) => a + num(d.saldoVirtual), 0) : num(sd?.saldoVirtualTotal);
@@ -499,7 +503,7 @@ module.exports = function montar(app, ctx) {
           amazon: { conectada: amazon.loja(e.id).configurada() },
         },
         estoque: { status: R.status || 'aguardando', etapa: R.etapa || (!R.status ? (dadosCache[e.idx]?.uid ? 'esperando a Shopee carregar' : 'esperando o Mercado Livre carregar') : null), em: R.em || null, erro: R.erro || null, erros: R.erros || {},
-          porCanal, total: (R.itens || []).length, comparados: R.comparados || null, semSku: (R.semSku || []).length, semErp: (R.semErp || []).length, ignorados: R.ignorados || {} },
+          porCanal, total: (R.itens || []).length, comparados: R.comparados || null, semSku: (R.semSku || []).length, semErp: (R.semErp || []).length, ignorados: R.ignorados || {}, avisoSync: R.avisoSync || null, syncAuto: syncCfg.on },
       };
     });
     res.json({ empresas, em: new Date().toISOString(), pendEm: PEND.zagodini?.em || null });
