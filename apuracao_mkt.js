@@ -176,6 +176,17 @@ async function buscar(empKey, ini, fim) {
       job.fase = 'Buscando pedidos no Tiny...';
       await tiny.buscarPeriodo(ini, fim, j => { job.fase = 'Tiny: ' + j.fase; job.pct = Math.min(75, Math.round(j.pct * 0.75)); if (job.cancelar) j.cancelar = true; });
     }
+    // SHEIN conectada: taxas reais por pedido (comissão + taxa de serviço) direto da API
+    try {
+      const shein = require('./shein');
+      if (shein.autorizada(empKey)) {
+        let nums = [];
+        if (E.erp === 'bling') { const per = lerJson(arqPeriodo(empKey, ini, fim), { ids: [] }), cache = pedBling(E.idx); nums = per.ids.map(id => cache[id]).filter(p => p && canalDe(p._loja, p.numeroLoja) === 'Shein').map(p => p.numeroLoja); }
+        else nums = (require('./tiny_apuracao').pedidosPeriodo(ini, fim) || []).filter(p => canalDe(p.ecommerce?.nomeEcommerce, p.numero_ecommerce) === 'Shein').map(p => p.numero_ecommerce);
+        job.fase = `SHEIN: taxas de ${nums.length} pedidos...`; job.pct = 76;
+        await shein.detalhes(empKey, nums, { prog: (i, n) => { job.fase = `SHEIN: taxas dos pedidos ${i}/${n}`; } });
+      }
+    } catch (e) { console.warn('[apuracao-mkt] SHEIN', empKey, e.message); job.avisoShein = e.message; }
     job.pct = 78; job.fase = 'Financeiro da Amazon...';
     try { const f = await financeiroAmazon(empKey, ini, fim, job); if (f) gravarJson(arqAmz(empKey, ini, fim), { geradoEm: new Date().toISOString(), pedidos: f }); }
     catch (e) { if (e.message === 'Cancelado') throw e; console.warn('[apuracao-mkt] financeiro Amazon', empKey, e.message); job.avisoAmazon = e.message; }
@@ -196,6 +207,9 @@ async function calcular(empKey, ini, fim) {
   const erp = await cm.custosErp(E.idx).catch(() => ({}));
   const fin = lerJson(arqAmz(empKey, ini, fim), null);
   const finPed = fin?.pedidos || {};
+  const SH = (() => { try { const sh = require('./shein'); return sh.autorizada(empKey) ? sh.pedidosCache(empKey) : {}; } catch (e) { return {}; } })();
+  // taxa real da SHEIN para o item (por unidade × qtd); null se o pedido não veio da API
+  const sheinReal = (num, sku, q, receita, valPed) => { const P = SH[num]; const D = P?.itens?.[String(sku).toUpperCase()]; if (!D || !D.n) return null; const u = q / D.n; return { comissao: D.com * u, taxa: (D.fixo + D.serv) * u, frete: (P.frete || 0) * (valPed > 0 ? receita / valPed : 1), origem: 'SHEIN (real)' }; };
   const hist = lerJson(path.join(DIR, `amazon_anuncios_${E.amazon}.json`), {})?.hist?.porSku || {};
   const linhas = [];
   const custoDe = (sku, canal, extra) => {
@@ -278,7 +292,8 @@ async function calcular(empKey, ini, fim) {
           let fx = null;
           if (canal === 'Shein') { const mp = cm.fixosCanal(E.idx, 'Shein'), k2 = sku.toUpperCase(); fx = mp[k2] ?? mp[k2.replace(/^0+/, '')] ?? procurar(fixoSh, sku); }
           // Shein: comissão fixa de 18% + custo fixo por SKU da planilha (regra do Diego); TikTok: taxas do Bling
-          t = canal === 'Shein'
+          t = canal === 'Shein' && sheinReal(p.numeroLoja, sku, q, receita, valPed) ? sheinReal(p.numeroLoja, sku, q, receita, valPed)
+            : canal === 'Shein'
             ? { comissao: receita * SHEIN_PCT, taxa: (typeof fx === 'number' ? fx : 0) * q, frete: fre * prop, origem: '18%' + (typeof fx === 'number' ? ' + fixo planilha' : ' (sem fixo na planilha)') }
             : { comissao: com * prop, taxa: 0, frete: fre * prop, origem: 'Bling' };
         }
@@ -303,7 +318,7 @@ async function calcular(empKey, ini, fim) {
         const [cu, origemCusto] = custoDe(sku, canal, s => P.custo(s));
         let t;
         if (canal === 'Amazon') t = tarifasAmazon(p.numero_ecommerce, receita, valPed, sku, q, pu);
-        else { const rg = P.regra(canal, sku); t = canal === 'Shein' ? { comissao: receita * SHEIN_PCT, taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: '18% + fixo planilha Lufe' } : { comissao: receita * (rg.rate || 0), taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: 'planilha Lufe' }; }
+        else { const rg = P.regra(canal, sku); t = canal === 'Shein' && sheinReal(p.numero_ecommerce, sku, q, receita, valPed) ? sheinReal(p.numero_ecommerce, sku, q, receita, valPed) : canal === 'Shein' ? { comissao: receita * SHEIN_PCT, taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: '18% + fixo planilha Lufe' } : { comissao: receita * (rg.rate || 0), taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: 'planilha Lufe' }; }
         add({ empresa: E.nome, canal, data: (p.data_pedido || '').split('/').reverse().join('-'), pedido: p.numero, pedidoCanal: p.numero_ecommerce || '', situacao: p.situacao,
           cliente: p.cliente?.nome || '', sku, descricao: it.descricao || '', qtd: q, precoUn: r2(pu), receita, custoUn: cu, origemCusto,
           cmv: (cu || 0) * q, comissao: t.comissao, taxa: t.taxa, frete: t.frete, imposto: receita * aliq, embalagem: i === 0 ? emb : 0, origemTaxa: t.origem, _valPed: valPed });

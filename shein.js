@@ -91,4 +91,58 @@ router.post('/raw', soAdmin, express.json(), async (req, res) => {
   catch (e) { res.status(500).json({ erro: e.message, resposta: e.resposta }); }
 });
 
-module.exports = { router, api, LOJAS };
+// ─── Pedidos: lista + detalhe com taxas reais (cache em disco por loja) ──────
+// Horários da SHEIN vêm em UTC+8 ("2026-10-19T22:17:20.000+0800" ou "2026-10-19 22:17:20").
+const delay = ms => new Promise(r => setTimeout(r, ms));
+const autorizada = loja => !!ler()[loja]?.openKeyId;
+const arqPed = loja => path.join(DATA, 'apuracao_cache', `shein_pedidos_${loja}.json`);
+const _ped = {};
+const pedidosCache = loja => (_ped[loja] ||= (() => { try { return JSON.parse(fs.readFileSync(arqPed(loja))); } catch (e) { return {}; } })());
+const salvarPed = loja => { try { fs.mkdirSync(path.dirname(arqPed(loja)), { recursive: true }); fs.writeFileSync(arqPed(loja), JSON.stringify(_ped[loja] || {})); } catch (e) {} };
+const cn = d => new Date(d.getTime() + 8 * 3600e3).toISOString().slice(0, 19).replace('T', ' ');   // Date → texto UTC+8
+const deCn = t => { if (!t) return null; const s = String(t); const d = /[+-]\d{4}$/.test(s) ? Date.parse(s.replace(/([+-]\d{2})(\d{2})$/, '$1:$2')) : Date.parse(s.replace(' ', 'T') + '+08:00'); return isNaN(d) ? null : new Date(d).toISOString(); };
+const FINAL = new Set([5, 6, 8, 9]);   // assinado, reembolsado, perdido, recusado
+function resumir(o) {
+  const itens = {};
+  for (const g of o.orderGoodsInfoList || []) {
+    const k = String(g.sellerSku || g.goodsSn || '').trim().toUpperCase();
+    const x = itens[k] ||= { n: 0, preco: 0, com: 0, fixo: 0, serv: 0, renda: 0, skuCode: g.skuCode, skc: g.skc, titulo: g.goodsTitle };
+    x.n++; x.preco += +g.sellerCurrencyDiscountPrice || +g.sellerCurrencyPrice || 0; x.com += +g.commission || 0;
+    x.fixo += +g.performanceServiceCharge || 0; x.serv += +g.serviceCharge || 0; x.renda += +g.estimatedIncome || 0;
+  }
+  return { st: +o.orderStatus, com: +o.totalCommission || 0, fixo: +o.totalPerformanceServiceCharge || 0, serv: +o.totalServiceCharge || 0,
+    frete: +o.sellerShippingFee || 0, renda: +o.estimatedGrossIncome || 0, desconto: (+o.storeDiscountTotalPrice || 0) + (+o.promotionDiscountTotalPrice || 0),
+    pedido: deCn(o.orderTime), pago: deCn(o.paymentTime), prazoEnvio: deCn(o.requestDeliveryTime), prazoEntrega: deCn(o.requestHandoverTime),
+    enviado: deCn(o.sellerDeliveryTime), coletado: deCn(o.pickUpTime), itens, em: Date.now() };
+}
+/** Detalhe (com taxas) dos pedidos; usa o cache e só rebusca o que não terminou (a cada `idadeMin`) */
+async function detalhes(loja, nums, { idadeMin = 360, prog } = {}) {
+  const C = pedidosCache(loja);
+  const falta = [...new Set(nums.filter(Boolean))].filter(n => !C[n] || (!FINAL.has(C[n].st) && Date.now() - (C[n].em || 0) > idadeMin * 60e3));
+  for (let i = 0; i < falta.length; i += 30) {
+    const lote = falta.slice(i, i + 30);
+    const d = await api(loja, '/open-api/order/order-detail', { orderNoList: lote });
+    for (const o of (Array.isArray(d.info) ? d.info : d.info?.orderList || [])) if (o?.orderNo) C[o.orderNo] = resumir(o);
+    prog?.(Math.min(i + 30, falta.length), falta.length);
+    await delay(400);
+  }
+  if (falta.length) salvarPed(loja);
+  return C;
+}
+/** Lista de pedidos por data (de/até: Date) — queryType 1 = data do pedido, 2 = atualização; status opcional */
+async function listarPedidos(loja, de, ate, { queryType = 1, status } = {}) {
+  const out = [];
+  for (let t0 = de.getTime(); t0 < ate.getTime(); t0 += 7 * 864e5) {         // janelas de 7 dias
+    const t1 = Math.min(ate.getTime(), t0 + 7 * 864e5);
+    for (let page = 1; page <= 200; page++) {
+      const d = await api(loja, '/open-api/order/order-list', { queryType, startTime: cn(new Date(t0)), endTime: cn(new Date(t1)), page, pageSize: 30, ...(status ? { orderStatus: status } : {}) });
+      const L = d.info?.orderList || [];
+      out.push(...L.map(x => ({ num: x.orderNo, st: +x.orderStatus, criado: deCn(x.orderCreateTime), atualizado: deCn(x.orderUpdateTime) })));
+      if (L.length < 30) break;
+      await delay(300);
+    }
+  }
+  return out;
+}
+
+module.exports = { router, api, LOJAS, autorizada, detalhes, listarPedidos, pedidosCache, deCn, cn };
