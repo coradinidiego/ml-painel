@@ -86,6 +86,7 @@ async function financeiroAmazon(empKey, ini, fim, job) {
     const fe = d.payload?.FinancialEvents || {};
     for (const s of fe.ShipmentEventList || []) {
       const P = ped[s.AmazonOrderId] ||= { com: 0, tarifas: 0, frete: 0, principal: 0, devolucao: 0, estorno: 0 };
+      P.venda = true;   // a venda (comissão) já foi lançada
       for (const it of s.ShipmentItemList || []) {
         P.principal += (it.ItemChargeList || []).filter(c => c.ChargeType === 'Principal').reduce((a, c) => a + amt(c.ChargeAmount), 0);
         for (const f of it.ItemFeeList || []) { const v = -amt(f.FeeAmount); if (f.FeeType === 'Commission') P.com += v; else P.tarifas += v; }
@@ -93,8 +94,9 @@ async function financeiroAmazon(empKey, ini, fim, job) {
     }
     for (const s of fe.ServiceFeeEventList || []) {
       if (!s.AmazonOrderId) continue;
-      const v = (s.FeeList || []).reduce((a, f) => a - amt(f.FeeAmount), 0);
-      (ped[s.AmazonOrderId] ||= { com: 0, tarifas: 0, frete: 0, principal: 0, devolucao: 0, estorno: 0 }).frete += v;
+      // MFNShippingChargeback = etiqueta do envio cobrada do vendedor (frete); MFNPostageFee e outras = tarifa fixa
+      const P = ped[s.AmazonOrderId] ||= { com: 0, tarifas: 0, frete: 0, principal: 0, devolucao: 0, estorno: 0 };
+      for (const f of s.FeeList || []) { const v = -amt(f.FeeAmount); if (/ShippingChargeback|Shipping(Label|Charge)/i.test(f.FeeType || '')) P.frete += v; else P.tarifas += v; }
     }
     for (const s of fe.RefundEventList || []) {
       const P = ped[s.AmazonOrderId] ||= { com: 0, tarifas: 0, frete: 0, principal: 0, devolucao: 0, estorno: 0 };
@@ -232,9 +234,13 @@ async function calcular(empKey, ini, fim) {
   const tarifasAmazon = (numLoja, valItem, valPed, sku, qtd, precoUn) => {
     const F = finPed[numLoja];
     const p = valPed > 0 ? valItem / valPed : 1;
-    if (F && (F.com || F.tarifas || F.frete)) return { comissao: F.com * p, taxa: F.tarifas * p, frete: F.frete * p, origem: 'Amazon (real)' };
     const h = hist[sku];
     const pct = h?.comPct ?? 0.12;
+    if (F && (F.com || F.tarifas || F.frete)) {
+      // só as taxas de serviço já lançadas (a venda/comissão a Amazon lança depois): comissão estimada
+      if (F.venda === false || (!F.com && F.venda !== true)) return { comissao: valItem * pct, taxa: F.tarifas * p, frete: F.frete * p, origem: 'Amazon (frete/taxa real, comissão estimada ' + Math.round(pct * 1000) / 10 + '%)' };
+      return { comissao: F.com * p, taxa: F.tarifas * p, frete: F.frete * p, origem: 'Amazon (real)' };
+    }
     const fixo = precoUn < 30 ? 4.5 : precoUn < 50 ? 6.5 : precoUn < 79 ? 6.75 : 0;
     return { comissao: valItem * pct, taxa: (h?.outrasUn ?? fixo) * qtd, frete: (h?.freteUn ?? 0) * qtd, origem: 'estimada (sem lançamento ainda)' };
   };
