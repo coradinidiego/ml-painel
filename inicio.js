@@ -232,6 +232,21 @@ module.exports = function montar(app, ctx) {
       link: 'https://sellercentral.amazon.com.br/myinventory/inventory?fulfilledBy=all&page=1&pageSize=25&searchField=all&searchTerm=' + encodeURIComponent(a.sku || '') }));
   }
 
+  // SHEIN (API própria): catálogo skuCode → SKU do vendedor + estoque do modo autooperação
+  async function itensShein(e, R) {
+    const shein = require('./shein');
+    if (!shein.autorizada(e.id)) return null;
+    R.etapa = 'catálogo da SHEIN';
+    const cat = await shein.catalogo(e.id, { prog: (i, n) => { R.etapa = `catálogo da SHEIN (${i} de ${n})`; } });
+    R.etapa = 'estoque da SHEIN';
+    const est = await shein.estoques(e.id, Object.keys(cat));
+    return Object.entries(cat).filter(([k]) => est[k]).map(([k, c]) => {
+      const s = est[k];
+      return { canal: 'shein', anuncio: k, nome: c.titulo, sku: c.sku || null, qtd: s.usavel, qtdAlt: [s.total, s.usavel + s.temp], deposito: s.deposito,
+        link: 'https://sellerhub.shein.com/' };
+    });
+  }
+
   // confere de novo, direto no marketplace, os anúncios que deram diferença
   async function reconferir(e, divs) {
     const P = divs.filter(x => x.canal === 'ml'), S = divs.filter(x => x.canal === 'shopee'), Z = divs.filter(x => x.canal === 'amazon');
@@ -301,11 +316,12 @@ module.exports = function montar(app, ctx) {
       try { anuncios.push(...await itensML(e.idx)); } catch (er) { erros.ml = er.response?.status === 401 ? 'token ML expirado' : er.message; }
       const s = itensShopee(e.id); if (s) anuncios.push(...s); else if (shopee.loja(e.id).getTokens().access_token) erros.shopee = 'Shopee ainda carregando';
       const a = itensAmazon(e.id); if (a) anuncios.push(...a);
+      try { const sh = await itensShein(e, R); if (sh) anuncios.push(...sh); } catch (er) { erros.shein = er.message; }
       const ignorados = { full: anuncios.filter(x => x.full).length };
       anuncios = anuncios.filter(x => !x.full);
       R.etapa = e.erp === 'Tiny' ? 'saldos no Tiny' : 'saldos no Bling';
       const erp = e.erp === 'Tiny' ? await erpTiny(anuncios.map(x => x.sku).filter(Boolean), (i, n) => { R.etapa = `saldos no Tiny (${i} de ${n}, ~${Math.ceil((n - i) * 1.2 / 60)} min)`; }) : await erpBling(e.idx);
-      const semSku = [], semErp = [], divs = [], comparados = { ml: 0, shopee: 0, amazon: 0 };
+      const semSku = [], semErp = [], divs = [], comparados = { ml: 0, shopee: 0, amazon: 0, shein: 0 };
       const bate = (x, r) => { const f = Math.max(0, Math.floor(r.fis)), d = Math.max(0, Math.floor(r.disp)); return x.qtd >= Math.min(f, d) && x.qtd <= Math.max(f, d); };   // entre o disponível e o físico = pedidos em andamento, não é divergência
       for (const x of anuncios) {
         if (!x.sku) { semSku.push(x); continue; }
@@ -377,6 +393,7 @@ module.exports = function montar(app, ctx) {
   async function atualizarCanal(e, x) {
     const q = Math.max(0, x.erpDisp);
     if (x.canal === 'shopee') { await shopee.loja(e.id).atualizarEstoque(x.anuncio, x.variacao, q); return q; }
+    if (x.canal === 'shein') { await require('./shein').atualizarEstoque(e.id, x.anuncio, q, x.deposito); return q; }
     if (x.canal === 'ml') {
       const it = await ml(e.idx, '/items/' + x.anuncio, { attributes: 'id,user_product_id,variations,tags' });
       if (x.variacao) await mlPut(e.idx, '/items/' + x.anuncio, { variations: (it.variations || []).map(v => v.id === Number(x.variacao) || String(v.id) === String(x.variacao) ? { id: v.id, available_quantity: q } : { id: v.id }) });
@@ -488,7 +505,7 @@ module.exports = function montar(app, ctx) {
   app.get('/inicio', (req, res) => {
     const empresas = EMP.map(e => {
       const d = dadosCache[e.idx], S = SHP[e.id], P = PEND[e.id] || {}, R = EST[e.id] || {};
-      const porCanal = { ml: 0, shopee: 0, amazon: 0 };
+      const porCanal = { ml: 0, shopee: 0, amazon: 0, shein: 0 };
       for (const x of R.itens || []) porCanal[x.canal]++;
       return {
         id: e.id, nome: e.nome, idx: e.idx, erp: e.erp,
@@ -503,7 +520,7 @@ module.exports = function montar(app, ctx) {
           amazon: { conectada: amazon.loja(e.id).configurada() },
         },
         estoque: { status: R.status || 'aguardando', etapa: R.etapa || (!R.status ? (dadosCache[e.idx]?.uid ? 'esperando a Shopee carregar' : 'esperando o Mercado Livre carregar') : null), em: R.em || null, erro: R.erro || null, erros: R.erros || {},
-          porCanal, total: (R.itens || []).length, comparados: R.comparados || null, semSku: (R.semSku || []).length, semErp: (R.semErp || []).length, ignorados: R.ignorados || {}, avisoSync: R.avisoSync || null, syncAuto: syncCfg.on },
+          porCanal, total: (R.itens || []).length, comparados: R.comparados || null, semSku: (R.semSku || []).length, semErp: (R.semErp || []).length, ignorados: R.ignorados || {}, avisoSync: R.avisoSync || null, syncAuto: syncCfg.on, sheinConectada: (() => { try { return require('./shein').autorizada(e.id); } catch (er) { return false; } })() },
       };
     });
     res.json({ empresas, em: new Date().toISOString(), pendEm: PEND.zagodini?.em || null });

@@ -145,4 +145,59 @@ async function listarPedidos(loja, de, ate, { queryType = 1, status } = {}) {
   return out;
 }
 
-module.exports = { router, api, LOJAS, autorizada, detalhes, listarPedidos, pedidosCache, deCn, cn };
+// ─── Catálogo (skuCode SHEIN → SKU do vendedor) e estoque ────────────────────
+const arqCat = loja => path.join(DATA, 'apuracao_cache', `shein_catalogo_${loja}.json`);
+const _cat = {};
+const catCache = loja => (_cat[loja] ||= (() => { try { return JSON.parse(fs.readFileSync(arqCat(loja))); } catch (e) { return { spus: {}, skus: {}, ts: 0 }; } })());
+/** Atualiza o catálogo: lista os SPUs publicados e busca o detalhe só dos novos (ou de todos, 1x por semana) */
+async function catalogo(loja, { prog } = {}) {
+  const C = catCache(loja), spus = new Set();
+  for (let pg = 1; pg <= 400; pg++) {
+    const d = await api(loja, '/open-api/openapi-business-backend/product/query', { pageNum: pg, pageSize: 50 });
+    const L = d.info?.data || [];
+    for (const x of L) spus.add(x.spuName);
+    if (L.length < 50) break;
+    await delay(250);
+  }
+  const semana = Date.now() - (C.ts || 0) > 7 * 864e5;
+  const falta = [...spus].filter(s => semana || !C.spus[s]);
+  let i = 0;
+  for (const spu of falta) {
+    try {
+      const d = await api(loja, '/open-api/goods/spu-info', { languageList: ['en'], spuName: spu });
+      const I = d.info || {};
+      for (const skc of I.skcInfoList || []) for (const k of skc.skuInfoList || []) {
+        const preco = (k.priceInfoList || []).find(p => /br/i.test(p.subSite || p.site || '')) || (k.priceInfoList || [])[0] || {};
+        C.skus[k.skuCode] = { sku: String(k.supplierSku || skc.supplierCode || I.supplierCode || '').trim(), skc: skc.skcName, spu, titulo: skc.productMultiNameList?.[0]?.productName || I.productMultiNameList?.[0]?.productName || '', preco: +preco.specialPrice || +preco.basePrice || null };
+      }
+      C.spus[spu] = Date.now();
+    } catch (e) { console.warn('[shein] spu', spu, e.message); }
+    prog?.(++i, falta.length);
+    await delay(250);
+  }
+  for (const s of Object.keys(C.spus)) if (!spus.has(s)) { delete C.spus[s]; for (const [k, v] of Object.entries(C.skus)) if (v.spu === s) delete C.skus[k]; }
+  if (semana) C.ts = Date.now();
+  try { fs.mkdirSync(path.dirname(arqCat(loja)), { recursive: true }); fs.writeFileSync(arqCat(loja), JSON.stringify(C)); } catch (e) {}
+  return C.skus;
+}
+/** Estoque do modo autooperação (warehouseType 2), 100 skuCodes por consulta */
+async function estoques(loja, skuCodes) {
+  const out = {};
+  for (let i = 0; i < skuCodes.length; i += 100) {
+    const d = await api(loja, '/open-api/stock/stock-query', { skuCodeList: skuCodes.slice(i, i + 100), warehouseType: '2' });
+    for (const b of d.info || []) for (const g of b.goodsInventory || []) for (const k of g.skuList || [])
+      out[k.skuCode] = { total: +k.totalInventoryQuantity || 0, usavel: +k.totalUsableInventory || 0, travado: +k.totalLockedQuantity || 0, temp: +k.totalTempLockQuantity || 0, deposito: k.warehouseInventoryList?.[0]?.warehouseCode || null };
+    await delay(250);
+  }
+  return out;
+}
+/** Grava o estoque à venda (= usável + travado temporário) de um SKU SHEIN */
+async function atualizarEstoque(loja, skuCode, qtd, deposito) {
+  const d = await api(loja, '/open-api/gsp/goods/change-inventory', { updateSkuInventoryQuantityRequests: [{ skuCode, saleInventory: Math.max(0, Math.floor(qtd)), ...(deposito ? { warehouseCode: deposito } : {}) }] });
+  if (String(d.code) !== '0') throw new Error('SHEIN: ' + (d.msg || JSON.stringify(d).slice(0, 200)));
+  const falha = (d.info?.failList || d.info?.failureList || []).find?.(x => x);
+  if (falha) throw new Error('SHEIN: ' + JSON.stringify(falha).slice(0, 200));
+  return d;
+}
+
+module.exports = { router, api, LOJAS, catalogo, catCache, estoques, atualizarEstoque, autorizada, detalhes, listarPedidos, pedidosCache, deCn, cn };

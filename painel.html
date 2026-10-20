@@ -161,7 +161,7 @@ body{background:#f0f2f5;color:#111}
 .ini-emp-h .ct-logo{width:52px;height:52px}
 .ini-grp{padding:0 14px 12px}
 .ini-grp-t{font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.04em;margin:4px 0 6px}
-.ini-sq{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ini-sq{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .ini-sq.c2{grid-template-columns:repeat(2,1fr)}.ini-sq.c4{grid-template-columns:repeat(4,1fr)}
 .sq{height:86px;border-radius:12px;background:#f6f7f9;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6px;border:1px solid transparent;transition:transform .1s}
 .sq .v{font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
@@ -223,12 +223,12 @@ body{background:#f0f2f5;color:#111}
     <div class="sec-head"><span>📦 Estoque divergente do ERP <span class="cnt" id="ini-est-c">-</span></span>
       <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <select class="sselect" id="ini-est-emp" onchange="renderIniEstoque()"><option value="">Todas as empresas</option><option value="zagodini">Comercial Zagodini</option><option value="mae">Com Amor de Mãe</option><option value="lufe">Lufe Casa &amp; Decoração</option></select>
-        <select class="sselect" id="ini-est-canal" onchange="renderIniEstoque()"><option value="">Todos os sites</option><option value="ml">Mercado Livre</option><option value="shopee">Shopee</option><option value="amazon">Amazon</option></select>
+        <select class="sselect" id="ini-est-canal" onchange="renderIniEstoque()"><option value="">Todos os sites</option><option value="ml">Mercado Livre</option><option value="shopee">Shopee</option><option value="amazon">Amazon</option><option value="shein">Shein</option></select>
         <input class="sinput" id="ini-est-q" placeholder="Buscar SKU ou nome..." oninput="renderIniEstoque()" style="min-width:180px">
         <button class="sselect" style="cursor:pointer" onclick="atualizarIniEstoque()" id="ini-est-btn">🔄 Conferir agora</button>
       </span></div>
     <div id="ini-est-b"><div class="loading">Carregando...</div></div>
-    <div style="padding:8px 16px 12px;font-size:12px;color:#888;border-top:1px solid #f2f2f2">Compara o estoque de cada anúncio com o saldo do Bling (Zagodini e Com Amor de Mãe) ou do Tiny (Lufe), pelo SKU. Só acusa diferença quando o anúncio fica fora da faixa entre o disponível (físico − reservado) e o físico. Na Shopee em oferta relâmpago, compara o estoque normal (não o da campanha). Ficam de fora o Full do Mercado Livre e o FBA da Amazon. <b>Zagodini e Com Amor de Mãe:</b> divergência na Shopee e no Mercado Livre é corrigida sozinha com o disponível do Bling (Shopee em relâmpago: logo depois que a oferta acaba). <span id="ini-est-obs"></span></div>
+    <div style="padding:8px 16px 12px;font-size:12px;color:#888;border-top:1px solid #f2f2f2">Compara o estoque de cada anúncio com o saldo do Bling (Zagodini e Com Amor de Mãe) ou do Tiny (Lufe), pelo SKU. Só acusa diferença quando o anúncio fica fora da faixa entre o disponível (físico − reservado) e o físico. Na Shopee em oferta relâmpago, compara o estoque normal (não o da campanha). Ficam de fora o Full do Mercado Livre e o FBA da Amazon. <b>Zagodini e Com Amor de Mãe:</b> divergência na Shopee, no Mercado Livre e na Shein é corrigida sozinha com o disponível do Bling (Shopee em relâmpago: logo depois que a oferta acaba). <span id="ini-est-obs"></span></div>
   </div>
 
   <div class="sec-head" style="background:none;border:none;padding:8px 0 10px"><span style="font-size:15px;font-weight:700">📊 Catálogo e Buy Box</span></div>
@@ -611,7 +611,7 @@ async function carregarGeral(){
 // ─── Início: sem promoção, pendências e estoque por empresa ───
 let _iniEst=null,_iniEmp=[];
 const IDX_EMP={zagodini:0,mae:1,lufe:2};
-const CANAL_NOME={ml:'🟡 Mercado Livre',shopee:'🟠 Shopee',amazon:'📦 Amazon'};
+const CANAL_NOME={ml:'🟡 Mercado Livre',shopee:'🟠 Shopee',amazon:'📦 Amazon',shein:'⚫ Shein'};
 async function carregarInicio(){
   try{
     const r=await fetch('/inicio').then(r=>r.json());_iniEmp=r.empresas;
@@ -630,7 +630,7 @@ async function carregarInicio(){
       const i=e.idx,sp=e.semPromo,p=e.pend,es=e.estoque,shpNC=sp.shopeeStatus==='sem_auth';
       T.sp+=(sp.ml||0)+(sp.shopee||0);T.pd+=(p.ml.perguntas||0)+(p.ml.mensagens||0)+(p.shopee.chat||0);
       const est=(c,lab)=>{
-        if(c==='shopee'&&shpNC||c==='amazon'&&!p.amazon.conectada)return Q('nc',lab);
+        if(c==='shopee'&&shpNC||c==='amazon'&&!p.amazon.conectada||c==='shein'&&!es.sheinConectada)return Q('nc',lab);
         if(!es.em)return Q(es.status==='erro'?'err':null,lab,'','',es.status==='erro'?es.erro:(es.etapa||'na fila'));
         if(es.erros&&es.erros[c]&&!es.porCanal[c])return Q('err',lab,'','',es.erros[c]);
         T.es+=es.porCanal[c];return Q(es.porCanal[c],lab,'r',"irIniEstoque('"+e.id+"','"+c+"')");
@@ -644,7 +644,7 @@ async function carregarInicio(){
           (p.ml.mensagens==null&&p.ml.erroMensagens?Q('err','ML<br>mensagens','','',p.ml.erroMensagens):Q(p.ml.mensagens,'ML<br>mensagens','r',"window.open('https://www.mercadolivre.com.br/vendas/omni/lista?filters=with_unread_messages','_blank')",'Abre as vendas no site do ML (entre com a conta desta empresa)'))+
           (p.shopee.semAuth?Q('nc','Shopee<br>chat'):Q(p.shopee.chat,'Shopee<br>chat','r',"irShp("+i+",'chat')"))+amz+'</div></div>'+
         '<div class="ini-grp"><div class="ini-grp-t">📦 Estoque diferente do '+e.erp+'</div><div class="ini-sq">'+
-          est('ml','Mercado Livre')+est('shopee','Shopee')+est('amazon','Amazon')+'</div></div></div>';
+          est('ml','Mercado Livre')+est('shopee','Shopee')+est('amazon','Amazon')+est('shein','Shein')+'</div></div></div>';
     }
     el('ini-cards').innerHTML='<div class="ini-tot"><div class="sq"><div class="v">'+T.sp+'</div><div class="l">🏷️ produtos sem promoção</div></div><div class="sq"><div class="v">'+T.pd+'</div><div class="l">💬 perguntas e mensagens pendentes</div></div><div class="sq"><div class="v">'+T.es+'</div><div class="l">📦 anúncios com estoque divergente</div></div></div><div class="ini-grid">'+cards+'</div>';
     // observações do estoque (quando foi conferido, o que ficou de fora)
