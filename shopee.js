@@ -291,6 +291,13 @@ async function impulsionar(itemIds) {
   return { ok: d.response?.success_list?.item_id_list || [], falhas: d.response?.failure_list || [] };
 }
 
+/** Estoque do vendedor de um item (modelId 0/null = item sem variação) */
+async function atualizarEstoque(itemId, modelId, qtd) {
+  const d = await shopeePost('/api/v2/product/update_stock', { item_id: Number(itemId), stock_list: [{ model_id: Number(modelId || 0), seller_stock: [{ stock: Math.max(0, Math.floor(qtd)) }] }] });
+  const f = d.response?.failure_list || [];
+  if (d.error || f.length) throw new Error(d.message || f[0]?.failed_reason || d.error || 'falhou');
+  return d.response;
+}
 async function replyRating(ratingId, comment) {
   return shopeePost('/api/v2/product/reply_comment', { comment_list: [{ comment_id: Number(ratingId), comment }] });
 }
@@ -300,7 +307,7 @@ return { CHAVE, nome: L.nome, ml: L.ml, PARTNER_ID, appProprio, REDIRECT_URL, SA
   getAuthUrl, getToken, refreshToken,
   saveTokens, getTokens,
   listarProdutos, listarPedidos, listarAvaliacoes, replyRating, shopeeGet,
-  promocoesPorItem, variacoes, responderAvaliacoesLote, impulsionados, impulsionar, listarConversas, mensagens, enviarMensagem,
+  promocoesPorItem, variacoes, responderAvaliacoesLote, impulsionados, impulsionar, atualizarEstoque, listarConversas, mensagens, enviarMensagem,
 };
 }
 

@@ -1959,7 +1959,8 @@ app.post('/shopee/reply-rating', async (req, res) => {
 });
 
 // Página Início: pendências e divergência de estoque de todas as empresas
-require('./inicio')(app, { ml, dadosCache, SHP, AZ_ANUNCIOS, extrairSKU, estoqueShp });
+async function mlPut(idx, path, body) { return (await axios.put(BASE + path, body, { headers: { Authorization: 'Bearer ' + getToken(idx) } })).data; }
+require('./inicio')(app, { ml, mlPut, dadosCache, SHP, AZ_ANUNCIOS, extrairSKU, estoqueShp });
 
 // Só as telas são públicas para quem está logado — nunca a pasta inteira (.env, tokens...)
 app.get('/', (req, res) => res.redirect('/painel.html'));

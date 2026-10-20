@@ -35,7 +35,7 @@ const lerJson = (f, d) => { try { return JSON.parse(fs.readFileSync(f)); } catch
 const gravar = (f, o) => { try { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(o)); } catch (e) {} };
 
 module.exports = function montar(app, ctx) {
-  const { ml, dadosCache, SHP, AZ_ANUNCIOS, extrairSKU, estoqueShp } = ctx;
+  const { ml, mlPut, dadosCache, SHP, AZ_ANUNCIOS, extrairSKU, estoqueShp } = ctx;
   const shopee = require('./shopee');
   const amazon = require('./amazon');
 
@@ -364,6 +364,18 @@ module.exports = function montar(app, ctx) {
     }
     return alvos.length;
   }
+  // Atualiza o estoque direto no canal com o DISPONÍVEL do Bling (o Bling só reenvia quando o saldo muda).
+  async function atualizarCanal(e, x) {
+    const q = Math.max(0, x.erpDisp);
+    if (x.canal === 'shopee') { await shopee.loja(e.id).atualizarEstoque(x.anuncio, x.variacao, q); return q; }
+    if (x.canal === 'ml') {
+      const it = await ml(e.idx, '/items/' + x.anuncio, { attributes: 'id,user_product_id,variations,tags' });
+      if (x.variacao) await mlPut(e.idx, '/items/' + x.anuncio, { variations: (it.variations || []).map(v => v.id === Number(x.variacao) || String(v.id) === String(x.variacao) ? { id: v.id, available_quantity: q } : { id: v.id }) });
+      else await mlPut(e.idx, '/items/' + x.anuncio, { available_quantity: q });
+      return q;
+    }
+    throw new Error('canal ' + x.canal + ' ainda não sincroniza automático');
+  }
   async function sincronizarDivergencias(e, itens) {
     const agora = Date.now();
     let feitos = 0;
@@ -373,12 +385,13 @@ module.exports = function montar(app, ctx) {
       const k = e.id + '|' + x.sku, S = SYNC[k] ||= { n: 0 };
       S.canal = x.canal; S.erpId = x.erpId;
       if (x.relampago) {                      // Shopee bloqueia durante a oferta: agenda para depois do fim
-        S.status = 'aguardando relâmpago'; S.aguardaAte = (x.relampago.fim || agora + 6 * 3600e3) + 10 * 60e3;
+        S.status = 'aguardando fim do relâmpago'; S.aguardaAte = (x.relampago.fim || agora + 6 * 3600e3) + 10 * 60e3; S.item = { canal: x.canal, anuncio: x.anuncio, variacao: x.variacao || null, sku: x.sku };
       } else if (S.n >= 2 && agora - (S.em || 0) < 24 * 3600e3) {
-        S.status = 'Bling não atualizou o canal (conferir vínculo/configuração da loja no Bling)';
+        S.status = 'continua diferente depois de 2 atualizações (conferir vínculo/estoque no Bling)';
       } else if (!S.em || agora - S.em > 2 * 3600e3) {
         if (feitos >= 30) continue;
-        try { await tocarBling(e.idx, x.erpId); S.em = Date.now(); S.n = (S.n || 0) + 1; S.status = 'sincronização pedida ao Bling'; S.erro = null; feitos++; }
+        if (x.canal === 'amazon') { S.status = 'Amazon: corrigir manualmente'; x.sync = { status: S.status }; continue; }
+        try { const q = await atualizarCanal(e, x); S.em = Date.now(); S.n = (S.n || 0) + 1; S.status = 'atualizado no site para ' + q + ' (disponível do Bling)'; S.erro = null; feitos++; }
         catch (er) { S.erro = er.response?.data?.error?.description || er.response?.data?.error?.message || er.message; S.status = 'erro'; }
       }
       x.sync = { status: S.status, em: S.em || null, n: S.n || 0, erro: S.erro || null, aguardaAte: S.aguardaAte || null };
@@ -395,7 +408,18 @@ module.exports = function montar(app, ctx) {
     for (const [k, S] of Object.entries(SYNC)) {
       if (!syncCfg.on || !S.aguardaAte || agora < S.aguardaAte) continue;
       const e = EMP.find(x => x.id === k.split('|')[0]); if (!e || e.erp === 'Tiny') continue;
-      try { await tocarBling(e.idx, S.erpId); S.em = Date.now(); S.n = (S.n || 0) + 1; S.status = 'sincronização pedida ao Bling (após relâmpago)'; S.erro = null; }
+      try {
+        // saldo atual do Bling (pode ter vendido durante a oferta)
+        const c = require('./bling').client(e.idx);
+        const sd = (await blingReq(c, 'get', '/estoques/saldos', { params: { idsProdutos: [S.erpId] } })).data?.data?.[0];
+        const deps = await require('./bling').getDepositos(e.idx);
+        const ign = new Set(deps.filter(d => /full/i.test(d.descricao || '') || d.desconsiderarSaldo === true).map(d => String(d.id)));
+        const D = (sd?.depositos || []).filter(d => !ign.has(String(d.id)));
+        let disp = D.length ? D.reduce((a, d) => a + num(d.saldoVirtual), 0) : num(sd?.saldoVirtualTotal);
+        const m = String(S.item?.sku || '').match(/-(\d+)$/); if (m && parseInt(m[1]) > 1 && parseInt(m[1]) <= 20 && !/^0/.test(m[1])) disp = Math.floor(disp / parseInt(m[1]));
+        const q = await atualizarCanal(e, { ...S.item, erpDisp: Math.floor(disp) });
+        S.em = Date.now(); S.n = (S.n || 0) + 1; S.status = 'atualizado no site para ' + q + ' (após relâmpago)'; S.erro = null;
+      }
       catch (er) { S.erro = er.message; S.status = 'erro'; }
       delete S.aguardaAte; gravar(ARQ_SYNC, SYNC);
     }
@@ -412,7 +436,8 @@ module.exports = function montar(app, ctx) {
     const R = EST[e.id] || {}, x = (R.itens || []).find(i => K(i.sku) === K(req.query.sku));
     let id = x?.erpId || req.query.id;
     if (!id) return res.status(404).json({ erro: 'SKU não está nas divergências; passe &id=<id do produto no Bling>' });
-    try { const n = await tocarBling(e.idx, id); const k = e.id + '|' + (x?.sku || req.query.sku); SYNC[k] = { ...(SYNC[k] || {}), em: Date.now(), n: (SYNC[k]?.n || 0) + 1, status: 'sincronização pedida ao Bling (manual)', erpId: id }; gravar(ARQ_SYNC, SYNC); res.json({ ok: true, produtos: n }); }
+    if (!x) return res.status(404).json({ erro: 'SKU não está nas divergências atuais' });
+    try { const q = await atualizarCanal(e, x); const k = e.id + '|' + x.sku; SYNC[k] = { ...(SYNC[k] || {}), em: Date.now(), n: (SYNC[k]?.n || 0) + 1, status: 'atualizado no site para ' + q + ' (manual)', erpId: id }; gravar(ARQ_SYNC, SYNC); res.json({ ok: true, qtd: q }); }
     catch (er) { res.status(500).json({ erro: er.response?.data || er.message }); }
   });
 
