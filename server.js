@@ -32,6 +32,7 @@ app.use('/apuracao-mkt', require('./apuracao_mkt').router); // Apuração Amazon
 app.use('/tv', require('./tv').router); // Painel da TV (expedição)
 app.use('/onedrive', require('./onedrive').router); // planilhas do OneDrive (Microsoft Graph)
 app.use('/shein', require('./shein').router); // SHEIN Open Platform (Autooperação)
+require('./relampago').rotas(app); // Oferta Relâmpago da Shopee automática (1 por dia, só registro)
 
 // ─── Cache Shopee ──────────────────────────────────────────────────────────
 // Um estado por loja Shopee (zagodini, mae, lufe)
