@@ -35,7 +35,7 @@ const lerJson = (f, d) => { try { return JSON.parse(fs.readFileSync(f)); } catch
 const gravar = (f, o) => { try { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(o)); } catch (e) {} };
 
 module.exports = function montar(app, ctx) {
-  const { ml, mlPut, dadosCache, SHP, AZ_ANUNCIOS, extrairSKU, estoqueShp } = ctx;
+  const { ml, mlPut, mlReq, dadosCache, SHP, AZ_ANUNCIOS, extrairSKU, estoqueShp } = ctx;
   const shopee = require('./shopee');
   const amazon = require('./amazon');
 
@@ -396,8 +396,19 @@ module.exports = function montar(app, ctx) {
     if (x.canal === 'shein') { await require('./shein').atualizarEstoque(e.id, x.anuncio, q, x.deposito); return q; }
     if (x.canal === 'ml') {
       const it = await ml(e.idx, '/items/' + x.anuncio, { attributes: 'id,user_product_id,variations,tags' });
-      if (x.variacao) await mlPut(e.idx, '/items/' + x.anuncio, { variations: (it.variations || []).map(v => v.id === Number(x.variacao) || String(v.id) === String(x.variacao) ? { id: v.id, available_quantity: q } : { id: v.id }) });
-      else await mlPut(e.idx, '/items/' + x.anuncio, { available_quantity: q });
+      try {
+        if (x.variacao) await mlPut(e.idx, '/items/' + x.anuncio, { variations: (it.variations || []).map(v => v.id === Number(x.variacao) || String(v.id) === String(x.variacao) ? { id: v.id, available_quantity: q } : { id: v.id }) });
+        else await mlPut(e.idx, '/items/' + x.anuncio, { available_quantity: q });
+      } catch (er) {
+        // vendedor com vários depósitos (multi-origem): o estoque fica no user product, por depósito
+        if (!/multi warehouse|not_updatable/i.test(JSON.stringify(er.response?.data || '')) || !it.user_product_id) throw er;
+        const st = await mlReq(e.idx, 'get', '/user-products/' + it.user_product_id + '/stock');
+        const locs = (st.data.locations || []).filter(l => l.type === 'seller_warehouse');
+        if (locs.length !== 1) throw new Error('anúncio com ' + locs.length + ' depósitos próprios no ML — corrigir manualmente');
+        const L = locs[0];
+        await mlReq(e.idx, 'put', '/user-products/' + it.user_product_id + '/stock/type/seller_warehouse',
+          { locations: [{ store_id: L.store_id, network_node_id: L.network_node_id, quantity: q }] }, { 'x-version': st.headers['x-version'] });
+      }
       return q;
     }
     throw new Error('canal ' + x.canal + ' ainda não sincroniza automático');
@@ -419,7 +430,7 @@ module.exports = function montar(app, ctx) {
         if (feitos >= 30) continue;
         if (x.canal === 'amazon') { S.status = 'Amazon: corrigir manualmente'; x.sync = { status: S.status }; continue; }
         try { const q = await atualizarCanal(e, x); S.em = Date.now(); S.n = (S.n || 0) + 1; S.status = 'atualizado no site para ' + q + ' (disponível do Bling)'; S.erro = null; feitos++; }
-        catch (er) { S.erro = er.response?.data?.error?.description || er.response?.data?.error?.message || er.message; S.status = 'erro'; }
+        catch (er) { const d = er.response?.data; S.erro = d?.cause?.[0]?.message || d?.message || d?.error?.description || d?.error?.message || er.message; S.status = 'erro'; }
       }
       x.sync = { status: S.status, em: S.em || null, n: S.n || 0, erro: S.erro || null, aguardaAte: S.aguardaAte || null };
     }
