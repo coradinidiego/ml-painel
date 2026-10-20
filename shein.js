@@ -47,8 +47,18 @@ async function chamarAssinado(openKeyId, secretKey, apiPath, body, extraHeaders 
 async function api(loja, apiPath, body, metodo = 'POST') {
   const t = ler()[loja];
   if (!t?.openKeyId) throw new Error('Loja ' + loja + ' não autorizada na SHEIN — abra /shein/conectar?loja=' + loja);
-  return chamarAssinado(t.openKeyId, t.secretKey, apiPath, body, {}, metodo);
+  try { return await chamarAssinado(t.openKeyId, t.secretKey, apiPath, body, {}, metodo); }
+  catch (e) {
+    // IP do servidor fora da lista branca (o Railway pode trocar o IP de saída): avisa uma vez por IP
+    const ip = String(e.resposta?.msg || '').match(/whitelist:\s*([\d.]+)/)?.[1];
+    if (ip && _ipAvisado !== ip) {
+      _ipAvisado = ip; ultimoIpBloqueado = { ip, em: new Date().toISOString() };
+      try { require('./telegram').sendTelegram('⚠️ <b>SHEIN bloqueou o IP do painel</b>\nAdicione <code>' + ip + '</code> na Lista branca de IP da Plataforma Aberta SHEIN (Kit de desenvolvimento → Lista branca de IP).'); } catch (er) {}
+    }
+    throw e;
+  }
 }
+let _ipAvisado = null, ultimoIpBloqueado = null;
 
 router.get('/conectar', soAdmin, (req, res) => {
   if (!configurado()) return res.status(400).send('Falta configurar SHEIN_APP_ID e SHEIN_APP_SECRET no Railway.');
@@ -72,7 +82,7 @@ router.get('/callback', soAdmin, async (req, res) => {
 });
 router.get('/status', soAdmin, (req, res) => {
   const T = ler();
-  res.json({ configurado: configurado(), callback: base(req) + '/shein/callback', lojas: Object.fromEntries(Object.keys(LOJAS).map(k => [k, T[k] ? { autorizada: true, em: T[k].em, supplierId: T[k].supplierId } : { autorizada: false }])) });
+  res.json({ configurado: configurado(), ipBloqueado: ultimoIpBloqueado, callback: base(req) + '/shein/callback', lojas: Object.fromEntries(Object.keys(LOJAS).map(k => [k, T[k] ? { autorizada: true, em: T[k].em, supplierId: T[k].supplierId } : { autorizada: false }])) });
 });
 // diagnóstico (admin): POST /shein/raw?loja=zagodini&path=/open-api/order/order-list  com body JSON
 router.post('/raw', soAdmin, express.json(), async (req, res) => {
