@@ -224,6 +224,13 @@ async function coletarFluxoBling(emp, canal, canais, hoje, janela) {
         add('enviado', verif.filter(p => { const sn = String(p.numeroLoja || ''); return ['SHIPPED', 'TO_CONFIRM_RECEIVE', 'COMPLETED'].includes(st[sn]) && diaSP(_coletadoShp[sn]) === hoje; }));
       }
     }
+    if (canal === 'Shein' && require('./shein').autorizada(emp.id)) {
+      // SHEIN conectada: todos os verificados da janela; ajustarShein() tira os que a SHEIN já coletou
+      // e marca atrasado o que passou do prazo de envio da SHEIN sem ser coletado
+      aColetar = await blingListar(emp.idx, [SIT.verificado], { ...janela, idLoja });
+      add('empacotado', aColetar); aColetar.length && linhas.slice(-aColetar.length).forEach(l => { l.sheinJanela = true; });
+      aColetar = [];
+    }
     add('empacotado', aColetar ?? await blingListar(emp.idx, [SIT.verificado], { idLoja, dataAlteracaoInicial: hoje, dataAlteracaoFinal: hoje }));
     await delay(350);
     // Amazon: a lista de pedidos vem da própria Amazon; aqui só guardamos quais já foram verificados (empacotados)
@@ -438,14 +445,22 @@ async function ajustarShein(emp, linhas) {
   if (!shein.autorizada(emp.id)) return linhas;
   const nums = linhas.filter(l => l.canal === 'Shein' && /^GSH/i.test(l.num || '') && ['emitirNF', 'aEmpacotar', 'empacotado'].includes(l.tipo)).map(l => l.num);
   if (!nums.length) return linhas;
-  const C = await shein.detalhes(emp.id, nums, { idadeMin: 10 });
+  const cache = shein.pedidosCache(emp.id);   // já coletado não muda mais: não precisa perguntar de novo
+  const C = await shein.detalhes(emp.id, nums.filter(n => !(cache[n] && SHEIN_FORA.has(cache[n].st))), { idadeMin: 10 });
   const agora = Date.now();
+  const hoje = hojeIso(), diaSP = iso => iso ? new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) : '';
   return linhas.filter(l => {
-    if (l.canal !== 'Shein' || !C[l.num]) return true;
+    if (l.canal !== 'Shein') return true;
+    if (!C[l.num]) return !l.sheinJanela;   // verificado antigo que a SHEIN não devolveu: não conta
     const P = C[l.num];
-    if (SHEIN_FORA.has(P.st)) return false;
+    if (SHEIN_FORA.has(P.st)) {
+      // coletado hoje: conta como enviado do dia (o total não zera depois da coleta)
+      if (l.tipo === 'empacotado' && diaSP(P.coletado || P.enviado) === hoje) { l.tipo = 'enviado'; l.prazo = 'hoje'; return true; }
+      return false;
+    }
     if (P.pago) l.criado = Math.floor(Date.parse(P.pago) / 1000);
-    if (P.prazoEnvio && l.tipo !== 'empacotado') l.prazo = Date.parse(P.prazoEnvio) < agora ? 'atrasado' : 'hoje';
+    // prazo de envio da SHEIN vencido sem coleta = atrasado, em qualquer etapa (inclusive já empacotado esperando a coleta)
+    if (P.prazoEnvio) l.prazo = Date.parse(P.prazoEnvio) < agora ? 'atrasado' : 'hoje';
     l.sheinApi = true;
     return true;
   });
@@ -583,6 +598,18 @@ router.get('/bling-situacoes/:idx', async (req, res) => {
     try { const l = await blingListar(idx, [id], req.query.idLoja ? { ...janela, idLoja: req.query.idLoja } : janela); const pc = {}; l.forEach(p => { const c = canalBling(canais, p) + '#loja' + (p.loja?.id || '?'); pc[c] = (pc[c] || 0) + 1; }); out.contagem[id] = { total: l.length, porCanal: pc, exNum: l.filter(p => /shopee/i.test(canalBling(canais, p))).slice(0, 3).map(p => p.numeroLoja) }; }
     catch (e) { out.contagem[id] = 'erro ' + e.message; }
     await delay(400);
+  }
+  res.json(out);
+});
+
+// Diagnóstico de um pedido na TV (admin): /tv/pedido?num=GSH... — onde está nas linhas e o que a SHEIN diz
+router.get('/pedido', async (req, res) => {
+  if (!ehAdmin(req)) return res.status(403).send('Só o administrador.');
+  const num = String(req.query.num || '').trim(), out = { num, linhas: {}, shein: {} };
+  for (const [id, u] of Object.entries(ULTIMAS)) { const l = [...(u.ml || []), ...(u.erp || [])].filter(x => String(x.num) === num); if (l.length) out.linhas[id] = l; }
+  if (/^GSH/i.test(num)) {
+    const shein = require('./shein');
+    for (const e of EMPRESAS) if (shein.autorizada(e.id)) { try { const C = await shein.detalhes(e.id, [num], { idadeMin: 0 }); if (C[num]) out.shein[e.id] = C[num]; } catch (x) { out.shein[e.id] = 'erro ' + x.message; } }
   }
   res.json(out);
 });
