@@ -56,7 +56,9 @@ function periodoFile(ini, fim) { return path.join(DIR, `tiny_ap_${ini}_${fim}.js
 // ─── Planilha de precificação ──────────────────────────────────────────────
 function lerPlanilha(cfg) {
   const wb = XLSX.readFile(PLANILHA);
-  const rows = aba => XLSX.utils.sheet_to_json(wb.Sheets[aba], { header: 1, raw: true, defval: null });
+  // nome da aba sem diferenciar maiúsculas/espaços ("SHEIN", "Shein ", "ML Clássico"...); aba que não existe = vazia
+  const acha = aba => wb.SheetNames.find(n => n === aba) || wb.SheetNames.find(n => n.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === aba.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+  const rows = aba => { const n = acha(aba); return n ? XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null }) : []; };
   const base = {}, peso = {}, kits = {}, regras = {}, padrao = {};
   for (const r of rows('Base').slice(2)) {
     const c = K(r[0]); if (!c) continue;
@@ -90,7 +92,7 @@ function lerPlanilha(cfg) {
   padrao['Mercado Livre'].rate = cfg.mlComissao;
   padrao['Outros'] = { rate: 0, fixo: 0, insumos: 0, frete: 0 };
   const fr = rows('ML_FRETE');
-  const faixas = fr[0].slice(1, 9).map(Number);
+  const faixas = (fr[0] || []).slice(1, 9).map(Number);
   const tabela = fr.slice(1).filter(r => r && r[0]).map(r => ({ max: r[9] === '>150' ? 1e9 : Number(r[9]), v: r.slice(1, 9).map(Number) }));
   return { base, peso, kits, regras, padrao, faixas, tabela };
 }
