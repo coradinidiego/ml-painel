@@ -249,6 +249,21 @@ module.exports = function montar(app, ctx) {
       for (const id of [...new Set(S.filter(x => x.variacao).map(x => x.anuncio))].slice(0, 60)) {
         try { const V = await sp.variacoes(id); for (const x of S) if (x.anuncio === id && x.variacao) { const v = V.find(v => String(v.model_id) === x.variacao); if (v) x.qtd = v.estoque ?? x.qtd; } } catch (er) {}
       }
+      // oferta relâmpago em andamento: a Shopee mostra só o estoque da campanha (ex.: 3). Usa o estoque normal do item.
+      try {
+        const fl = (await sp.shopeeGet('/api/v2/shop_flash_sale/get_shop_flash_sale_list', { type: 2, offset: 0, limit: 20 })).response?.flash_sale_list || [];
+        const fsMap = {};
+        for (const f of fl) for (let off = 0; off < 500; off += 50) {
+          const r = (await sp.shopeeGet('/api/v2/shop_flash_sale/get_shop_flash_sale_items', { flash_sale_id: f.flash_sale_id, offset: off, limit: 50 })).response || {};
+          for (const it of r.item_info || []) fsMap[it.item_id + '|'] = it;
+          for (const m of r.models || []) fsMap[m.item_id + '|' + m.model_id] = m;
+          if ((r.item_info || []).length < 50) break;
+        }
+        for (const x of S) {
+          const f = fsMap[x.anuncio + '|' + (x.variacao || '')] || (!x.variacao && fsMap[x.anuncio + '|']);
+          if (f && f.stock != null) { x.relampago = { campanha: f.campaign_stock ?? null, normal: f.stock }; x.qtdAlt = [f.stock, f.stock + (f.campaign_stock || 0)]; }
+        }
+      } catch (er) { console.log('[estoque] relâmpago ' + e.id + ': ' + er.message); }
     }
     const eu = AZ_ANUNCIOS[e.id]?.eu;
     if (Z.length && eu) {
@@ -294,7 +309,8 @@ module.exports = function montar(app, ctx) {
       }
       R.etapa = 'conferindo divergências';
       await reconferir(e, divs);
-      const itens = divs.filter(x => x.qtd !== x.erpFis && x.qtd !== x.erpDisp).map(x => ({ ...x, diff: x.qtd - x.erpDisp }));
+      const itens = divs.filter(x => ![x.qtd, ...(x.qtdAlt || [])].some(q => q === x.erpFis || q === x.erpDisp))
+        .map(x => { const q = x.relampago ? x.relampago.normal : x.qtd; return { ...x, qtd: q, diff: q - x.erpDisp }; });
       itens.sort((p, q) => Math.abs(q.diff) - Math.abs(p.diff));
       const curto = x => ({ canal: x.canal, anuncio: x.anuncio, nome: x.nome, sku: x.sku, link: x.link, nomeVar: x.nomeVar });
       Object.assign(R, { status: 'pronto', em: new Date().toISOString(), erp: e.erp, itens, comparados, ignorados,
