@@ -53,6 +53,7 @@ function salvar() { try { fs.mkdirSync(path.dirname(ARQ_CACHE), { recursive: tru
 function finalizado(s, hoje) {
   if (['delivered', 'cancelled', 'not_delivered'].includes(s.status)) return true;
   if (s.status === 'shipped' && s.enviadoEm && s.enviadoEm < hoje) return true;
+  if (s.status === 'ready_to_ship' && s.coletadoEm && s.coletadoEm < hoje) return true;   // já coletado em dia anterior
   return false;
 }
 
@@ -78,6 +79,9 @@ function resumirEnvio(s) {
     logistica: s.logistic_type || s.logistic?.type || null,
     limite: diaSP(s.shipping_option?.estimated_handling_limit?.date || s.lead_time?.estimated_handling_limit?.date),
     enviadoEm: diaSP(s.status_history?.date_shipped || s.date_shipped),
+    // 1ª vez que a transportadora pegou o pacote (picked_up/in_hub…). Depois disso o substatus pode voltar a
+    // "in_packing_list" (lista de carregamento no centro do ML) — o site do ML já mostra "A caminho".
+    coletadoEm: diaSP((s.substatus_history || []).find(h => SUB_ENVIADO.has(h.substatus))?.date) || '',
   };
 }
 
@@ -86,6 +90,7 @@ function classificar(s, hoje) {
   if (s.status === 'pending') return 'futuro';                           // ex.: buffered — etiqueta libera em outro dia
   if (s.status === 'handling') return 'emitirNF';                        // aguardando NF/etiqueta
   if (s.status === 'ready_to_ship') {
+    if (s.coletadoEm) return s.coletadoEm === hoje ? 'enviado' : null;   // já coletado (site do ML: "A caminho")
     if (s.substatus === 'invoice_pending') return 'emitirNF';
     if (SUB_ENVIADO.has(s.substatus)) return (!s.limite || s.limite >= hoje) ? 'enviado' : null;   // coletado em dia anterior não conta como hoje
     if (SUB_EMPACOTADO.has(s.substatus)) return 'empacotado';
