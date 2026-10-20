@@ -83,8 +83,10 @@ module.exports = function montar(app, ctx) {
   // Bling: lista de produtos + saldos por depósito (ignora depósitos Full e os que o Bling desconsidera)
   async function erpBling(idx) {
     const bling = require('./bling'), c = bling.client(idx);
-    const deps = (await blingReq(c, 'get', '/depositos')).data?.data || [];
-    if (!deps.length) throw new Error('Bling não devolveu os depósitos — conferência cancelada');
+    // depósitos: 403 = conta sem permissão (Mãe) → segue sem filtro, como sempre foi; outro erro cancela (senão o Full entra no saldo)
+    let deps = [];
+    try { deps = (await blingReq(c, 'get', '/depositos')).data?.data || []; }
+    catch (er) { if (er.response?.status !== 403) throw new Error('Bling não devolveu os depósitos (' + (er.response?.status || er.message) + ') — conferência cancelada'); }
     const ignorar = new Set(deps.filter(d => /full/i.test(d.descricao || '') || d.desconsiderarSaldo === true).map(d => String(d.id)));
     const prods = [];
     for (let pagina = 1; pagina <= 200; pagina++) {
