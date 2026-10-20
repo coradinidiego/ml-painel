@@ -255,13 +255,13 @@ module.exports = function montar(app, ctx) {
         const fsMap = {};
         for (const f of fl) for (let off = 0; off < 500; off += 50) {
           const r = (await sp.shopeeGet('/api/v2/shop_flash_sale/get_shop_flash_sale_items', { flash_sale_id: f.flash_sale_id, offset: off, limit: 50 })).response || {};
-          for (const it of r.item_info || []) fsMap[it.item_id + '|'] = it;
-          for (const m of r.models || []) fsMap[m.item_id + '|' + m.model_id] = m;
+          for (const it of r.item_info || []) fsMap[it.item_id + '|'] = { ...it, _fim: f.end_time };
+          for (const m of r.models || []) fsMap[m.item_id + '|' + m.model_id] = { ...m, _fim: f.end_time };
           if ((r.item_info || []).length < 50) break;
         }
         for (const x of S) {
           const f = fsMap[x.anuncio + '|' + (x.variacao || '')] || (!x.variacao && fsMap[x.anuncio + '|']);
-          if (f && f.stock != null) { x.relampago = { campanha: f.campaign_stock ?? null, normal: f.stock }; x.qtdAlt = [f.stock, f.stock + (f.campaign_stock || 0)]; }
+          if (f && f.stock != null) { x.relampago = { campanha: f.campaign_stock ?? null, normal: f.stock, fim: f._fim ? f._fim * 1000 : null }; x.qtdAlt = [f.stock, f.stock + (f.campaign_stock || 0)]; }
         }
       } catch (er) { console.log('[estoque] relâmpago ' + e.id + ': ' + er.message); }
     }
@@ -305,13 +305,14 @@ module.exports = function montar(app, ctx) {
         const r = achar(erp, x.sku);
         if (!r || r.semSaldo) { semErp.push(x); continue; }
         comparados[x.canal]++;
-        if (!bate(x, r)) divs.push({ ...x, erpFis: Math.max(0, Math.floor(r.fis)), erpDisp: Math.max(0, Math.floor(r.disp)), kit: !!(r.kit || r.kitDe) });
+        if (!bate(x, r)) divs.push({ ...x, erpId: r.id, erpFis: Math.max(0, Math.floor(r.fis)), erpDisp: Math.max(0, Math.floor(r.disp)), kit: !!(r.kit || r.kitDe) });
       }
       R.etapa = 'conferindo divergências';
       await reconferir(e, divs);
       const itens = divs.filter(x => ![x.qtd, ...(x.qtdAlt || [])].some(q => q >= Math.min(x.erpFis, x.erpDisp) && q <= Math.max(x.erpFis, x.erpDisp)))
         .map(x => { const q = x.relampago ? x.relampago.normal : x.qtd; return { ...x, qtd: q, diff: q - x.erpDisp }; });
       itens.sort((p, q) => Math.abs(q.diff) - Math.abs(p.diff));
+      if (e.erp !== 'Tiny' && syncCfg.on) { R.etapa = 'pedindo ao Bling para sincronizar'; await sincronizarDivergencias(e, itens).catch(er => console.warn('[sync] ' + e.id, er.message)); }
       const curto = x => ({ canal: x.canal, anuncio: x.anuncio, nome: x.nome, sku: x.sku, link: x.link, nomeVar: x.nomeVar });
       Object.assign(R, { status: 'pronto', em: new Date().toISOString(), erp: e.erp, itens, comparados, ignorados,
         semSku: semSku.map(curto), semErp: semErp.map(curto), erros, duracaoSeg: Math.round((Date.now() - R.inicio) / 1000), etapa: null });
@@ -321,6 +322,87 @@ module.exports = function montar(app, ctx) {
       console.warn('[inicio] estoque', e.id, er.message);
     } finally { rodando[e.id] = false; gravar(ARQ, EST); }
   }
+  // ─── Sincronização automática: pede ao Bling para reenviar o estoque ao canal ───────────────
+  // O Bling só manda o estoque para os marketplaces quando o saldo muda. Para "forçar" o reenvio,
+  // o painel faz uma entrada de 1 unidade e logo depois uma saída de 1 (saldo final igual, sem risco
+  // de sobrescrever venda). Na Shopee em oferta relâmpago o canal não aceita: espera a oferta acabar.
+  const ARQ_SYNC = path.join(DATA, 'apuracao_cache', 'inicio_sync.json');
+  const SYNC = lerJson(ARQ_SYNC, {});
+  const ARQ_SYNC_CFG = path.join(DATA, 'apuracao_cache', 'inicio_sync_cfg.json');
+  const syncCfg = lerJson(ARQ_SYNC_CFG, { on: false });
+  app.post('/inicio/estoque/sync-auto', (req, res) => {
+    if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+    syncCfg.on = req.query.on === '1' || req.body?.on === true; gravar(ARQ_SYNC_CFG, syncCfg); res.json(syncCfg);
+  });
+  app.get('/inicio/estoque/sync', (req, res) => res.json({ auto: syncCfg.on, itens: SYNC }));         // "emp|sku" -> { em, n, status, aguardaAte, canal, erpId }
+  const OBS = 'Painel: reenviar estoque aos canais (entrada/saída técnica de 1 un.)';
+  async function tocarBling(idx, produtoId) {
+    const bling = require('./bling'), c = bling.client(idx);
+    const P = (await c.get('/produtos/' + produtoId)).data?.data || {};
+    // kit/composição não tem saldo próprio: mexe nos componentes
+    const alvos = P.formato === 'E' ? (P.estrutura?.componentes || []).map(x => x.produto?.id).filter(Boolean).slice(0, 5) : [produtoId];
+    if (!alvos.length) throw new Error('kit sem componentes');
+    const deps = await bling.getDepositos(idx);
+    const ign = new Set(deps.filter(d => /full/i.test(d.descricao || '') || d.desconsiderarSaldo === true).map(d => String(d.id)));
+    for (const id of alvos) {
+      const S = (await c.get('/estoques/saldos', { params: { idsProdutos: [id] } })).data?.data?.[0];
+      const D = (S?.depositos || []).filter(d => !ign.has(String(d.id))).sort((a, b) => num(b.saldoFisico) - num(a.saldoFisico));
+      const dep = D[0]?.id || deps.find(d => d.padrao && !ign.has(String(d.id)))?.id || deps.find(d => !ign.has(String(d.id)))?.id;
+      if (!dep) throw new Error('sem depósito');
+      for (const op of ['E', 'S']) {
+        await c.post('/estoques', { produto: { id }, deposito: { id: dep }, operacao: op, quantidade: 1, preco: 0, custo: 0, observacoes: OBS });
+        await delay(1500);
+      }
+    }
+    return alvos.length;
+  }
+  async function sincronizarDivergencias(e, itens) {
+    const agora = Date.now();
+    let feitos = 0;
+    // o que já foi sincronizado e continua diferente depois de 2 tentativas: para de insistir e avisa
+    for (const x of itens) {
+      if (!x.erpId || x.full) continue;
+      const k = e.id + '|' + x.sku, S = SYNC[k] ||= { n: 0 };
+      S.canal = x.canal; S.erpId = x.erpId;
+      if (x.relampago) {                      // Shopee bloqueia durante a oferta: agenda para depois do fim
+        S.status = 'aguardando relâmpago'; S.aguardaAte = (x.relampago.fim || agora + 6 * 3600e3) + 10 * 60e3;
+      } else if (S.n >= 2 && agora - (S.em || 0) < 24 * 3600e3) {
+        S.status = 'Bling não atualizou o canal (conferir vínculo/configuração da loja no Bling)';
+      } else if (!S.em || agora - S.em > 2 * 3600e3) {
+        if (feitos >= 30) continue;
+        try { await tocarBling(e.idx, x.erpId); S.em = Date.now(); S.n = (S.n || 0) + 1; S.status = 'sincronização pedida ao Bling'; S.erro = null; feitos++; }
+        catch (er) { S.erro = er.response?.data?.error?.description || er.response?.data?.error?.message || er.message; S.status = 'erro'; }
+      }
+      x.sync = { status: S.status, em: S.em || null, n: S.n || 0, erro: S.erro || null, aguardaAte: S.aguardaAte || null };
+    }
+    // itens que deixaram de divergir: zera o contador
+    const atuais = new Set(itens.map(x => e.id + '|' + x.sku));
+    for (const k of Object.keys(SYNC)) if (k.startsWith(e.id + '|') && !atuais.has(k) && !SYNC[k].aguardaAte) delete SYNC[k];
+    gravar(ARQ_SYNC, SYNC);
+    if (feitos) console.log(`[sync] ${e.id}: ${feitos} produtos reenviados pelo Bling`);
+  }
+  // fim da oferta relâmpago: reenvia na hora certa
+  setInterval(async () => {
+    const agora = Date.now();
+    for (const [k, S] of Object.entries(SYNC)) {
+      if (!syncCfg.on || !S.aguardaAte || agora < S.aguardaAte) continue;
+      const e = EMP.find(x => x.id === k.split('|')[0]); if (!e || e.erp === 'Tiny') continue;
+      try { await tocarBling(e.idx, S.erpId); S.em = Date.now(); S.n = (S.n || 0) + 1; S.status = 'sincronização pedida ao Bling (após relâmpago)'; S.erro = null; }
+      catch (er) { S.erro = er.message; S.status = 'erro'; }
+      delete S.aguardaAte; gravar(ARQ_SYNC, SYNC);
+    }
+  }, 5 * 60e3);
+  // manual (admin): POST /inicio/estoque/sincronizar?emp=zagodini&sku=7303522-07
+  app.post('/inicio/estoque/sincronizar', async (req, res) => {
+    if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+    const e = EMP.find(x => x.id === req.query.emp); if (!e || e.erp === 'Tiny') return res.status(400).json({ erro: 'empresa inválida (só Bling)' });
+    const R = EST[e.id] || {}, x = (R.itens || []).find(i => K(i.sku) === K(req.query.sku));
+    let id = x?.erpId || req.query.id;
+    if (!id) return res.status(404).json({ erro: 'SKU não está nas divergências; passe &id=<id do produto no Bling>' });
+    try { const n = await tocarBling(e.idx, id); const k = e.id + '|' + (x?.sku || req.query.sku); SYNC[k] = { ...(SYNC[k] || {}), em: Date.now(), n: (SYNC[k]?.n || 0) + 1, status: 'sincronização pedida ao Bling (manual)', erpId: id }; gravar(ARQ_SYNC, SYNC); res.json({ ok: true, produtos: n }); }
+    catch (er) { res.status(500).json({ erro: er.response?.data || er.message }); }
+  });
+
   // Cada empresa roda sozinha (em paralelo): começa assim que o ML dela carregou (e a Shopee, se conectada)
   // e depois repete a cada 30 min.
   const ultimaEst = {};
