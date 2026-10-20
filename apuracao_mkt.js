@@ -121,6 +121,7 @@ async function situacoesBling(idx) {
   return out;
 }
 // pedido que não entra na apuração: cancelado / devolvido / estornado (Bling: nome da situação; Tiny: texto)
+const SHEIN_PCT = 0.18;   // comissão da Shein: fixa em 18%
 const FORA = /cancel|devolv|estorn|reembols|desfeit/i;
 
 async function buscar(empKey, ini, fim) {
@@ -262,7 +263,10 @@ async function calcular(empKey, ini, fim) {
           // custo fixo da Shein por SKU: planilha de precificação (OneDrive) → planilha antiga
           let fx = null;
           if (canal === 'Shein') { const mp = cm.fixosCanal(E.idx, 'Shein'), k2 = sku.toUpperCase(); fx = mp[k2] ?? mp[k2.replace(/^0+/, '')] ?? procurar(fixoSh, sku); }
-          t = { comissao: com * prop, taxa: (typeof fx === 'number' ? fx : 0) * q, frete: fre * prop, origem: 'Bling' + (fx ? ' + fixo planilha' : '') };
+          // Shein: comissão fixa de 18% + custo fixo por SKU da planilha (regra do Diego); TikTok: taxas do Bling
+          t = canal === 'Shein'
+            ? { comissao: receita * SHEIN_PCT, taxa: (typeof fx === 'number' ? fx : 0) * q, frete: fre * prop, origem: '18%' + (typeof fx === 'number' ? ' + fixo planilha' : ' (sem fixo na planilha)') }
+            : { comissao: com * prop, taxa: 0, frete: fre * prop, origem: 'Bling' };
         }
         add({ empresa: E.nome, canal, data: (p.data || '').slice(0, 10), pedido: p.numero, pedidoCanal: p.numeroLoja || '', situacao: nomeSit || (p.situacao?.valor ?? ''),
           cliente: p.contato?.nome || '', sku, descricao: it.descricao || '', qtd: q, precoUn: r2(pu), receita, custoUn: cu, origemCusto,
@@ -285,7 +289,7 @@ async function calcular(empKey, ini, fim) {
         const [cu, origemCusto] = custoDe(sku, canal, s => P.custo(s));
         let t;
         if (canal === 'Amazon') t = tarifasAmazon(p.numero_ecommerce, receita, valPed, sku, q, pu);
-        else { const rg = P.regra(canal, sku); t = { comissao: receita * (rg.rate || (canal === 'Shein' ? taxaSheinBling() : 0)), taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: rg.rate ? 'planilha Lufe' : (canal === 'Shein' ? 'média Shein (Bling)' : 'planilha Lufe') }; }
+        else { const rg = P.regra(canal, sku); t = canal === 'Shein' ? { comissao: receita * SHEIN_PCT, taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: '18% + fixo planilha Lufe' } : { comissao: receita * (rg.rate || 0), taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: 'planilha Lufe' }; }
         add({ empresa: E.nome, canal, data: (p.data_pedido || '').split('/').reverse().join('-'), pedido: p.numero, pedidoCanal: p.numero_ecommerce || '', situacao: p.situacao,
           cliente: p.cliente?.nome || '', sku, descricao: it.descricao || '', qtd: q, precoUn: r2(pu), receita, custoUn: cu, origemCusto,
           cmv: (cu || 0) * q, comissao: t.comissao, taxa: t.taxa, frete: t.frete, imposto: receita * aliq, embalagem: i === 0 ? emb : 0, origemTaxa: t.origem, _valPed: valPed });
