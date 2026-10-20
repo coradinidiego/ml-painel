@@ -87,7 +87,7 @@ module.exports = function montar(app, ctx) {
     const ignorar = new Set(deps.filter(d => /full/i.test(d.descricao || '') || d.desconsiderarSaldo === true).map(d => String(d.id)));
     const prods = [];
     for (let pagina = 1; pagina <= 200; pagina++) {
-      const r = await c.get('/produtos', { params: { limite: 100, pagina } });
+      const r = await blingReq(c, 'get', '/produtos', { params: { limite: 100, pagina } });
       const L = r.data?.data || [];
       prods.push(...L);
       if (L.length < 100) break;
@@ -101,7 +101,7 @@ module.exports = function montar(app, ctx) {
     let falhou = 0;
     for (let i = 0; i < ids.length; i += 50) {
       try {
-        const r = await c.get('/estoques/saldos', { params: { idsProdutos: ids.slice(i, i + 50) } });
+        const r = await blingReq(c, 'get', '/estoques/saldos', { params: { idsProdutos: ids.slice(i, i + 50) } });
         for (const s of r.data?.data || []) {
           const x = porId[String(s.produto?.id)]; if (!x) continue;
           const D = (s.depositos || []).filter(d => !ignorar.has(String(d.id)));
