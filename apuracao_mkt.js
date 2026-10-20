@@ -89,6 +89,9 @@ async function financeiroAmazon(empKey, ini, fim, job) {
       P.venda = true;   // a venda (comissão) já foi lançada
       for (const it of s.ShipmentItemList || []) {
         P.principal += (it.ItemChargeList || []).filter(c => c.ChargeType === 'Principal').reduce((a, c) => a + amt(c.ChargeAmount), 0);
+        // frete pago pelo cliente (abaixo de R$ 79): a Amazon repassa e depois cobra a etiqueta (MFNShippingChargeback) — se anulam
+        P.freteCliente = (P.freteCliente || 0) + (it.ItemChargeList || []).filter(c => /^Shipping(Charge|Tax)$/.test(c.ChargeType)).reduce((a, c) => a + amt(c.ChargeAmount), 0)
+          + (it.PromotionList || []).filter(x => /ship/i.test(x.PromotionType || x.PromotionId || '')).reduce((a, x) => a + amt(x.PromotionAmount), 0);   // desconto de frete (negativo)
         for (const f of it.ItemFeeList || []) { const v = -amt(f.FeeAmount); if (f.FeeType === 'Commission') P.com += v; else P.tarifas += v; }
       }
     }
@@ -238,8 +241,13 @@ async function calcular(empKey, ini, fim) {
     const pct = h?.comPct ?? 0.12;
     if (F && (F.com || F.tarifas || F.frete)) {
       // só as taxas de serviço já lançadas (a venda/comissão a Amazon lança depois): comissão estimada
-      if (F.venda === false || (!F.com && F.venda !== true)) return { comissao: valItem * pct, taxa: F.tarifas * p, frete: F.frete * p, origem: 'Amazon (frete/taxa real, comissão estimada ' + Math.round(pct * 1000) / 10 + '%)' };
-      return { comissao: F.com * p, taxa: F.tarifas * p, frete: F.frete * p, origem: 'Amazon (real)' };
+      if (F.venda === false || (!F.com && F.venda !== true)) {
+        // venda ainda não lançada: abaixo de R$ 79 o cliente paga o frete (a etiqueta volta como ShippingCharge)
+        const fr = valPed < 79 ? 0 : F.frete;
+        return { comissao: valItem * pct, taxa: F.tarifas * p, frete: fr * p, origem: 'Amazon (taxa real, comissão estimada ' + Math.round(pct * 1000) / 10 + '%' + (valPed < 79 && F.frete ? ', frete pago pelo cliente' : '') + ')' };
+      }
+      const frLiq = F.freteCliente != null ? Math.max(0, F.frete - F.freteCliente) : F.frete;
+      return { comissao: F.com * p, taxa: F.tarifas * p, frete: frLiq * p, origem: 'Amazon (real)' };
     }
     const fixo = precoUn < 30 ? 4.5 : precoUn < 50 ? 6.5 : precoUn < 79 ? 6.75 : 0;
     return { comissao: valItem * pct, taxa: (h?.outrasUn ?? fixo) * qtd, frete: (h?.freteUn ?? 0) * qtd, origem: 'estimada (sem lançamento ainda)' };
