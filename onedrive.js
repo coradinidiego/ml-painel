@@ -81,4 +81,27 @@ router.get('/planilha', soAdmin, async (req, res) => {
   } catch (e) { res.status(e.response?.status || 500).json({ erro: e.response?.data?.error?.message || e.message }); }
 });
 
-module.exports = { router, lerPlanilha, idCompartilhamento };
+/** Sem app Microsoft: tenta baixar um link "Qualquer pessoa com o link" direto (download=1). Devolve Buffer ou erro. */
+async function baixarPublico(link) {
+  let u = String(link || '').trim();
+  try { const r = new URL(u).searchParams.get('redeem'); if (r) u = Buffer.from(r, 'base64').toString('utf8'); } catch (e) {}
+  const tentativas = [u + (u.includes('?') ? '&' : '?') + 'download=1', 'https://api.onedrive.com/v1.0/shares/' + idCompartilhamento(u) + '/root/content'];
+  const log = [];
+  for (const t of tentativas) {
+    try {
+      const r = await axios.get(t, { responseType: 'arraybuffer', maxRedirects: 10, validateStatus: () => true, headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const b = Buffer.from(r.data || []);
+      log.push({ url: t.slice(0, 80), status: r.status, tipo: r.headers['content-type'], bytes: b.length });
+      if (r.status === 200 && b.slice(0, 2).toString() === 'PK') return { ok: true, buf: b, via: t, log };
+    } catch (e) { log.push({ url: t.slice(0, 80), erro: e.message }); }
+  }
+  return { ok: false, log };
+}
+router.get('/publico', soAdmin, async (req, res) => {
+  const r = await baixarPublico(req.query.link);
+  if (!r.ok) return res.status(400).json({ ok: false, log: r.log });
+  const wb = XLSX.read(r.buf, { type: 'buffer', cellDates: true });
+  res.json({ ok: true, via: r.via.slice(0, 80), abas: wb.SheetNames.map(n => { const rows = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: null }); return { aba: n, linhas: rows.length, inicio: rows.slice(0, 6) }; }) });
+});
+
+module.exports = { router, lerPlanilha, idCompartilhamento, baixarPublico };
