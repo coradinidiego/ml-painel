@@ -23,7 +23,9 @@ const LOJAS = { zagodini: 'Zagodini', mae: 'Com Amor de Mãe', lufe: 'Lufe' };
 
 const ler = () => { try { return JSON.parse(fs.readFileSync(ARQ)); } catch (e) { return {}; } };
 const gravar = t => { try { fs.writeFileSync(ARQ, JSON.stringify(t, null, 1)); } catch (e) { console.warn('[shein] gravar', e.message); } };
-const configurado = () => !!(process.env.SHEIN_APP_ID && process.env.SHEIN_APP_SECRET);
+// cada loja pode ter o próprio app (conta de desenvolvedor própria): SHEIN_LUFE_APP_ID / SHEIN_LUFE_APP_SECRET; senão usa o geral
+const appDe = loja => { const L = String(loja || '').toUpperCase(); const id = process.env[`SHEIN_${L}_APP_ID`] || process.env.SHEIN_APP_ID, sec = process.env[`SHEIN_${L}_APP_SECRET`] || (process.env[`SHEIN_${L}_APP_ID`] ? null : process.env.SHEIN_APP_SECRET); return { id, sec }; };
+const configurado = loja => { const a = appDe(loja || 'zagodini'); return !!(a.id && a.sec); };
 const soAdmin = (req, res, next) => (!require('./auth').ativo() || req.usuario?.admin) ? next() : res.status(403).send('Só o administrador.');
 const base = req => (process.env.PUBLIC_URL || `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`).replace(/\/$/, '');
 
@@ -61,28 +63,29 @@ async function api(loja, apiPath, body, metodo = 'POST') {
 let _ipAvisado = null, ultimoIpBloqueado = null;
 
 router.get('/conectar', soAdmin, (req, res) => {
-  if (!configurado()) return res.status(400).send('Falta configurar SHEIN_APP_ID e SHEIN_APP_SECRET no Railway.');
   const loja = LOJAS[req.query.loja] ? req.query.loja : 'zagodini';
+  if (!configurado(loja)) return res.status(400).send('Falta configurar o app da SHEIN desta loja no Railway (SHEIN_' + loja.toUpperCase() + '_APP_ID e SHEIN_' + loja.toUpperCase() + '_APP_SECRET, ou SHEIN_APP_ID/SHEIN_APP_SECRET).');
   const redirect = Buffer.from(base(req) + '/shein/callback').toString('base64');
-  res.redirect(`${AUTH_URL}?appid=${encodeURIComponent(process.env.SHEIN_APP_ID)}&redirectUrl=${encodeURIComponent(redirect)}&state=${loja}`);
+  res.redirect(`${AUTH_URL}?appid=${encodeURIComponent(appDe(loja).id)}&redirectUrl=${encodeURIComponent(redirect)}&state=${loja}`);
 });
 router.get('/callback', soAdmin, async (req, res) => {
   const loja = LOJAS[req.query.state] ? req.query.state : 'zagodini';
   const temp = req.query.tempToken || req.query.temp_token;
   if (!temp) return res.status(400).send('<h2>❌ A SHEIN não devolveu o tempToken</h2><pre>' + JSON.stringify(req.query).replace(/</g, '&lt;') + '</pre>');
   try {
-    const d = await chamarAssinado(process.env.SHEIN_APP_ID, process.env.SHEIN_APP_SECRET, '/open-api/auth/get-by-token', { tempToken: temp }, { 'x-lt-appid': process.env.SHEIN_APP_ID });
+    const app = appDe(loja);
+    const d = await chamarAssinado(app.id, app.sec, '/open-api/auth/get-by-token', { tempToken: temp }, { 'x-lt-appid': app.id });
     const info = d.info || d.data || {};
     if (!info.openKeyId || !info.secretKey) throw new Error('resposta sem openKeyId/secretKey: ' + JSON.stringify(d).slice(0, 300));
     const T = ler();
-    T[loja] = { openKeyId: info.openKeyId, secretKey: decifrar(info.secretKey, process.env.SHEIN_APP_SECRET), supplierId: info.supplierId || null, em: new Date().toISOString() };
+    T[loja] = { openKeyId: info.openKeyId, secretKey: decifrar(info.secretKey, app.sec), app: app.id, supplierId: info.supplierId || null, em: new Date().toISOString() };
     gravar(T);
     res.send(`<!DOCTYPE html><meta charset="UTF-8"><body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f0f2f5"><div style="background:white;border-radius:16px;padding:40px;text-align:center;box-shadow:0 4px 24px #0001"><div style="font-size:48px">✅</div><h2 style="color:#1e7e34">SHEIN autorizada!</h2><p>${LOJAS[loja]}</p><a href="/painel.html" style="display:inline-block;padding:12px 28px;background:#0d1b2a;color:white;border-radius:8px;text-decoration:none">← Voltar ao painel</a></div></body>`);
   } catch (e) { res.status(500).send('<h2>❌ Erro ao autorizar a SHEIN</h2><pre>' + String(e.message).replace(/</g, '&lt;') + '</pre><a href="/shein/conectar?loja=' + loja + '">Tentar de novo</a>'); }
 });
 router.get('/status', soAdmin, (req, res) => {
   const T = ler();
-  res.json({ configurado: configurado(), ipBloqueado: ultimoIpBloqueado, callback: base(req) + '/shein/callback', lojas: Object.fromEntries(Object.keys(LOJAS).map(k => [k, T[k] ? { autorizada: true, em: T[k].em, supplierId: T[k].supplierId } : { autorizada: false }])) });
+  res.json({ configurado: configurado('zagodini'), apps: Object.fromEntries(Object.keys(LOJAS).map(k => [k, { appId: appDe(k).id || null, comSecret: !!appDe(k).sec }])), ipBloqueado: ultimoIpBloqueado, callback: base(req) + '/shein/callback', lojas: Object.fromEntries(Object.keys(LOJAS).map(k => [k, T[k] ? { autorizada: true, em: T[k].em, supplierId: T[k].supplierId } : { autorizada: false }])) });
 });
 // diagnóstico (admin): POST /shein/raw?loja=zagodini&path=/open-api/order/order-list  com body JSON
 router.post('/raw', soAdmin, express.json(), async (req, res) => {
