@@ -336,23 +336,34 @@ module.exports = function montar(app, ctx) {
   });
   app.get('/inicio/estoque/sync', (req, res) => res.json({ auto: syncCfg.on, itens: SYNC }));         // "emp|sku" -> { em, n, status, aguardaAte, canal, erpId }
   const OBS = 'Painel: reenviar estoque aos canais (entrada/saída técnica de 1 un.)';
+  // Bling: 3 requisições/s — repete em 429 com espera crescente
+  async function blingReq(c, metodo, url, arg) {
+    for (let t = 0; ; t++) {
+      try { return metodo === 'get' ? await c.get(url, arg) : await c.post(url, arg); }
+      catch (er) { if (er.response?.status === 429 && t < 8) { await delay(1500 * (t + 1)); continue; } throw er; }
+    }
+  }
   async function tocarBling(idx, produtoId) {
     const bling = require('./bling'), c = bling.client(idx);
-    const P = (await c.get('/produtos/' + produtoId)).data?.data || {};
+    const P = (await blingReq(c, 'get', '/produtos/' + produtoId)).data?.data || {};
     // kit/composição não tem saldo próprio: mexe nos componentes
     const alvos = P.formato === 'E' ? (P.estrutura?.componentes || []).map(x => x.produto?.id).filter(Boolean).slice(0, 5) : [produtoId];
     if (!alvos.length) throw new Error('kit sem componentes');
     const deps = await bling.getDepositos(idx);
     const ign = new Set(deps.filter(d => /full/i.test(d.descricao || '') || d.desconsiderarSaldo === true).map(d => String(d.id)));
     for (const id of alvos) {
-      const S = (await c.get('/estoques/saldos', { params: { idsProdutos: [id] } })).data?.data?.[0];
+      const S = (await blingReq(c, 'get', '/estoques/saldos', { params: { idsProdutos: [id] } })).data?.data?.[0];
       const D = (S?.depositos || []).filter(d => !ign.has(String(d.id))).sort((a, b) => num(b.saldoFisico) - num(a.saldoFisico));
       const dep = D[0]?.id || deps.find(d => d.padrao && !ign.has(String(d.id)))?.id || deps.find(d => !ign.has(String(d.id)))?.id;
       if (!dep) throw new Error('sem depósito');
-      for (const op of ['E', 'S']) {
-        await c.post('/estoques', { produto: { id }, deposito: { id: dep }, operacao: op, quantidade: 1, preco: 0, custo: 0, observacoes: OBS });
-        await delay(1500);
+      await blingReq(c, 'post', '/estoques', { produto: { id }, deposito: { id: dep }, operacao: 'E', quantidade: 1, preco: 0, custo: 0, observacoes: OBS });
+      await delay(1500);
+      // a saída precisa acontecer de qualquer jeito (senão o saldo fica +1): insiste até 5 min
+      for (let t = 0; ; t++) {
+        try { await blingReq(c, 'post', '/estoques', { produto: { id }, deposito: { id: dep }, operacao: 'S', quantidade: 1, preco: 0, custo: 0, observacoes: OBS }); break; }
+        catch (er) { if (t >= 20) { console.error('[sync] ATENÇÃO: entrada sem saída', idx, id, dep, er.message); throw new Error('entrada de 1 un. feita mas a saída falhou — produto ' + id + ' ficou +1 no Bling'); } await delay(15000); }
       }
+      await delay(1000);
     }
     return alvos.length;
   }
@@ -392,6 +403,11 @@ module.exports = function montar(app, ctx) {
       delete S.aguardaAte; gravar(ARQ_SYNC, SYNC);
     }
   }, 5 * 60e3);
+  app.get('/inicio/estoque/saldo', async (req, res) => {
+    if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+    const e = EMP.find(x => x.id === req.query.emp);
+    try { const c = require('./bling').client(e.idx); res.json((await blingReq(c, 'get', '/estoques/saldos', { params: { idsProdutos: [req.query.id] } })).data); } catch (er) { res.status(500).json({ erro: er.message }); }
+  });
   // manual (admin): POST /inicio/estoque/sincronizar?emp=zagodini&sku=7303522-07
   app.post('/inicio/estoque/sincronizar', async (req, res) => {
     if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
