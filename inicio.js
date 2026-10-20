@@ -112,6 +112,8 @@ module.exports = function montar(app, ctx) {
       } catch (e) { falhou++; if (falhou === 1) console.warn('[inicio] Bling saldos', idx, e.response?.status, e.message); }
       await delay(350);
     }
+    // sem o saldo por depósito o total inclui o Full: não dá para confiar na comparação
+    if (falhou) throw new Error('Bling não devolveu o saldo por depósito de ' + falhou + ' lote(s) — conferência cancelada');
     return mapa;
   }
 
@@ -312,7 +314,8 @@ module.exports = function montar(app, ctx) {
       const itens = divs.filter(x => ![x.qtd, ...(x.qtdAlt || [])].some(q => q >= Math.min(x.erpFis, x.erpDisp) && q <= Math.max(x.erpFis, x.erpDisp)))
         .map(x => { const q = x.relampago ? x.relampago.normal : x.qtd; return { ...x, qtd: q, diff: q - x.erpDisp }; });
       itens.sort((p, q) => Math.abs(q.diff) - Math.abs(p.diff));
-      if (e.erp !== 'Tiny' && syncCfg.on) { R.etapa = 'pedindo ao Bling para sincronizar'; await sincronizarDivergencias(e, itens).catch(er => console.warn('[sync] ' + e.id, er.message)); }
+      if (e.erp !== 'Tiny' && syncCfg.on && itens.length > 40) console.warn(`[sync] ${e.id}: ${itens.length} divergências — anormal, sincronização automática suspensa nesta rodada`);
+      if (e.erp !== 'Tiny' && syncCfg.on && itens.length <= 40) { R.etapa = 'pedindo ao Bling para sincronizar'; await sincronizarDivergencias(e, itens).catch(er => console.warn('[sync] ' + e.id, er.message)); }
       const curto = x => ({ canal: x.canal, anuncio: x.anuncio, nome: x.nome, sku: x.sku, link: x.link, nomeVar: x.nomeVar });
       Object.assign(R, { status: 'pronto', em: new Date().toISOString(), erp: e.erp, itens, comparados, ignorados,
         semSku: semSku.map(curto), semErp: semErp.map(curto), erros, duracaoSeg: Math.round((Date.now() - R.inicio) / 1000), etapa: null });
@@ -428,6 +431,25 @@ module.exports = function montar(app, ctx) {
     if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
     const e = EMP.find(x => x.id === req.query.emp);
     try { const c = require('./bling').client(e.idx); res.json((await blingReq(c, 'get', '/estoques/saldos', { params: { idsProdutos: [req.query.id] } })).data); } catch (er) { res.status(500).json({ erro: er.message }); }
+  });
+  // reparo (admin): refaz o saldo do Bling com cuidado e regrava no site os anúncios atualizados desde ?desde=ISO
+  app.post('/inicio/estoque/reparar', async (req, res) => {
+    if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+    const e = EMP.find(x => x.id === req.query.emp); if (!e || e.erp === 'Tiny') return res.status(400).json({ erro: 'empresa inválida' });
+    const desde = Date.parse(req.query.desde || '') || 0;
+    const alvo = (EST[e.id]?.itens || []).filter(x => x.sync?.em && x.sync.em >= desde && /atualizado/.test(x.sync.status || ''));
+    try {
+      const erp = await erpBling(e.idx);
+      const out = [];
+      for (const x of alvo) {
+        const r = achar(erp, x.sku);
+        if (!r) { out.push([x.canal, x.sku, 'sem saldo no Bling']); continue; }
+        const q = Math.max(0, Math.floor(r.disp));
+        try { await atualizarCanal(e, { ...x, erpDisp: q }); out.push([x.canal, x.sku, x.anuncio, x.variacao || '', 'antes ' + x.qtd, 'agora ' + q]); }
+        catch (er) { out.push([x.canal, x.sku, 'erro ' + (er.response?.data?.message || er.message)]); }
+      }
+      res.json({ ok: true, n: alvo.length, out });
+    } catch (er) { res.status(500).json({ erro: er.message }); }
   });
   // manual (admin): POST /inicio/estoque/sincronizar?emp=zagodini&sku=7303522-07
   app.post('/inicio/estoque/sincronizar', async (req, res) => {
