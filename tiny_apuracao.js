@@ -236,6 +236,16 @@ router.get('/resultado', (req, res) => {
 });
 
 router.get('/config', (req, res) => res.json(getConfig()));
+// diagnóstico (admin): primeiras linhas de uma aba da planilha da Lufe e a regra lida para um SKU
+router.get('/debug-aba', (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  try {
+    const wb = XLSX.readFile(PLANILHA), aba = req.query.aba || 'Shein';
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[aba], { header: 1, raw: true, defval: null });
+    const P = lerPlanilha(getConfig());
+    res.json({ abas: wb.SheetNames, linhas: rows.length, inicio: rows.slice(0, 4), regra: req.query.sku ? (P.regras[aba] || {})[K(req.query.sku)] : undefined, padrao: P.padrao[aba], nRegras: Object.keys(P.regras[aba] || {}).length });
+  } catch (e) { res.status(500).json({ erro: e.message }); }
+});
 router.post('/config', express.json(), (req, res) => {
   const c = getConfig();
   if (req.body.imposto != null) c.imposto = parseFloat(req.body.imposto);
