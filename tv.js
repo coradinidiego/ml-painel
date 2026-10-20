@@ -418,7 +418,7 @@ function agregar(emp, linhas) {
     const c = canais[l.canal] ||= { canal: l.canal, ...zerado() };
     if (pendenteCorte(l, hoje)) c.corte++;
     if (pendenteProprio(l, hoje)) c.proprio++;
-    if (['emitirNF', 'aEmpacotar', 'empacotado'].includes(l.tipo) && l.prazo === 'atrasado') { c.atrasoTotal++; if (l.num && (c.atrasoVendas ||= []).length < 15) c.atrasoVendas.push(String(l.num)); }   // prazo de envio vencido em qualquer etapa
+    if (['emitirNF', 'aEmpacotar', 'empacotado', '_alerta'].includes(l.tipo) && l.prazo === 'atrasado') { c.atrasoTotal++; if (l.num && (c.atrasoVendas ||= []).length < 15) c.atrasoVendas.push(String(l.num)); }   // prazo de envio vencido em qualquer etapa
     if (l.tipo === 'futuro') { c.futuros++; continue; }
     // NF/empacotar com prazo para outro dia continuam na etapa (dá para adiantar), mas não entram no corte de hoje
     if ((l.tipo === 'emitirNF' || l.tipo === 'aEmpacotar') && l.prazo === 'futuro') c.futuros++;
@@ -460,10 +460,35 @@ async function ajustarShein(emp, linhas) {
     }
     if (P.pago) l.criado = Math.floor(Date.parse(P.pago) / 1000);
     // prazo de envio da SHEIN vencido sem coleta = atrasado, em qualquer etapa (inclusive já empacotado esperando a coleta)
-    if (P.prazoEnvio) l.prazo = Date.parse(P.prazoEnvio) < agora ? 'atrasado' : 'hoje';
+    // prazo que vale: aguardando coleta (st 7, já despachado pelo vendedor) = prazo de entrega à transportadora; senão prazo de envio
+    const lim = P.st === 7 ? (P.prazoEntrega || P.prazoEnvio) : P.prazoEnvio;
+    if (lim) l.prazo = Date.parse(lim) < agora ? 'atrasado' : 'hoje';
     l.sheinApi = true;
     return true;
   });
+}
+// Pedidos atrasados direto na SHEIN, mesmo que o ERP já tenha dado como enviado (ex.: Tiny "Enviado" mas a SHEIN
+// ainda "aguardando coleta" com o prazo de entrega à transportadora vencido). Lista de pedidos em cache de 10 min.
+const SHEIN_ABERTOS = new Set([1, 2, 7]);   // 1 pendente, 2 a enviar, 7 aguardando coleta
+const _shLista = {};
+async function atrasadosSheinApi(emp, linhas) {
+  const shein = require('./shein');
+  if (!shein.autorizada(emp.id)) return linhas;
+  const c = _shLista[emp.id];
+  if (!c || Date.now() - c.ts > 10 * 60e3) {
+    const L = await shein.listarPedidos(emp.id, new Date(Date.now() - 10 * 864e5), new Date());
+    _shLista[emp.id] = { ts: Date.now(), nums: L.filter(x => SHEIN_ABERTOS.has(x.st)).map(x => x.num) };
+  }
+  const jaTem = new Set(linhas.filter(l => l.canal === 'Shein').map(l => String(l.num)));
+  const nums = _shLista[emp.id].nums.filter(n => !jaTem.has(String(n)));
+  if (!nums.length) return linhas;
+  const C = await shein.detalhes(emp.id, nums, { idadeMin: 10 }), agora = Date.now(), extra = [];
+  for (const n of nums) {
+    const P = C[n]; if (!P || !SHEIN_ABERTOS.has(P.st)) continue;
+    const lim = P.st === 7 ? (P.prazoEntrega || P.prazoEnvio) : P.prazoEnvio;
+    if (lim && Date.parse(lim) < agora) extra.push({ tipo: '_alerta', canal: 'Shein', prazo: 'atrasado', num: n, sheinApi: true });
+  }
+  return extra.length ? [...linhas, ...extra] : linhas;
 }
 async function coletarEmpresa(emp, cfg, hoje, erros, aoParcial) {
   const ant = ULTIMAS[emp.id] || { ml: [], erp: [], okMl: false, okErp: false };
@@ -485,6 +510,7 @@ async function coletarEmpresa(emp, cfg, hoje, erros, aoParcial) {
     }
     // SHEIN conectada: hora do pagamento, prazo de envio e status direto da SHEIN
     try { erp = await ajustarShein(emp, erp); } catch (e) { console.warn('[tv] SHEIN', emp.id, e.message); }
+    try { erp = await atrasadosSheinApi(emp, erp); } catch (e) { console.warn('[tv] SHEIN atrasados', emp.id, e.message); }
     Object.assign(atual, { erp, okErp: true });
   }
   else { erros[`${emp.nome} · ${emp.erp === 'tiny' ? 'Tiny' : 'Bling'}`] = rErp.reason?.response?.status === 401 ? 'ERP não autorizado' : (rErp.reason?.message || 'erro'); console.warn('[tv] ERP', emp.id, rErp.reason?.message); }
