@@ -163,8 +163,10 @@ async function catalogo(loja, { prog } = {}) {
     if (L.length < 50) break;
     await delay(250);
   }
-  const semana = Date.now() - (C.ts || 0) > 7 * 864e5;
-  const falta = [...spus].filter(s => semana || !C.spus[s]);
+  // detalhe de todos 1x por dia (status de vitrine muda: bloqueio/desbloqueio da SHEIN); os inativos a cada rodada
+  const semana = Date.now() - (C.ts || 0) > 864e5 || Object.values(C.skus).some(v => v.inativo === undefined);
+  const inativos = new Set(Object.values(C.skus).filter(v => v.inativo).map(v => v.spu));
+  const falta = [...spus].filter(s => semana || !C.spus[s] || inativos.has(s));
   let i = 0;
   for (const spu of falta) {
     try {
@@ -172,7 +174,9 @@ async function catalogo(loja, { prog } = {}) {
       const I = d.info || {};
       for (const skc of I.skcInfoList || []) for (const k of skc.skuInfoList || []) {
         const preco = (k.priceInfoList || []).find(p => /br/i.test(p.subSite || p.site || '')) || (k.priceInfoList || [])[0] || {};
-        C.skus[k.skuCode] = { sku: String(k.supplierSku || skc.supplierCode || I.supplierCode || '').trim(), skc: skc.skcName, spu, titulo: skc.productMultiNameList?.[0]?.productName || I.productMultiNameList?.[0]?.productName || '', preco: +preco.specialPrice || +preco.basePrice || null };
+        // fora da vitrine na SHEIN Brasil (ex.: bloqueado pela SHEIN enquanto valida o estoque): shelfStatus 0 em shein-br
+        const vitrine = (skc.shelfStatusInfoList || []).find(x => /shein-br/i.test(x.siteAbbr || '')) || (skc.shelfStatusInfoList || [])[0];
+        C.skus[k.skuCode] = { sku: String(k.supplierSku || skc.supplierCode || I.supplierCode || '').trim(), skc: skc.skcName, spu, titulo: skc.productMultiNameList?.[0]?.productName || I.productMultiNameList?.[0]?.productName || '', preco: +preco.specialPrice || +preco.basePrice || null, inativo: !!vitrine && +vitrine.shelfStatus === 0 };
       }
       C.spus[spu] = Date.now();
     } catch (e) { console.warn('[shein] spu', spu, e.message); }

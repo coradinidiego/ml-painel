@@ -242,7 +242,7 @@ module.exports = function montar(app, ctx) {
     const est = await shein.estoques(e.id, Object.keys(cat));
     return Object.entries(cat).filter(([k]) => est[k]).map(([k, c]) => {
       const s = est[k];
-      return { canal: 'shein', anuncio: k, nome: c.titulo, sku: c.sku || null, qtd: s.usavel, qtdAlt: [s.total, s.usavel + s.temp], deposito: s.deposito,
+      return { canal: 'shein', anuncio: k, nome: c.titulo, sku: c.sku || null, qtd: s.usavel, sheinInativo: !!c.inativo, qtdAlt: [s.total, s.usavel + s.temp], deposito: s.deposito,
         link: 'https://sellerhub.shein.com/' };
     });
   }
@@ -317,8 +317,9 @@ module.exports = function montar(app, ctx) {
       const s = itensShopee(e.id); if (s) anuncios.push(...s); else if (shopee.loja(e.id).getTokens().access_token) erros.shopee = 'Shopee ainda carregando';
       const a = itensAmazon(e.id); if (a) anuncios.push(...a);
       try { const sh = await itensShein(e, R); if (sh) anuncios.push(...sh); } catch (er) { erros.shein = er.message; }
-      const ignorados = { full: anuncios.filter(x => x.full).length };
-      anuncios = anuncios.filter(x => !x.full);
+      // Full: quem controla é o marketplace. SHEIN inativo (fora da vitrine, ex.: bloqueado validando estoque): não conta nem sincroniza
+      const ignorados = { full: anuncios.filter(x => x.full).length, sheinInativo: anuncios.filter(x => x.sheinInativo).length };
+      anuncios = anuncios.filter(x => !x.full && !x.sheinInativo);
       R.etapa = e.erp === 'Tiny' ? 'saldos no Tiny' : 'saldos no Bling';
       const erp = e.erp === 'Tiny' ? await erpTiny(anuncios.map(x => x.sku).filter(Boolean), (i, n) => { R.etapa = `saldos no Tiny (${i} de ${n}, ~${Math.ceil((n - i) * 1.2 / 60)} min)`; }) : await erpBling(e.idx);
       const semSku = [], semErp = [], divs = [], comparados = { ml: 0, shopee: 0, amazon: 0, shein: 0 };
