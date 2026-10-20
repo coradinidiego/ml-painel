@@ -180,6 +180,7 @@ async function buscar(empKey, ini, fim) {
     try { const f = await financeiroAmazon(empKey, ini, fim, job); if (f) gravarJson(arqAmz(empKey, ini, fim), { geradoEm: new Date().toISOString(), pedidos: f }); }
     catch (e) { if (e.message === 'Cancelado') throw e; console.warn('[apuracao-mkt] financeiro Amazon', empKey, e.message); job.avisoAmazon = e.message; }
     job.fase = 'Custos do ERP...'; job.pct = 95;
+    cm.recarregarErp(E.idx);   // custos sempre atualizados do ERP a cada busca
     await cm.custosErp(E.idx).catch(() => {});
     Object.assign(job, { rodando: false, fase: 'Concluído!', pct: 100 });
   } catch (e) {
@@ -198,10 +199,9 @@ async function calcular(empKey, ini, fim) {
   const hist = lerJson(path.join(DIR, `amazon_anuncios_${E.amazon}.json`), {})?.hist?.porSku || {};
   const linhas = [];
   const custoDe = (sku, canal, extra) => {
+    // custo só do sistema (Bling / Tiny): sem custo lá = alerta para corrigir no ERP (não usa planilha)
     const c = cm.custoComFonte(E.idx, sku, erp);
     if (c && c.fonte !== 'planilha') return [c.v, c.fonte];
-    const e = extra?.(sku); if (e) return [e, 'planilha do canal'];
-    if (c) return [c.v, 'planilha'];
     return [null, 'SEM CUSTO'];
   };
   // Lufe/Shein sem % na planilha: usa a comissão média que a Shein cobrou nos pedidos do Bling (Zagodini/Mãe)
