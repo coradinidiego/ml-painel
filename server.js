@@ -1846,26 +1846,33 @@ async function cicloBoost(k) {
   const fila = porVenda.filter(p => !topIds.has(String(p.item_id))).reverse();   // do menos vendido para cima
   const limNovo = Date.now() / 1000 - 60 * 86400;   // item novo = criado nos últimos 60 dias
   const novos = elegiveis.filter(p => (p.create_time || 0) >= limNovo && !topIds.has(String(p.item_id))).sort((a, b) => (b.create_time || 0) - (a.create_time || 0));
-  let escolhidos = [], tipo = st.proxima;
-  if (tipo === 'top') escolhidos = top.filter(p => !ocupados.has(String(p.item_id))).slice(0, livres);
-  if (tipo === 'novos' || (tipo === 'top' && !escolhidos.length)) {
-    tipo = 'novos'; escolhidos = [];
-    if (!(st.novos >= 0) || st.novos >= novos.length) st.novos = 0;   // 1ª rodada de novos: índice ainda não existia
-    let n = 0;
-    while (escolhidos.length < livres && n++ < novos.length) {
-      const p = novos[st.novos]; st.novos = (st.novos + 1) % novos.length;
-      if (p && !ocupados.has(String(p.item_id)) && !escolhidos.includes(p)) escolhidos.push(p);
+  // Sempre preenche as 5 vagas na mesma rodada: começa pelo tipo da vez e, se faltar item, completa com os próximos tipos
+  const ORDEM = ['top', 'novos', 'fila'];
+  const escolhidos = [], tipoDe = {}, usado = id => ocupados.has(String(id)) || escolhidos.some(p => String(p.item_id) === String(id));
+  const pegar = t => {
+    if (t === 'top') { for (const p of top) if (escolhidos.length < livres && !usado(p.item_id)) { escolhidos.push(p); tipoDe[p.item_id] = t; } return; }
+    if (t === 'novos') {
+      if (!novos.length) return;
+      if (!(st.novos >= 0) || st.novos >= novos.length) st.novos = 0;   // 1ª rodada de novos: índice ainda não existia
+      for (let n = 0; escolhidos.length < livres && n < novos.length; n++) {
+        const p = novos[st.novos]; st.novos = (st.novos + 1) % novos.length;
+        if (p && !usado(p.item_id)) { escolhidos.push(p); tipoDe[p.item_id] = t; }
+      }
+      return;
     }
-  }
-  if (tipo === 'fila' || !escolhidos.length) {
-    tipo = 'fila';
+    // fila: do menos vendido para cima; ao chegar no fim, volta ao começo (até completar as vagas)
+    if (!fila.length) return;
     if (st.fila >= fila.length) st.fila = 0;
-    while (escolhidos.length < livres && st.fila < fila.length) {
+    for (let n = 0; escolhidos.length < livres && n < fila.length; n++) {
       const p = fila[st.fila++];
-      if (!ocupados.has(String(p.item_id))) escolhidos.push(p);
+      if (st.fila >= fila.length) { st.fila = 0; st.voltas = (st.voltas || 0) + 1; }
+      if (p && !usado(p.item_id)) { escolhidos.push(p); tipoDe[p.item_id] = t; }
     }
-    if (st.fila >= fila.length) { st.fila = 0; st.voltas = (st.voltas || 0) + 1; }
-  }
+  };
+  const ini = ORDEM.includes(st.proxima) ? ORDEM.indexOf(st.proxima) : 0;
+  for (let i = 0; i < ORDEM.length && escolhidos.length < livres; i++) pegar(ORDEM[(ini + i) % ORDEM.length]);
+  // tipo da rodada = o primeiro que entrou (a alternância segue a partir dele)
+  const tipo = escolhidos.length ? tipoDe[escolhidos[0].item_id] : ORDEM[ini];
   if (!escolhidos.length) return;
   const r = await sp.impulsionar(escolhidos.map(p => p.item_id));
   const okSet = new Set(r.ok.map(String));
@@ -1875,11 +1882,11 @@ async function cicloBoost(k) {
     try {
       const ex = await extraShp(sp, feitos.map(p => p.item_id));
       const M = st.medicao ||= { ativos: {}, resultados: [] };
-      for (const p of feitos) { const x = ex[p.item_id]; if (x) M.ativos[p.item_id] = { nome: p.item_name, tipo, t0: Date.now(), v0: x.views, s0: x.sale }; }
+      for (const p of feitos) { const x = ex[p.item_id]; if (x) M.ativos[p.item_id] = { nome: p.item_name, tipo: tipoDe[p.item_id] || tipo, t0: Date.now(), v0: x.views, s0: x.sale }; }
     } catch (e) { console.log('[boost] medição início ' + k + ': ' + e.message); }
   }
   st.proxima = tipo === 'top' ? 'novos' : tipo === 'novos' ? 'fila' : 'top';
-  st.ultimo = { em: new Date().toISOString(), tipo, itens: feitos.map(p => ({ id: p.item_id, nome: p.item_name, vendas: vend[p.item_id] || 0 })), falhas: r.falhas.slice(0, 5), filaPos: st.fila, filaTotal: fila.length, novosTotal: novos.length };
+  st.ultimo = { em: new Date().toISOString(), tipo, itens: feitos.map(p => ({ id: p.item_id, nome: p.item_name, vendas: vend[p.item_id] || 0, tipo: tipoDe[p.item_id] })), falhas: r.falhas.slice(0, 5), filaPos: st.fila, filaTotal: fila.length, novosTotal: novos.length };
   st.historico = [st.ultimo, ...(st.historico || [])].slice(0, 20);
   salvarBoost();
   console.log('[boost] ' + k + ' ' + tipo + ': ' + feitos.length + ' impulsionados, ' + r.falhas.length + ' falhas');
