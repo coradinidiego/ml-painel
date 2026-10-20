@@ -473,6 +473,7 @@ body{background:#f0f2f5;color:#111}
     const d=document.createElement('div'); d.id='painel-conta-barra';
     d.style.cssText='position:fixed;top:10px;right:16px;z-index:9999;display:flex;gap:8px;align-items:center;font:12px -apple-system,sans-serif';
     d.innerHTML='<span style="color:#cfd8dc">'+(u.nome||u.email).replace(/[<>&]/g,'')+'</span>'+
+      '<a href="/tv" target="_blank" rel="noopener" title="Abrir o painel da TV (expedição) em outra aba" style="background:#1b2d45;color:white;padding:5px 10px;border-radius:6px;text-decoration:none">📺 TV</a>'+
       '<a href="/conta" style="background:#1b2d45;color:#ffd60a;padding:5px 10px;border-radius:6px;text-decoration:none">⚙️ Conta</a>'+
       '<a href="/logout" style="background:#1b2d45;color:white;padding:5px 10px;border-radius:6px;text-decoration:none">Sair</a>';
     const t=document.getElementById('timer');
