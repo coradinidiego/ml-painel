@@ -157,9 +157,10 @@ async function todas() {
 }
 
 // ─── Margem: preço − custo (ERP) − comissão/tarifa Shopee − imposto − embalagem ───
-// Tarifa Shopee (CNPJ) por faixa de preço do item — tabela vigente desde 01/03/2026 (estimativa; o valor real vem no repasse)
+// Tarifa Shopee (CNPJ) por faixa de preço do item — tabela vigente desde 01/03/2026, ajustada pelos repasses reais
+// das lojas (out/2026: abaixo de R$ 80 a comissão + taxas somaram ~21–23% + R$ 4; acima, ~13,7% + taxa fixa da faixa)
 function tarifaShopee(preco) {
-  const f = preco < 80 ? [0.20, 4] : preco < 100 ? [0.14, 16] : preco < 200 ? [0.14, 20] : preco < 500 ? [0.14, 26] : [0.14, 28];
+  const f = preco < 80 ? [0.22, 4] : preco < 100 ? [0.14, 16] : preco < 200 ? [0.14, 20] : preco < 500 ? [0.14, 26] : [0.14, 28];
   return { pct: f[0], fixa: f[1], valor: r2(preco * f[0] + f[1]) };
 }
 async function margemFn(k) {
@@ -230,7 +231,7 @@ body{margin:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#f
 table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:7px 8px;border-bottom:1px solid #f2f2f2;text-align:right;vertical-align:top}.l{text-align:left;max-width:420px}small{color:#888}
 .pos{color:#1e7e34}.neg{color:#c62828}.err{color:#c62828}.tag{font-size:12px;background:#eee;border-radius:10px;padding:2px 8px}.tag.on{background:#ffe0d6;color:#c43d1d}</style></head><body>
 <div class="top"><b>⚡ Ofertas Relâmpago — Shopee</b><span style="flex:1"></span><a href="/painel.html">← Painel</a></div>
-<div class="box" style="background:#fffbea"><p class="s" style="margin:0">Lucro = preço − custo do produto (Bling/Tiny) − tarifa Shopee estimada (comissão + taxa fixa por item, tabela CNPJ vigente desde 01/03/2026) − imposto − embalagem. O valor exato da tarifa vem no repasse de cada pedido. A relâmpago de amanhã é criada automaticamente a partir das ${CFG.horaCriar}.</p></div>
+<div class="box" style="background:#fffbea"><p class="s" style="margin:0">Lucro = preço − custo do produto (Bling/Tiny) − tarifa Shopee estimada (comissão + taxa fixa por item: abaixo de R$ 80 = 22% + R$ 4; acima, 14% + R$ 16 a R$ 28 conforme a faixa — conferido com os repasses reais das lojas) − imposto − embalagem. O valor exato da tarifa vem no repasse de cada pedido. A relâmpago de amanhã é criada automaticamente a partir das ${CFG.horaCriar}.</p></div>
 ${blocos}</body></html>`;
 }
 
