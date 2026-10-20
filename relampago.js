@@ -199,7 +199,21 @@ async function listarComMargem(k) {
         for (const x of m.response?.model || []) skuModel[x.model_id] = x.model_sku || '';
         await delay(100);
       }
-      for (const l of linhas) { l.sku = (l.model_id && skuModel[l.model_id]) || skuItem[l.item_id] || ''; Object.assign(l, { m: mg(l.preco, l.sku) }); }
+      // preço da promoção de desconto (a que roda dia a dia) durante a relâmpago
+      const promo = {};
+      for (let i = 0; i < ids.length; i += 50) {
+        const d = await sp.shopeeGet('/api/v2/product/get_item_promotion', { item_id_list: ids.slice(i, i + 50).join(',') });
+        for (const it of d.response?.success_list || []) for (const p of it.promotion || []) {
+          if (p.promotion_type !== 'Discount Promotions' || !(p.start_time <= f.start_time && p.end_time >= f.end_time)) continue;
+          const v = p.promotion_price_info?.[0]?.promotion_price; if (v > 0) promo[it.item_id + '|' + (p.model_id || 0)] = v;
+        }
+      }
+      for (const l of linhas) {
+        l.sku = (l.model_id && skuModel[l.model_id]) || skuItem[l.item_id] || '';
+        l.promo = promo[l.item_id + '|' + l.model_id] ?? promo[l.item_id + '|0'] ?? null;
+        l.difPromo = l.promo == null ? null : r2(l.promo - l.preco);   // esperado: 0,01
+        Object.assign(l, { m: mg(l.preco, l.sku) });
+      }
       out.push({ id: f.flash_sale_id, situacao: type === 2 ? 'Em andamento' : 'Programada', inicio: dataSP(f.start_time), fim: dataSP(f.end_time), itens: linhas });
     }
   }
@@ -258,6 +272,14 @@ function rotas(app) {
       try { dados.push([k, await listarComMargem(k)]); } catch (e) { dados.push([k, [], e.message]); }
     }
     res.send(paginaVer(dados));
+  });
+  const _cacheDados = {};
+  app.get('/shopee/relampago/dados', async (req, res) => {
+    const k = lojaDe(req), st = estado(k), c = _cacheDados[k];
+    try {
+      if (!c || req.query.recarregar || Date.now() - c.ts > 3 * 60e3) _cacheDados[k] = { ts: Date.now(), v: await listarComMargem(k) };
+      res.json({ loja: k, ativo: st.ativo, regras: CFG, historico: st.historico.slice(0, 10), atualizado: new Date(_cacheDados[k].ts).toISOString(), vendas: _cacheDados[k].v });
+    } catch (e) { res.status(500).json({ erro: e.message }); }
   });
   app.post('/shopee/relampago/excluir', async (req, res) => {
     if (!admin(req)) return res.status(403).json({ erro: 'só admin' });

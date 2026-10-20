@@ -249,6 +249,7 @@ body{background:#f0f2f5;color:#111}
       <button class="tab" onclick="showShpTab('pedidos',this)">🛒 Pedidos (<span id="stc-pedidos">...</span>)</button>
       <button class="tab" onclick="showShpTab('avaliacoes',this)">⭐ Avaliações (<span id="stc-avaliacoes">...</span>)</button>
       <button class="tab" onclick="showShpTab('produtos',this)">📦 Produtos (<span id="stc-produtos">...</span>)</button>
+      <button class="tab" onclick="showShpTab('relampago',this);carregarRelampago()">⚡ Relâmpago</button>
     </div>
     <div id="shp-tab-inicio" class="tab-content active">
       <div class="cards">
@@ -271,7 +272,7 @@ body{background:#f0f2f5;color:#111}
           <div class="rrow"><span>Avaliações sem resposta</span><span class="v" style="color:#E53935" id="sk-avsem">-</span></div>
         </div>
       </div>
-      <div class="rbox" style="margin-top:12px"><h3>⚡ Ofertas Relâmpago</h3><div style="font-size:13px;color:#555">Criadas automaticamente: a de amanhã a partir das 14h (preço promo − R$ 0,01, 5 un. por variação com 15+ em estoque, 20 itens). <a href="/shopee/relampago/ver" target="_blank" style="font-weight:600">Ver programadas e margem →</a></div></div>
+      <div class="rbox" style="margin-top:12px"><h3>⚡ Ofertas Relâmpago</h3><div style="font-size:13px;color:#555">Criadas automaticamente: a de amanhã a partir das 14h (preço promo − R$ 0,01, 5 un. por variação com 15+ em estoque, 20 itens). <a href="#" onclick="showShpTab('relampago');carregarRelampago();return false" style="font-weight:600">Ver programadas e margem →</a></div></div>
       <div class="rbox" style="margin-top:12px"><h3>🚀 Impulsionar automático <label style="float:right;font-size:12px;font-weight:500;cursor:pointer"><input type="checkbox" id="boost-ativo" onchange="trocarBoost(this.checked)"> ligado</label></h3>
         <div style="font-size:12px;color:#666;margin-bottom:6px">A cada 4h impulsiona 5 produtos, alternando: os 5 mais vendidos ↔ os próximos 5 do fim da lista, até passar por todos.</div>
         <div id="boost-info" style="font-size:13px">-</div></div>
@@ -304,6 +305,9 @@ body{background:#f0f2f5;color:#111}
     <div id="shp-tab-pedidos" class="tab-content">
       <div class="sf"><select class="sselect" id="shp-fped" onchange="renderShpPedidos()"><option value="">Todos</option><option value="AENVIAR">A enviar (todos)</option><option value="READY_TO_SHIP">📦 Organizar envio</option><option value="PROCESSED">🏷️ Etiqueta gerada (aguardando coleta)</option><option value="SHIPPED">Enviados</option><option value="UNPAID">Aguardando pgto</option><option value="CANCELLED">Cancelados</option></select></div>
       <div class="section"><div class="sec-head">🛒 Pedidos (últimos 15 dias) <span class="cnt" id="shp-c-pedidos">-</span></div><div id="shp-b-pedidos"><div class="loading">Carregando...</div></div></div>
+    </div>
+    <div id="shp-tab-relampago" class="tab-content">
+      <div class="section"><div class="sec-head">⚡ Ofertas Relâmpago <span class="cnt" id="shp-c-relampago">-</span><button class="btn" style="margin-left:auto;font-size:12px;padding:4px 10px" onclick="carregarRelampago(1)">↺ Atualizar</button></div><div id="shp-b-relampago"><div class="loading">Carregando...</div></div></div>
     </div>
     <div id="shp-tab-avaliacoes" class="tab-content">
       <div class="sf"><button class="btn" onclick="responder5Lote()" title="Responde todas as avaliações de 4 e 5 estrelas ainda sem resposta com o texto padrão">⭐ Responder 4★ e 5★</button><span id="av-lote-msg" style="font-size:12px;color:#666;align-self:center"></span><span id="av-auto" style="font-size:12px;color:#2E7D32;align-self:center;margin-left:auto"></span></div>
@@ -555,7 +559,7 @@ function trocarParaShopee(btn){
   document.querySelectorAll('.conta-tab').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
   const novaLoja=SHP_LOJAS[ci];
-  if(novaLoja!==shpLoja){shpLoja=novaLoja;_shpDados=null;_shpVersao=null;limparShopee();pollShopee();}
+  if(novaLoja!==shpLoja){shpLoja=novaLoja;_shpDados=null;_shpVersao=null;limparShopee();pollShopee();if(el('shp-tab-relampago').classList.contains('active'))carregarRelampago();}
   el('shp-auth-link').href='/shopee/auth?loja='+shpLoja;
   el('top-logo').src='/logo/'+CONTAS[ci].logo;
   el('top-title').textContent=CONTAS[ci].nome+' · Shopee';
@@ -774,6 +778,34 @@ function renderAmazon(){
 }
 setInterval(()=>{if(modoAmazon)carregarAmazon();},10*60e3);
 
+let _relLoja=null;
+async function carregarRelampago(forcar){
+  const b=el('shp-b-relampago');
+  if(!forcar&&_relLoja===shpLoja&&b.dataset.ok)return;
+  _relLoja=shpLoja; b.dataset.ok=''; b.innerHTML='<div class="loading">Consultando a Shopee… (leva até 1 minuto)</div>';
+  try{
+    const d=await (await fetch(shpU('/shopee/relampago/dados')+(forcar?'&recarregar=1':''))).json();
+    if(d.erro){b.innerHTML='<div class="loading" style="color:#c0392b">'+shpEsc(d.erro)+'</div>';return;}
+    const brl=v=>v==null?'—':'R$ '+Number(v).toFixed(2).replace('.',',');
+    set('shp-c-relampago',d.vendas.length);
+    const topo='<div style="font-size:13px;color:#555;padding:10px 14px;background:#fffbea;border-radius:8px;margin-bottom:10px">'+(d.ativo?'✅ Criação automática <b>ligada</b>':'⏸️ Criação automática <b>desligada</b>')+': a de amanhã é criada a partir das '+d.regras.horaCriar+' — preço da promoção − R$ '+d.regras.precoMenos.toFixed(2).replace('.',',')+', '+d.regras.qtd+' un. por variação com '+d.regras.estoqueMin+'+ em estoque, até '+d.regras.maxItens+' itens. Lucro = preço − custo (Bling/Tiny) − tarifa Shopee estimada − imposto − embalagem.</div>';
+    if(!d.vendas.length){b.innerHTML=topo+'<div class="loading">Nenhuma relâmpago programada ou em andamento.</div>';b.dataset.ok=1;return;}
+    b.innerHTML=topo+d.vendas.map(f=>{
+      const ok=f.itens.filter(l=>!l.m.semCusto),tot=ok.reduce((a,l)=>a+l.m.lucro*l.qtd,0),rec=ok.reduce((a,l)=>a+l.preco*l.qtd,0),fora=f.itens.filter(l=>l.difPromo!=null&&Math.abs(l.difPromo-0.01)>0.001).length;
+      return '<div style="margin:6px 0 18px"><div style="font-weight:700;margin:4px 0">'+(f.situacao==='Em andamento'?'🔥 ':'🗓️ ')+shpEsc(f.situacao)+' · '+shpEsc(f.inicio)+' → '+shpEsc(f.fim)+'</div>'+
+      '<div style="font-size:12px;color:#666;margin-bottom:6px">'+f.itens.length+' itens/variações · se vender tudo: '+brl(rec)+' em vendas, lucro <b>'+brl(tot)+'</b>'+(rec?' ('+(tot/rec*100).toFixed(1).replace('.',',')+'%)':'')+(f.itens.length-ok.length?' · <span style="color:#c0392b">'+(f.itens.length-ok.length)+' sem custo no ERP</span>':'')+(fora?' · <span style="color:#E65100">'+fora+' fora da regra (não é promoção − 0,01)</span>':'')+'</div>'+
+      '<div class="gwrap"><table class="gtab" style="border:none;border-radius:0"><tr><th class="l">Produto</th><th>Preço real</th><th>Promoção (dia a dia)</th><th>Relâmpago</th><th>Qtd</th><th>Custo</th><th>Tarifa Shopee</th><th>Imposto + emb.</th><th>Lucro/un.</th></tr>'+
+      f.itens.map(l=>{const regra=l.difPromo==null?'<br><small style="color:#888">sem promoção</small>':Math.abs(l.difPromo-0.01)<0.001?'<br><small style="color:#2e7d32">✓ −0,01</small>':'<br><small style="color:#E65100">⚠ '+(l.difPromo>0?'−':'+')+brl(Math.abs(l.difPromo)).replace('R$ ','')+' da promoção</small>';
+        return '<tr><td class="l"><div style="font-weight:600;max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+shpEsc(l.nome)+'">'+shpEsc(l.nome)+'</div><div style="font-size:11px;color:#888">'+(l.variacao?shpEsc(l.variacao)+' · ':'')+'SKU '+shpEsc(l.sku||'—')+'</div></td>'+
+        '<td>'+brl(l.original)+'</td><td>'+brl(l.promo)+'</td><td><b>'+brl(l.preco)+'</b>'+regra+'</td><td>'+l.qtd+'</td>'+
+        '<td>'+(l.m.semCusto?'<span style="color:#c0392b">sem custo no ERP</span>':brl(l.m.custo))+'</td>'+
+        '<td>'+brl(l.m.tarifa.valor)+'<br><small style="color:#888">'+Math.round(l.m.tarifa.pct*100)+'% + '+brl(l.m.tarifa.fixa)+'</small></td>'+
+        '<td>'+brl(l.m.imposto+(l.m.embalagem||0))+'</td>'+
+        '<td style="color:'+(l.m.semCusto?'#888':l.m.lucro<0?'#c62828':'#2e7d32')+'"><b>'+(l.m.semCusto?'—':brl(l.m.lucro))+'</b>'+(l.m.semCusto?'':'<br><small>'+String(l.m.pct).replace('.',',')+'%</small>')+'</td></tr>';}).join('')+'</table></div></div>';
+    }).join('');
+    b.dataset.ok=1;
+  }catch(e){b.innerHTML='<div class="loading" style="color:#c0392b">Erro ao carregar.</div>';}
+}
 function showShpTab(name,btn){
   document.querySelectorAll('#shopee-content .tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('#shopee-content .tab-content').forEach(t=>t.classList.remove('active'));
