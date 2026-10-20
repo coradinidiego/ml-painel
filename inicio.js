@@ -266,7 +266,7 @@ module.exports = function montar(app, ctx) {
           const f = fsMap[x.anuncio + '|' + (x.variacao || '')] || (!x.variacao && fsMap[x.anuncio + '|']);
           if (f && f.stock != null) { x.relampago = { campanha: f.campaign_stock ?? null, normal: f.stock, fim: f._fim ? f._fim * 1000 : null }; x.qtdAlt = [f.stock, f.stock + (f.campaign_stock || 0)]; }
         }
-      } catch (er) { console.log('[estoque] relâmpago ' + e.id + ': ' + er.message); }
+      } catch (er) { console.log('[estoque] relâmpago ' + e.id + ': ' + er.message); for (const x of S) x.semInfoRelampago = true; }
     }
     const eu = AZ_ANUNCIOS[e.id]?.eu;
     if (Z.length && eu) {
@@ -386,6 +386,7 @@ module.exports = function montar(app, ctx) {
     // o que já foi sincronizado e continua diferente depois de 2 tentativas: para de insistir e avisa
     for (const x of itens) {
       if (!x.erpId || x.full) continue;
+      if (x.semInfoRelampago) { x.sync = { status: 'não sincronizado: não deu para conferir oferta relâmpago' }; continue; }
       const k = e.id + '|' + x.sku, S = SYNC[k] ||= { n: 0 };
       S.canal = x.canal; S.erpId = x.erpId;
       if (x.relampago) {                      // Shopee bloqueia durante a oferta: agenda para depois do fim
