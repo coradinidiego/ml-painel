@@ -147,11 +147,13 @@ async function renovarTodos() {
 // Extrai SKU do item ML (seller_sku, seller_custom_field, ou array attributes)
 function extrairSKU(it) {
   if (it.seller_sku) return it.seller_sku;
-  if (it.seller_custom_field) return it.seller_custom_field;
+  // atributo SELLER_SKU primeiro: nos anúncios sincronizados (uma variação por anúncio) o seller_custom_field
+  // fica com o SKU antigo da família (ex.: "Lunch") e o SKU certo da variação está no atributo
   if (Array.isArray(it.attributes)) {
     const a = it.attributes.find(a => a.id === 'SELLER_SKU');
     if (a?.value_name) return a.value_name;
   }
+  if (it.seller_custom_field) return it.seller_custom_field;
   return null;
 }
 

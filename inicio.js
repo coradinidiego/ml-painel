@@ -184,7 +184,7 @@ module.exports = function montar(app, ctx) {
   }
 
   // ─── Anúncios de cada marketplace (estoque por SKU) ──────────────────────
-  const skuVarML = v => v.seller_custom_field || (v.attributes || []).find(a => a.id === 'SELLER_SKU')?.value_name || null;
+  const skuVarML = v => (v.attributes || []).find(a => a.id === 'SELLER_SKU')?.value_name || v.seller_custom_field || null;
   async function itensML(idx) {
     const d = dadosCache[idx]; if (!d?.uid) throw new Error('Mercado Livre ainda carregando');
     const ids = [...new Set([...(d.semPromo || []), ...(d.comPromo || []), ...(d.semPromoIgnorados || [])].map(x => x.id))];
