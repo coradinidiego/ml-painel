@@ -1632,7 +1632,7 @@ app.get('/debug/amazon-raw', async (req, res) => {
 app.get('/debug/shopee-raw', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   const { path: p, ...extra } = req.query;
-  if (!/^\/api\/v2\/(shop|product|order|logistics|sellerchat|discount|shop_flash_sale|bundle_deal|add_on_deal|voucher|ads|account_health)\//.test(String(p || ''))) return res.status(400).json({ erro: 'path não permitido' });
+  if (!/^\/api\/v2\/(shop|product|order|logistics|sellerchat|discount|shop_flash_sale|bundle_deal|add_on_deal|voucher|ads|account_health|payment)\//.test(String(p || ''))) return res.status(400).json({ erro: 'path não permitido' });
   const { loja: lj, ...ex2 } = extra;
   try { res.json(await shopee.loja(SHP[lj] ? lj : 'zagodini').shopeeGet(String(p), ex2)); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
