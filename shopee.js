@@ -306,7 +306,7 @@ async function replyRating(ratingId, comment) {
 return { CHAVE, nome: L.nome, ml: L.ml, PARTNER_ID, appProprio, REDIRECT_URL, SANDBOX, BASE_URL, 
   getAuthUrl, getToken, refreshToken,
   saveTokens, getTokens,
-  listarProdutos, listarPedidos, listarAvaliacoes, replyRating, shopeeGet,
+  listarProdutos, listarPedidos, listarAvaliacoes, replyRating, shopeeGet, shopeePost,
   promocoesPorItem, variacoes, responderAvaliacoesLote, impulsionados, impulsionar, atualizarEstoque, listarConversas, mensagens, enviarMensagem,
 };
 }
