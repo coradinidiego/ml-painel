@@ -359,6 +359,7 @@ body{background:#f0f2f5;color:#111}
     <button class="tab" onclick="showTab('perguntas',this)">💬 Perguntas (<span id="tc-perguntas">...</span>)</button>
     <button class="tab" onclick="showTab('estoque',this);carregarEstoque()">📦 Estoque</button>
     <button class="tab" onclick="showTab('ads',this);initAds()">📣 ADS</button>
+    <button class="tab" onclick="showTab('precos',this);carregarPrecos()">💲 Preços × planilha</button>
   </div>
   <div id="tab-inicio" class="tab-content active">
     <div class="cards">
@@ -439,6 +440,16 @@ body{background:#f0f2f5;color:#111}
   <div id="tab-perguntas" class="tab-content">
     <div class="section"><div class="sec-head">💬 Perguntas pendentes <span class="cnt" id="c-perguntas">-</span></div><div id="b-perguntas"><div class="loading">Carregando...</div></div></div>
     <div class="footer"><span id="upd-q">-</span><button class="btn" onclick="recarregarConta()">↺ Atualizar</button></div>
+  </div>
+  <div id="tab-precos" class="tab-content">
+    <div class="sf">
+      <input class="sinput" type="text" placeholder="Buscar por SKU ou nome..." oninput="renderPrecos()" id="pr-q">
+      <select class="sselect" id="pr-canal" onchange="renderPrecos()"><option value="">Todos os sites</option><option value="ml">Mercado Livre</option><option value="shopee">Shopee</option><option value="amazon">Amazon</option><option value="shein">SHEIN</option></select>
+      <select class="sselect" id="pr-sit" onchange="renderPrecos()"><option value="dif">Só diferenças</option><option value="sem">Fora da planilha / sem SKU</option><option value="">Tudo</option></select>
+      <button class="btn" onclick="carregarPrecos(1)">↺ Atualizar</button>
+    </div>
+    <div id="pr-info" style="margin-bottom:10px"></div>
+    <div class="section"><div class="sec-head">💲 Preço no site × planilha de precificação <span class="cnt" id="c-precos">-</span></div><div id="b-precos"><div class="loading">Clique na aba para carregar...</div></div></div>
   </div>
   <div id="tab-estoque" class="tab-content">
     <div class="sf">
@@ -533,12 +544,42 @@ function showTab(name,btn){
   if(btn)btn.classList.add('active');
 }
 function goTab(idx){showTab(['inicio','perdendo','ganhando','atualizando','sempromo','perguntas'][idx],document.querySelectorAll('.tab')[idx]);}
+let _precos=null,_precosEmp=null;
+async function carregarPrecos(forcar){
+  if(!forcar&&_precos&&_precosEmp===ci){renderPrecos();return;}
+  _precosEmp=ci; el('b-precos').innerHTML='<div class="loading">Comparando os preços dos sites com a planilha…</div>'; el('pr-info').innerHTML='';
+  try{
+    const d=await (await fetch('/precos/conferencia?emp='+ci)).json();
+    if(d.erro){el('b-precos').innerHTML='<div class="loading" style="color:#c0392b">'+shpEsc(d.erro)+'</div>';return;}
+    _precos=d;
+    const NOME={ml:'🟡 Mercado Livre',shopee:'🟠 Shopee',amazon:'📦 Amazon',shein:'⚫ SHEIN'};
+    el('pr-info').innerHTML='<div style="display:flex;gap:10px;flex-wrap:wrap">'+Object.entries(d.resumo).map(([c,r])=>'<div class="card" style="flex:1;min-width:170px;cursor:pointer" onclick="el(\'pr-canal\').value=\''+c+'\';el(\'pr-sit\').value=\'dif\';renderPrecos()"><div class="lbl" style="margin-bottom:4px">'+NOME[c]+'</div><div><b style="color:#c62828;font-size:20px">'+r.diferente+'</b> diferentes · <b style="color:#2e7d32">'+r.ok+'</b> ok</div><div style="font-size:11px;color:#888">'+r.semPlanilha+' fora da planilha · '+r.semSku+' sem SKU · '+r.total+' anúncios</div></div>').join('')+'</div>'+
+      '<div style="font-size:12px;color:#777;margin-top:8px">Planilha '+shpEsc(d.planilha.arquivo)+' (OneDrive, cópia de '+new Date(d.planilha.atualizada).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})+'). Ok = o preço do site está na aba do canal (cheio com o preço de venda; promoção com um dos preços de promoção). No Mercado Livre só o preço cheio é conferido — a promoção muda com as campanhas do ML.</div>';
+    renderPrecos();
+  }catch(e){el('b-precos').innerHTML='<div class="loading" style="color:#c0392b">Erro ao carregar.</div>';}
+}
+function renderPrecos(){
+  if(!_precos)return;
+  const c=el('pr-canal').value,s=el('pr-sit').value,q=(el('pr-q').value||'').toLowerCase();
+  const NOME={ml:'Mercado Livre',shopee:'Shopee',amazon:'Amazon',shein:'SHEIN'},TIPO={gold_pro:'Premium',gold_special:'Clássico',full:'Full',fba:'FBA'};
+  const brl=v=>v==null?'—':'R$ '+Number(v).toFixed(2).replace('.',',');
+  const L=_precos.linhas.filter(l=>(!c||l.canal===c)&&(!s||(s==='dif'?/diferente/.test(l.situacao):/planilha|SKU/.test(l.situacao)))&&(!q||((l.sku||'')+' '+(l.nome||'')+' '+l.anuncio).toLowerCase().includes(q)));
+  set('c-precos',L.length);
+  if(!L.length){el('b-precos').innerHTML='<div class="loading" style="color:green">✓ Nada'+(s==='dif'?' diferente':'')+' com esse filtro.</div>';return;}
+  el('b-precos').innerHTML='<div class="gwrap"><table class="gtab" style="border:none;border-radius:0"><tr><th class="l">Produto</th><th class="l">Site</th><th>No site<br><small style="font-weight:400">preço / promoção</small></th><th>Na planilha<br><small style="font-weight:400">preço / promoção</small></th><th class="l">Situação</th></tr>'+
+    L.slice(0,800).map(l=>'<tr><td class="l"><div style="font-weight:600;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+shpEsc(l.nome)+'"><a href="'+shpEsc(l.link)+'" target="_blank" style="color:inherit">'+shpEsc(l.nome||'-')+'</a></div><div style="font-size:11px;color:#888">'+(l.variacao?shpEsc(l.variacao)+' · ':'')+'SKU '+shpEsc(l.sku||'—')+' · '+shpEsc(l.anuncio)+'</div></td>'+
+      '<td class="l" style="white-space:nowrap">'+NOME[l.canal]+(l.tipo&&TIPO[l.tipo]?'<br><small style="color:#888">'+TIPO[l.tipo]+'</small>':'')+'</td>'+
+      '<td><b>'+brl(l.site.cheio)+'</b>'+(l.site.promo?'<br><small>promo '+brl(l.site.promo)+'</small>':'')+'</td>'+
+      '<td>'+(l.planilha?'<b>'+l.planilha.cheio.map(brl).join(' / ')+'</b>'+(l.planilha.promos.length?'<br><small>promo '+l.planilha.promos.map(brl).join(', ')+'</small>':'')+'<br><small style="color:#888">aba '+shpEsc(l.planilha.abas.join(', '))+'</small>':'—')+'</td>'+
+      '<td class="l" style="color:'+(l.situacao==='ok'?'#2e7d32':/diferente/.test(l.situacao)?'#c62828':'#E65100')+';font-weight:600">'+shpEsc(l.situacao)+'</td></tr>').join('')+'</table></div>'+(L.length>800?'<div class="loading">Mostrando 800 de '+L.length+' — use a busca ou os filtros.</div>':'');
+}
 function trocarConta(idx,btn){
   el('apmkt-content').style.display='none';
   modoShopee=false;modoGeral=false;
   ci=idx;
   _estoqueCache=null;
   el('b-estoque').innerHTML='<div class="loading">Clique na aba para carregar...</div>';
+  _precos=null; if(el('tab-precos').classList.contains('active'))setTimeout(()=>carregarPrecos(),0);
   set('c-estoque','-');
   document.querySelectorAll('.conta-tab').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
