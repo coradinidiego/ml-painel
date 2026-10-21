@@ -1989,6 +1989,7 @@ app.post('/alertas/telegram', express.json(), async (req, res) => {
 });
 const _uidML = {};
 require('./promos_ml').rotas(app, { ml, mlReq, dados: () => dadosCache, uid: async idx => (_uidML[idx] ||= (await ml(idx, '/users/me')).id) }); // Promoções do ML com margem, rebate e catálogo
+require('./ads_ml').rotas(app, { ml, token: getToken, dados: () => dadosCache, uid: async idx => (_uidML[idx] ||= (await ml(idx, '/users/me')).id) }); // ADS do ML com lucro real
 require('./precos').rotas(app, { ml: () => dadosCache, shp: () => SHP, az: () => AZ_ANUNCIOS }); // Conferência de preços: planilha × sites
 
 app.listen(PORT, async () => {

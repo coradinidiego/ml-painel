@@ -359,7 +359,7 @@ body{background:#f0f2f5;color:#111}
     <button class="tab" onclick="showTab('promos',this);carregarPromosML()">🏷️ Promoções <span class="badge" id="tc-promos-alerta" style="display:none;background:#2e7d32"></span></button>
     <button class="tab" onclick="showTab('perguntas',this)">💬 Perguntas (<span id="tc-perguntas">...</span>)</button>
     <button class="tab" onclick="showTab('estoque',this);carregarEstoque()">📦 Estoque</button>
-    <button class="tab" onclick="showTab('ads',this);initAds()">📣 ADS</button>
+    <button class="tab" onclick="showTab('adsml',this);carregarAdsML()">📣 ADS</button>
     <button class="tab" onclick="showTab('precos',this);carregarPrecos()">💲 Preços × planilha</button>
   </div>
   <div id="tab-inicio" class="tab-content active">
@@ -441,6 +441,18 @@ body{background:#f0f2f5;color:#111}
   <div id="tab-perguntas" class="tab-content">
     <div class="section"><div class="sec-head">💬 Perguntas pendentes <span class="cnt" id="c-perguntas">-</span></div><div id="b-perguntas"><div class="loading">Carregando...</div></div></div>
     <div class="footer"><span id="upd-q">-</span><button class="btn" onclick="recarregarConta()">↺ Atualizar</button></div>
+  </div>
+  <div id="tab-adsml" class="tab-content">
+    <div class="sf">
+      <input class="sinput" type="text" placeholder="Buscar por SKU, nome ou MLB..." oninput="renderAdsML()" id="ad-q">
+      <select class="sselect" id="ad-f" onchange="renderAdsML()">
+        <option value="prejuizo">🔴 Com ADS dando prejuízo</option><option value="lucro">🟢 Com ADS dando lucro</option><option value="semvenda">⚪ Com ADS gastando sem vender</option>
+        <option value="candidatos">⭐ Sem ADS — bons candidatos</option><option value="sem">Sem ADS — todos</option><option value="todos">Todos</option></select>
+      <select class="sselect" id="ad-dias" onchange="carregarAdsML()"><option value="7">últimos 7 dias</option><option value="15">últimos 15 dias</option><option value="30" selected>últimos 30 dias</option><option value="60">últimos 60 dias</option></select>
+      <button class="btn" onclick="carregarAdsML(1)">↺ Atualizar</button>
+    </div>
+    <div id="ad-resumo"></div>
+    <div class="section"><div class="sec-head">📣 Anúncios <span class="cnt" id="c-adsml">-</span></div><div id="b-adsml"><div class="loading">Clique na aba para carregar...</div></div></div>
   </div>
   <div id="tab-promos" class="tab-content">
     <div class="sf">
@@ -555,6 +567,63 @@ function showTab(name,btn){
   if(btn)btn.classList.add('active');
 }
 function goTab(idx){showTab(['inicio','perdendo','ganhando','atualizando','sempromo','perguntas'][idx],document.querySelectorAll('.tab')[idx]);}
+let _ad=null,_adEmp=null,_adTimer=null;
+async function carregarAdsML(forcar){
+  clearTimeout(_adTimer);
+  const dias=el('ad-dias').value;
+  _adEmp=ci;
+  try{
+    const d=await (await fetch('/ml/ads/'+ci+'?dias='+dias+(forcar?'&recarregar=1':''))).json(); _ad=d;
+    if(d.status!=='pronto'){
+      el('ad-resumo').innerHTML='';
+      el('b-adsml').innerHTML='<div class="loading">'+(d.status==='erro'?'<span style="color:#c0392b">Não deu para ler o ADS: '+shpEsc(d.erro||'')+'</span><br><small>Se for falta de permissão, o app do ML desta conta precisa da permissão de Publicidade.</small>':'Lendo as campanhas e anúncios de ADS no ML…')+'</div>';
+      if(d.status==='carregando'){const emp=ci;_adTimer=setTimeout(()=>{if(ci===emp&&el('tab-adsml').classList.contains('active'))carregarAdsML();},4000);}
+      return;
+    }
+    renderAdsML();
+  }catch(e){el('b-adsml').innerHTML='<div class="loading" style="color:#c0392b">Erro ao carregar.</div>';}
+}
+function renderAdsML(){
+  const d=_ad; if(!d||d.status!=='pronto')return;
+  const brl=v=>v==null?'—':'R$ '+Number(v).toFixed(2).replace('.',','), pc=v=>v==null?'—':String(Math.round(v*10)/10).replace('.',',')+'%';
+  const comAds=x=>x.campanha&&['active','paused','hold'].includes(x.status);
+  const I=d.itens, C=I.filter(comAds);
+  const inv=C.reduce((a,x)=>a+x.custo,0), vend=C.reduce((a,x)=>a+x.vendasAds,0), luc=C.filter(x=>x.lucroAds!=null).reduce((a,x)=>a+x.lucroAds,0);
+  const prej=C.filter(x=>x.lucroAds!=null&&x.lucroAds<0), sv=C.filter(x=>x.custo>0&&!x.unidadesAds);
+  const camp=(d.campanhas||[]).map(c=>'<tr><td class="l"><b>'+shpEsc(c.nome)+'</b><br><small style="color:#888">'+shpEsc(c.status)+(c.estrategia?' · '+shpEsc(c.estrategia):'')+'</small></td><td>'+brl(c.orcamento)+'/dia</td><td>'+(c.acosAlvo!=null?pc(c.acosAlvo):'—')+'</td><td>'+brl(c.custo)+'</td><td>'+brl(c.vendas)+'</td><td>'+pc(c.acos)+'</td></tr>').join('');
+  el('ad-resumo').innerHTML='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">'+
+    [['💸 Investido',brl(inv)],['🛒 Vendas pelo ADS',brl(vend)],['📊 ACOS geral',vend?pc(inv/vend*100):'—'],['💰 Lucro depois do ADS','<span style="color:'+(luc<0?'#c62828':'#2e7d32')+'">'+brl(luc)+'</span>'],['🔴 Dando prejuízo',prej.length],['⚪ Gastando sem vender',sv.length]].map(([l,v])=>'<div class="card" style="flex:1;min-width:150px"><div class="lbl">'+l+'</div><div style="font-size:20px;font-weight:700">'+v+'</div></div>').join('')+'</div>'+
+    (camp?'<details style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:600;font-size:13px">Campanhas ('+d.campanhas.length+')</summary><div class="gwrap"><table class="gtab" style="border:none;font-size:12px"><tr><th class="l">Campanha</th><th>Orçamento</th><th>ACOS alvo</th><th>Investido</th><th>Vendas</th><th>ACOS</th></tr>'+camp+'</table></div></details>':'')+
+    '<div style="font-size:12px;color:#777;margin-bottom:8px">Período: últimos '+d.dias+' dias · atualizado '+new Date(d.em).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})+'. <b>Lucro depois do ADS</b> = unidades vendidas pelo ADS × lucro por unidade (preço − custo Bling/Tiny − tarifa e frete do ML − imposto − embalagem) − investimento. <b>ACOS de equilíbrio</b> = margem do anúncio: ACOS acima dela dá prejuízo.</div>';
+  const f=el('ad-f').value,q=(el('ad-q').value||'').toLowerCase();
+  let L=f==='prejuizo'?prej:f==='lucro'?C.filter(x=>x.lucroAds>0):f==='semvenda'?sv:f==='candidatos'?I.filter(x=>!comAds(x)&&x.margem?.pct>=15&&(x.estoque??1)>0):f==='sem'?I.filter(x=>!comAds(x)):I;
+  if(q)L=L.filter(x=>((x.sku||'')+' '+(x.titulo||'')+' '+x.id).toLowerCase().includes(q));
+  L=[...L].sort(f==='prejuizo'?(a,b)=>a.lucroAds-b.lucroAds:f==='lucro'?(a,b)=>b.lucroAds-a.lucroAds:f==='semvenda'?(a,b)=>b.custo-a.custo:(f==='candidatos'||f==='sem')?(a,b)=>(b.recomendado-a.recomendado)||((b.organicas||0)-(a.organicas||0))||((b.margem?.pct||0)-(a.margem?.pct||0)):(a,b)=>b.custo-a.custo);
+  set('c-adsml',L.length);
+  if(!L.length){el('b-adsml').innerHTML='<div class="loading" style="color:green">✓ Nada nesta lista.</div>';return;}
+  const opCamp=sel=>(d.campanhas||[]).filter(c=>c.status!=='deleted').map(c=>'<option value="'+c.id+'"'+(String(sel)===String(c.id)?' selected':'')+'>'+shpEsc(c.nome)+'</option>').join('');
+  el('b-adsml').innerHTML='<div class="gwrap"><table class="gtab" style="border:none;border-radius:0;font-size:12px"><tr><th class="l">Anúncio</th><th class="l">ADS</th><th>Preço<br><small style="font-weight:400">lucro/un · ACOS equilíbrio</small></th><th>Cliques</th><th>Investido</th><th>Vendas ADS</th><th>ACOS</th><th>Lucro depois do ADS</th><th></th></tr>'+
+    L.slice(0,400).map(x=>{const ca=comAds(x), mg=x.margem||{};
+      const acao=ca?('<button class="btn" style="padding:3px 8px;font-size:11px" onclick="acaoAdsML(\''+x.id+'\',{status:\''+(x.status==='active'?'paused':'active')+'\'},this)">'+(x.status==='active'?'⏸ Pausar':'▶ Ativar')+'</button> <select class="sselect" style="padding:2px;font-size:11px;max-width:130px" onchange="if(this.value!==\'\')acaoAdsML(\''+x.id+'\',{campaign_id:+this.value},this)"><option value="">mover…</option>'+opCamp(x.campanha?.id)+'<option value="0">❌ tirar do ADS</option></select>')
+        :('<select class="sselect" style="padding:2px;font-size:11px;max-width:150px" onchange="if(this.value)acaoAdsML(\''+x.id+'\',{campaign_id:+this.value},this)"><option value="">➕ colocar no ADS…</option>'+opCamp()+'</select>');
+      return '<tr><td class="l"><div style="display:flex;gap:8px;align-items:center">'+(x.thumb?'<img src="'+shpEsc(x.thumb)+'" style="width:36px;height:36px;object-fit:cover;border-radius:4px">':'')+'<div><a href="'+shpEsc(x.link||'#')+'" target="_blank" style="color:inherit;font-weight:600;display:block;max-width:330px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+shpEsc(x.titulo)+'">'+shpEsc(x.titulo||x.id)+'</a><small style="color:#888">SKU '+shpEsc(x.sku||'—')+' · '+x.id+(x.catalogo?' · '+(x.catalogo==='ganhando'?'🟢':'🔴')+' catálogo':'')+(x.recomendado?' · ⭐ ML recomenda':'')+(x.estoque===0?' · <span style="color:#c62828">sem estoque</span>':'')+'</small></div></div></td>'+
+        '<td class="l">'+(ca?'<b style="color:'+(x.status==='active'?'#2e7d32':'#888')+'">'+(x.status==='active'?'Ativo':x.status==='paused'?'Pausado':'Suspenso')+'</b><br><small>'+shpEsc(x.campanha?.nome||'')+'</small>':'<span style="color:#888">sem ADS</span>')+'</td>'+
+        '<td>'+brl(x.preco)+'<br><small>'+(mg.erro?'<span style="color:#888">'+shpEsc(mg.erro)+'</span>':brl(mg.lucro)+' · '+pc(mg.pct))+'</small></td>'+
+        '<td>'+x.cliques+'</td><td>'+brl(x.custo)+'</td><td>'+(x.unidadesAds?x.unidadesAds+' un<br><small>'+brl(x.vendasAds)+'</small>':'—')+'</td>'+
+        '<td style="color:'+(x.acos!=null&&mg.pct!=null&&x.acos>mg.pct?'#c62828':'inherit')+'">'+pc(x.acos)+'</td>'+
+        '<td><b style="color:'+(x.lucroAds==null?'#888':x.lucroAds<0?'#c62828':'#2e7d32')+'">'+(ca||x.custo?brl(x.lucroAds):'—')+'</b></td><td style="white-space:nowrap">'+acao+'</td></tr>';}).join('')+'</table></div>'+(L.length>400?'<div class="loading">Mostrando 400 de '+L.length+'.</div>':'');
+}
+async function acaoAdsML(item,body,elx){
+  const x=_ad.itens.find(y=>y.id===item);
+  const txt=body.campaign_id===0?'Tirar do ADS':body.campaign_id?'Colocar na campanha "'+((_ad.campanhas||[]).find(c=>String(c.id)===String(body.campaign_id))?.nome||body.campaign_id)+'"':body.status==='paused'?'Pausar o ADS':'Ativar o ADS';
+  if(!confirm(txt+'\n'+(x?.titulo||item)+'?')){if(elx.tagName==='SELECT')elx.value='';return;}
+  elx.disabled=true;
+  try{const r=await (await fetch('/ml/ads/'+ci+'/acao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item,...body})})).json();
+    if(r.erro)throw new Error(r.erro);
+    if(x){if(body.status)x.status=body.status;if(body.campaign_id!=null){x.campanha=body.campaign_id?{id:body.campaign_id,nome:(_ad.campanhas.find(c=>String(c.id)===String(body.campaign_id))||{}).nome}:null;x.status=body.campaign_id?(r.resposta?.status||'active'):'idle';}}
+    renderAdsML();
+  }catch(e){alert('O ML recusou: '+e.message);elx.disabled=false;if(elx.tagName==='SELECT')elx.value='';}
+}
 let _pm=null,_pmEmp=null,_pmTimer=null;
 async function carregarPromosML(forcar){
   clearTimeout(_pmTimer);
@@ -664,6 +733,7 @@ function trocarConta(idx,btn){
   el('b-estoque').innerHTML='<div class="loading">Clique na aba para carregar...</div>';
   _precos=null; if(el('tab-precos').classList.contains('active'))setTimeout(()=>carregarPrecos(),0);
   _pm=null; if(el('tab-promos').classList.contains('active'))setTimeout(()=>carregarPromosML(),0);
+  _ad=null; if(el('tab-adsml').classList.contains('active'))setTimeout(()=>carregarAdsML(),0);
   set('c-estoque','-');
   document.querySelectorAll('.conta-tab').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
