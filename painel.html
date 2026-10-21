@@ -450,6 +450,7 @@ body{background:#f0f2f5;color:#111}
     </div>
     <div id="pm-info" style="font-size:12px;color:#777;margin-bottom:8px"></div>
     <div class="section"><div class="sec-head">🏷️ Promoções do Mercado Livre <span class="cnt" id="c-promos">-</span></div><div id="b-promos"><div class="loading">Clique na aba para carregar...</div></div></div>
+    <div class="section" style="margin-top:14px"><details id="pm-saida-box"><summary class="sec-head" style="cursor:pointer;list-style:none">⏳ Próximos a sair de promoção <span class="cnt" id="c-pm-saida">-</span> <select class="sselect" id="pm-dias" onclick="event.stopPropagation()" onchange="renderSaidaML()" style="margin-left:8px;padding:3px 6px;font-size:12px"><option value="3">próximos 3 dias</option><option value="7" selected>próximos 7 dias</option><option value="15">próximos 15 dias</option><option value="30">próximos 30 dias</option></select> <small style="font-weight:400;color:#888">(clique para abrir)</small></summary><div id="b-pm-saida"></div></details></div>
   </div>
   <div id="tab-precos" class="tab-content">
     <div class="sf">
@@ -582,7 +583,13 @@ function renderPromosML(){
   if(f==='rebate')L.sort((a,b)=>((b.opcoes.find(o=>o.rebate>0&&o.status==='candidate')?.m?.lucro||0)-(b.atual?.lucro||0))-((a.opcoes.find(o=>o.rebate>0&&o.status==='candidate')?.m?.lucro||0)-(a.atual?.lucro||0)));
   set('c-promos',L.length);
   if(!L.length){el('b-promos').innerHTML='<div class="loading" style="color:green">✓ Nada nesta lista.</div>';return;}
-  el('b-promos').innerHTML=L.slice(0,300).map(x=>{
+  el('b-promos').innerHTML=L.slice(0,300).map(x=>cardPromoML(x)).join('')+(L.length>300?'<div class="loading">Mostrando 300 de '+L.length+' — use a busca.</div>':'');
+  renderSaidaML();
+}
+function cardPromoML(x,extra){
+  const brl=v=>v==null?'—':'R$ '+Number(v).toFixed(2).replace('.',',');
+  const luc=m=>!m||m.erro?'<span style="color:#888;font-size:11px">'+shpEsc(m?.erro||'—')+'</span>':'<b style="color:'+(m.lucro<0?'#c62828':'#2e7d32')+'">'+brl(m.lucro)+'</b> <small>('+String(m.pct).replace('.',',')+'%)</small>';
+  {
     const cat=x.catalogo?(x.catalogo.status==='winning'?'<span style="background:#e8f5e9;color:#2e7d32;border-radius:8px;padding:1px 7px;font-size:11px">🟢 Ganhando catálogo'+(x.catalogo.s2?' · 2º em '+brl(x.catalogo.s2):'')+'</span>':'<span style="background:#ffebee;color:#c62828;border-radius:8px;padding:1px 7px;font-size:11px">🔴 Perdendo catálogo'+(x.catalogo.ptw?' · ganha com '+brl(x.catalogo.ptw):'')+'</span>'):'';
     const ops=x.opcoes.map((o,i)=>{const melhor=o.status==='candidate'&&o.rebate>0&&o.m?.lucro!=null&&x.atual?.lucro!=null&&o.m.lucro>x.atual.lucro+0.05;
       return '<tr style="'+(melhor?'background:#f1f8e9':'')+'"><td class="l">'+shpEsc(o.nome)+'<br><small style="color:#888">'+shpEsc(o.tipoNome)+' · '+o.situacao+(o.fim?' · até '+new Date(o.fim).toLocaleDateString('pt-BR'):'')+'</small></td>'+
@@ -594,8 +601,22 @@ function renderPromosML(){
     return '<div style="border:1px solid #eee;border-radius:10px;padding:10px 12px;margin:8px 0"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+(x.thumb?'<img src="'+shpEsc(x.thumb)+'" style="width:44px;height:44px;object-fit:cover;border-radius:6px">':'')+
       '<div style="flex:1;min-width:240px"><a href="'+shpEsc(x.link)+'" target="_blank" style="color:inherit;font-weight:600">'+shpEsc(x.titulo)+'</a><div style="font-size:11px;color:#888">SKU '+shpEsc(x.sku||'—')+' · '+x.id+' '+cat+'</div></div>'+
       '<div style="font-size:12px;text-align:right">Hoje: <b>'+brl(x.precoAtual)+'</b>'+(x.ativa?' <small>('+shpEsc(x.ativa.nome)+')</small>':x.semPromo?' <small style="color:#E65100">sem promoção</small>':'')+'<br>Lucro atual: '+luc(x.atual)+'</div></div>'+
-      (x.opcoes.length?'<div class="gwrap" style="margin-top:6px"><table class="gtab" style="border:none;border-radius:0;font-size:12px"><tr><th class="l">Promoção</th><th>Preço</th><th>Rebate ML</th><th>Lucro</th><th>Catálogo</th><th></th></tr>'+ops+'</table></div>':'<div style="font-size:12px;color:#888;margin-top:6px">Nenhuma promoção disponível no ML para este anúncio agora.</div>')+'</div>';
-  }).join('')+(L.length>300?'<div class="loading">Mostrando 300 de '+L.length+' — use a busca.</div>':'');
+      (extra||'')+(x.opcoes.length?'<div class="gwrap" style="margin-top:6px"><table class="gtab" style="border:none;border-radius:0;font-size:12px"><tr><th class="l">Promoção</th><th>Preço</th><th>Rebate ML</th><th>Lucro</th><th>Catálogo</th><th></th></tr>'+ops+'</table></div>':'<div style="font-size:12px;color:#888;margin-top:6px">Nenhuma promoção disponível no ML para este anúncio agora.</div>')+'</div>';
+  }
+}
+function renderSaidaML(){
+  if(!_pm||_pm.status!=='pronto')return;
+  const dias=+el('pm-dias').value||7, lim=Date.now()+dias*864e5, q=(el('pm-q').value||'').toLowerCase();
+  const brl=v=>v==null?'—':'R$ '+Number(v).toFixed(2).replace('.',',');
+  let L=_pm.itens.filter(x=>x.saida?.fim&&Date.parse(x.saida.fim)<=lim&&Date.parse(x.saida.fim)>=Date.now()-36e5);
+  if(q)L=L.filter(x=>((x.sku||'')+' '+(x.titulo||'')+' '+x.id).toLowerCase().includes(q));
+  L.sort((a,b)=>Date.parse(a.saida.fim)-Date.parse(b.saida.fim));
+  set('c-pm-saida',L.length);
+  el('b-pm-saida').innerHTML=!L.length?'<div class="loading" style="color:green">✓ Nenhum anúncio sai de promoção nesse período.</div>':L.slice(0,300).map(x=>{
+    const d=x.saida, m=d.depois;
+    const faixa='<div style="font-size:12px;margin-top:6px;padding:6px 8px;background:#fff8e1;border-radius:6px">⏳ <b>'+shpEsc(x.ativa?.nome||'promoção')+'</b> acaba em <b>'+new Date(d.fim).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})+'</b> → volta para <b>'+brl(d.precoDepois)+'</b>'+(d.depoisCom?' ('+shpEsc(d.depoisCom)+')':' (preço cheio)')+' · lucro depois: '+(m&&!m.erro?'<b style="color:'+(m.lucro<0?'#c62828':'#2e7d32')+'">'+brl(m.lucro)+'</b> ('+String(m.pct).replace('.',',')+'%)':'<small>'+shpEsc(m?.erro||'—')+'</small>')+(x.catalogo?.status==='winning'&&x.catalogo.s2&&d.precoDepois>=x.catalogo.s2?' · <span style="color:#c62828">perde o catálogo (2º em '+brl(x.catalogo.s2)+')</span>':'')+'</div>';
+    return cardPromoML(x,faixa);
+  }).join('');
 }
 async function entrarPromoML(item,i,btn){
   const x=_pm.itens.find(y=>y.id===item),o=x.opcoes[i];

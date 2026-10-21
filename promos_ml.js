@@ -62,7 +62,16 @@ async function opcoesItem(idx, uid, it, cat, erp) {
   }
   opcoes.sort((a, b) => (b.m.lucro ?? -1e9) - (a.m.lucro ?? -1e9));
   const melhores = opcoes.filter(o => o.status === 'candidate' && o.rebate > 0 && o.m.lucro != null && atual.lucro != null && o.m.lucro > atual.lucro + 0.05);
-  return { precoAtual: r2(precoAtual), atual, ativa: ativa ? { nome: ativa.name || NOME_TIPO[ativa.type] || ativa.type, tipo: ativa.type, rebate: rebAtual } : null, opcoes, rebateMelhor: melhores.length };
+  // quando a promoção ativa acabar: volta ao preço cheio (ou a outra promoção ativa que siga valendo)
+  let saida = null;
+  if (ativa?.finish_date) {
+    const fim = Date.parse(ativa.finish_date);
+    const seguinte = lista.filter(p => p !== ativa && p.status === 'started' && +p.price > 0 && (!p.finish_date || Date.parse(p.finish_date) > fim)).sort((a, b) => b.price - a.price)[0];
+    const precoDepois = seguinte ? +seguinte.price : (+ativa.original_price || it.original_price || it.price);
+    const rebDepois = seguinte && +seguinte.meli_percentage > 0 ? r2((+seguinte.original_price || 0) * +seguinte.meli_percentage / 100) : 0;
+    saida = { fim: ativa.finish_date, precoDepois: r2(precoDepois), depoisCom: seguinte ? (seguinte.name || NOME_TIPO[seguinte.type] || seguinte.type) : null, depois: await cm.margemPreco(F.ml, idx, uid, it, precoDepois, rebDepois, erp) };
+  }
+  return { precoAtual: r2(precoAtual), atual, ativa: ativa ? { nome: ativa.name || NOME_TIPO[ativa.type] || ativa.type, tipo: ativa.type, rebate: rebAtual, fim: ativa.finish_date || null } : null, saida, opcoes, rebateMelhor: melhores.length };
 }
 
 async function carregar(idx) {
