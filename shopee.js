@@ -216,6 +216,9 @@ async function variacoes(itemId) {
     nome: (m.tier_index || []).map((ix, t) => tiers[t]?.option_list?.[ix]?.option).filter(Boolean).join(' / '),
     preco: m.price_info?.[0]?.current_price ?? null, original: m.price_info?.[0]?.original_price ?? null,
     estoque: m.stock_info_v2?.summary_info?.total_available_stock ?? null,
+    // estoque real do vendedor (durante oferta relâmpago o "disponível" mostra só o saldo da campanha)
+    estoqueVendedor: (m.stock_info_v2?.seller_stock || []).length ? m.stock_info_v2.seller_stock.reduce((a, x) => a + (+x.stock || 0), 0) : null,
+    reservado: m.stock_info_v2?.summary_info?.total_reserved_stock ?? 0,
   }));
 }
 

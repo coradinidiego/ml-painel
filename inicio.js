@@ -265,11 +265,16 @@ module.exports = function montar(app, ctx) {
         try {
           const d = await sp.shopeeGet('/api/v2/product/get_item_base_info', { item_id_list: itens.slice(i, i + 50).join(',') });
           const m = Object.fromEntries((d.response?.item_list || []).map(p => [String(p.item_id), p]));
-          for (const x of S) if (!x.variacao && m[x.anuncio]) x.qtd = m[x.anuncio].stock_info_v2?.summary_info?.total_available_stock ?? x.qtd;
+          for (const x of S) if (!x.variacao && m[x.anuncio]) {
+            const si = m[x.anuncio].stock_info_v2 || {}, vend = (si.seller_stock || []).length ? si.seller_stock.reduce((a, y) => a + (+y.stock || 0), 0) : null;
+            x.qtd = vend ?? si.summary_info?.total_available_stock ?? x.qtd;
+            // saldo reservado em campanha (oferta relâmpago): compara pelo estoque real e não sincroniza até acabar
+            if (si.summary_info?.total_reserved_stock > 0) x.relampago = { campanha: si.summary_info.total_reserved_stock, normal: x.qtd, fim: null };
+          }
         } catch (er) {}
       }
       for (const id of [...new Set(S.filter(x => x.variacao).map(x => x.anuncio))].slice(0, 60)) {
-        try { const V = await sp.variacoes(id); for (const x of S) if (x.anuncio === id && x.variacao) { const v = V.find(v => String(v.model_id) === x.variacao); if (v) x.qtd = v.estoque ?? x.qtd; } } catch (er) {}
+        try { const V = await sp.variacoes(id); for (const x of S) if (x.anuncio === id && x.variacao) { const v = V.find(v => String(v.model_id) === x.variacao); if (!v) continue; x.qtd = v.estoqueVendedor ?? v.estoque ?? x.qtd; if (v.reservado > 0) x.relampago = { campanha: v.reservado, normal: x.qtd, fim: null }; } } catch (er) {}
       }
       // oferta relâmpago em andamento: a Shopee mostra só o estoque da campanha (ex.: 3). Usa o estoque normal do item.
       try {
@@ -283,9 +288,12 @@ module.exports = function montar(app, ctx) {
         }
         for (const x of S) {
           const f = fsMap[x.anuncio + '|' + (x.variacao || '')] || (!x.variacao && fsMap[x.anuncio + '|']);
-          if (f && f.stock != null) { x.relampago = { campanha: f.campaign_stock ?? null, normal: f.stock, fim: f._fim ? f._fim * 1000 : null }; x.qtdAlt = [f.stock, f.stock + (f.campaign_stock || 0)]; }
+          if (f && f.stock != null) { x.relampago = { campanha: f.campaign_stock ?? x.relampago?.campanha ?? null, normal: x.relampago?.normal ?? f.stock, fim: f._fim ? f._fim * 1000 : null }; x.qtdAlt = [f.stock, f.stock + (f.campaign_stock || 0)]; }
         }
-      } catch (er) { console.log('[estoque] relâmpago ' + e.id + ': ' + er.message); for (const x of S) x.semInfoRelampago = true; }
+      } catch (er) {
+        // a lista de relâmpagos falhou: o estoque real do vendedor e o saldo reservado já vieram acima — só não sabemos o fim da oferta
+        console.log('[estoque] relâmpago ' + e.id + ': ' + er.message);
+      }
     }
     const eu = AZ_ANUNCIOS[e.id]?.eu;
     if (Z.length && eu) {
