@@ -181,6 +181,8 @@ async function listarAvaliacoes(max = 200) {
     for (const c of d.response?.item_comment_list || []) out.push({
       rating_id: c.comment_id, item_id: c.item_id, rating_star: c.rating_star || 0, create_time: c.create_time,
       buyer_username: c.buyer_username, comment_list: c.comment ? [c.comment] : [], comment: c.comment_reply?.reply || '',
+      model_id: c.model_id || null, order_sn: c.order_sn || null,
+      imagens: c.media?.image_url_list || [], videos: c.media?.video_url_list || [],
     });
     if (!d.response?.more) break;
     cursor = d.response.next_cursor;

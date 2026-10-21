@@ -1045,11 +1045,17 @@ function renderShpAvaliacoes(){
   if(!_shpDados){el('shp-b-avaliacoes').innerHTML='<div class="loading">Aguarde...</div>';return;}
   if(!_shpDados.avaliacoes.length){el('shp-b-avaliacoes').innerHTML='<div class="loading" style="color:green">✓ Nenhuma avaliação.</div>';return;}
   const L=[..._shpDados.avaliacoes].sort((a,b)=>(!a.comment?0:1)-(!b.comment?0:1)||(b.create_time||0)-(a.create_time||0));
+  const prodAv=Object.fromEntries((_shpDados.produtos||[]).map(p=>[p.item_id,p]));
   el('shp-b-avaliacoes').innerHTML=L.map(r=>{
     const stars='★'.repeat(r.rating_star)+'☆'.repeat(5-r.rating_star);
     const jaRespondeu=r.comment?'<div class="imeta" style="color:#43A047;margin-top:4px">✓ Respondida: '+shpEsc(r.comment)+'</div>':'';
     const replyForm=!r.comment?'<div class="reply-box"><input type="text" placeholder="Responder avaliação..." id="rep-'+r.rating_id+'"><button onclick="responderAvaliacao('+r.rating_id+')">Enviar</button></div>':'';
-    return '<div class="item-row" style="flex-direction:column;align-items:flex-start"><div style="display:flex;gap:10px;width:100%"><div class="thumb" style="font-size:18px">⭐</div><div class="iinfo"><div class="ititle"><span class="star">'+stars+'</span> · '+shpData(r.create_time)+'</div><div class="imeta">'+shpEsc(r.buyer_username||'Comprador')+' · '+shpEsc(r.comment_list?.[0]||'Sem comentário')+'</div>'+jaRespondeu+'</div></div>'+replyForm+'</div>';
+    const p=prodAv[r.item_id], vr=p&&r.model_id?(p._variacoes||[]).find(v=>String(v.model_id)===String(r.model_id)):null;
+    const prod='<div class="imeta" style="margin-top:2px">📦 '+(p?'<a href="https://shopee.com.br/product/'+(_shpDados.shop_id||'')+'/'+r.item_id+'" target="_blank" style="color:inherit;font-weight:600">'+shpEsc(p.item_name)+'</a>'+(vr?.nome?' · '+shpEsc(vr.nome):''):'Produto '+r.item_id)+'</div>';
+    const fotos=(r.imagens||[]).length||(r.videos||[]).length?'<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'+(r.imagens||[]).map(u=>'<a href="'+shpEsc(u)+'" target="_blank"><img src="'+shpEsc(u)+'" loading="lazy" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid #eee"></a>').join('')+(r.videos||[]).map(u=>'<a href="'+shpEsc(u)+'" target="_blank" style="display:flex;align-items:center;justify-content:center;width:64px;height:64px;border-radius:6px;background:#222;color:#fff;font-size:22px;text-decoration:none">▶</a>').join('')+'</div>':'';
+    const selo=(r.imagens||[]).length||(r.videos||[]).length?' · <span style="color:#EE4D2D;font-weight:600">📷 com '+[(r.imagens||[]).length?(r.imagens.length+' foto'+(r.imagens.length>1?'s':'')):'',(r.videos||[]).length?(r.videos.length+' vídeo'+(r.videos.length>1?'s':'')):''].filter(Boolean).join(' e ')+'</span>':'';
+    const thumb=p&&p.image?.image_url_list?.[0]?'<div class="thumb"><img src="'+shpEsc(p.image.image_url_list[0])+'" loading="lazy"></div>':'<div class="thumb" style="font-size:18px">⭐</div>';
+    return '<div class="item-row" style="flex-direction:column;align-items:flex-start"><div style="display:flex;gap:10px;width:100%">'+thumb+'<div class="iinfo"><div class="ititle"><span class="star">'+stars+'</span> · '+shpData(r.create_time)+selo+'</div>'+prod+'<div class="imeta">'+shpEsc(r.buyer_username||'Comprador')+' · '+shpEsc(r.comment_list?.[0]||'Sem comentário')+'</div>'+fotos+jaRespondeu+'</div></div>'+replyForm+'</div>';
   }).join('');
 }
 
