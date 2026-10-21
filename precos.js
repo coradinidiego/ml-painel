@@ -13,6 +13,7 @@
  *
  *  Situação: ok = o preço do site bate com algum preço da planilha para aquele SKU no canal
  *            (cheio com o cheio; promoção com um dos preços de promoção ou com o cheio).
+ *            No ML só o preço cheio é conferido (a promoção varia com as campanhas do ML).
  *
  *  GET /precos/conferencia?emp=0|1|2   JSON
  *  GET /precos                          página
@@ -126,7 +127,8 @@ function conferir(idx, fontes) {
     const usar = preferidos.length ? preferidos : regs;
     const cheios = usar.map(r => r.precos[0]).filter(Boolean), promos = usar.flatMap(r => r.precos.slice(1)).filter(Boolean);
     const okCheio = cheios.some(p => igual(p, s.cheio));
-    const okPromo = !s.promo || [...promos, ...cheios].some(p => igual(p, s.promo));
+    // ML: o preço promocional muda com as campanhas do ML (com desconto bancado pelo ML) — confere só o preço cheio
+    const okPromo = s.canal === 'ml' || !s.promo || [...promos, ...cheios].some(p => igual(p, s.promo));
     const planilha = { abas: [...new Set(usar.map(r => r.aba))], cheio: [...new Set(cheios)], promos: [...new Set(promos)] };
     if (okCheio && okPromo) { R.ok++; linhas.push({ ...base, planilha, situacao: 'ok' }); continue; }
     R.diferente++;
@@ -153,7 +155,7 @@ const brl=v=>v==null?'—':'R$ '+Number(v).toFixed(2).replace('.',',');const NOM
 const TIPO={gold_pro:'Premium',gold_special:'Clássico',full:'Full',fba:'FBA'};
 async function carregar(){$('info').textContent='Carregando…';$('lista').innerHTML='';D=await (await fetch('/precos/conferencia?emp='+$('emp').value)).json();
  if(D.erro){$('info').innerHTML='<span class="dif">'+esc(D.erro)+'</span>';return;}
- $('info').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:10px">Planilha <b>'+esc(D.planilha.arquivo)+'</b> (cópia do OneDrive de '+new Date(D.planilha.atualizada).toLocaleString('pt-BR')+'). Abas lidas: '+D.planilha.abas.map(a=>esc(a.aba)).join(', ')+'. Ok = o preço do site bate com a planilha (cheio com o cheio; promoção com um dos preços de promoção da aba).</div><div class="cards">'+
+ $('info').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:10px">Planilha <b>'+esc(D.planilha.arquivo)+'</b> (cópia do OneDrive de '+new Date(D.planilha.atualizada).toLocaleString('pt-BR')+'). Abas lidas: '+D.planilha.abas.map(a=>esc(a.aba)).join(', ')+'. Ok = o preço do site bate com a planilha (cheio com o cheio; promoção com um dos preços de promoção da aba). No Mercado Livre só o preço cheio é conferido — a promoção muda com as campanhas do ML.</div><div class="cards">'+
  Object.entries(D.resumo).map(([c,r])=>'<div class="card"><div>'+NOME[c]+'</div><b class="ok">'+r.ok+'</b> ok · <b class="dif">'+r.diferente+'</b> diferentes<br><small>'+r.semPlanilha+' fora da planilha · '+r.semSku+' sem SKU · '+r.total+' anúncios</small></div>').join('')+'</div>';render();}
 function render(){if(!D||D.erro)return;const c=$('canal').value,s=$('sit').value,q=$('q').value.toLowerCase();
  let L=D.linhas.filter(l=>(!c||l.canal===c)&&(!s||(s==='dif'?/diferente/.test(l.situacao):/planilha|SKU/.test(l.situacao)))&&(!q||(l.sku+' '+l.nome).toLowerCase().includes(q)));
