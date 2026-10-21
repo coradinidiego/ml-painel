@@ -337,8 +337,9 @@ module.exports = function montar(app, ctx) {
         .map(x => { const q = x.relampago ? x.relampago.normal : x.qtd; return { ...x, qtd: q, diff: q - x.erpDisp }; });
       itens.sort((p, q) => Math.abs(q.diff) - Math.abs(p.diff));
       if (e.erp !== 'Tiny' && erp._semDeposito) R.avisoSync = 'Sincronização automática desligada nesta empresa: o app do Bling não tem permissão de Estoques/Depósitos (precisa autorizar de novo com esse escopo).'; else delete R.avisoSync;
-      if (e.erp !== 'Tiny' && syncCfg.on && itens.length > 40) console.warn(`[sync] ${e.id}: ${itens.length} divergências — anormal, sincronização automática suspensa nesta rodada`);
-      if (e.erp !== 'Tiny' && syncCfg.on && itens.length <= 40 && !erp._semDeposito) { R.etapa = 'pedindo ao Bling para sincronizar'; await sincronizarDivergencias(e, itens).catch(er => console.warn('[sync] ' + e.id, er.message)); }
+      if (syncCfg.on && itens.length > 40) console.warn(`[sync] ${e.id}: ${itens.length} divergências — anormal, sincronização automática suspensa nesta rodada`);
+      // Tiny (Lufe): não há depósito do Full no Tiny — o saldo total é o que vai para os sites
+      if (syncCfg.on && itens.length <= 40 && !erp._semDeposito) { R.etapa = 'atualizando o estoque nos sites'; await sincronizarDivergencias(e, itens).catch(er => console.warn('[sync] ' + e.id, er.message)); }
       const curto = x => ({ canal: x.canal, anuncio: x.anuncio, nome: x.nome, sku: x.sku, link: x.link, nomeVar: x.nomeVar });
       Object.assign(R, { status: 'pronto', erro: null, em: new Date().toISOString(), erp: e.erp, itens, comparados, ignorados,
         semSku: semSku.map(curto), semErp: semErp.map(curto), erros, duracaoSeg: Math.round((Date.now() - R.inicio) / 1000), etapa: null });
@@ -430,7 +431,7 @@ module.exports = function montar(app, ctx) {
       } else if (!S.em || agora - S.em > 2 * 3600e3) {
         if (feitos >= 30) continue;
         if (x.canal === 'amazon') { S.status = 'Amazon: corrigir manualmente'; x.sync = { status: S.status }; continue; }
-        try { const q = await atualizarCanal(e, x); S.em = Date.now(); S.n = (S.n || 0) + 1; S.status = 'atualizado no site para ' + q + ' (disponível do Bling)'; S.erro = null; feitos++; }
+        try { const q = await atualizarCanal(e, x); S.em = Date.now(); S.n = (S.n || 0) + 1; S.status = 'atualizado no site para ' + q + ' (disponível do ' + (e.erp === 'Tiny' ? 'Tiny' : 'Bling') + ')'; S.erro = null; feitos++; }
         catch (er) { const d = er.response?.data; S.erro = d?.cause?.[0]?.message || d?.message || d?.error?.description || d?.error?.message || er.message; S.status = 'erro'; }
       }
       x.sync = { status: S.status, em: S.em || null, n: S.n || 0, erro: S.erro || null, aguardaAte: S.aguardaAte || null };
@@ -491,7 +492,7 @@ module.exports = function montar(app, ctx) {
   // manual (admin): POST /inicio/estoque/sincronizar?emp=zagodini&sku=7303522-07
   app.post('/inicio/estoque/sincronizar', async (req, res) => {
     if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
-    const e = EMP.find(x => x.id === req.query.emp); if (!e || e.erp === 'Tiny') return res.status(400).json({ erro: 'empresa inválida (só Bling)' });
+    const e = EMP.find(x => x.id === req.query.emp); if (!e) return res.status(400).json({ erro: 'empresa inválida' });
     const R = EST[e.id] || {}, x = (R.itens || []).find(i => K(i.sku) === K(req.query.sku));
     let id = x?.erpId || req.query.id;
     if (!id) return res.status(404).json({ erro: 'SKU não está nas divergências; passe &id=<id do produto no Bling>' });
