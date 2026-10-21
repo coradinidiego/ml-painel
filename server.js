@@ -386,7 +386,7 @@ async function carregarConta(idx) {
     let allItems = [];
     for (let i = 0; i < idsAtivos.length; i += 20) {
       const chunk = idsAtivos.slice(i, i+20);
-      const det = await ml(idx, '/items', {ids:chunk.join(','), attributes:'id,title,price,original_price,thumbnail,catalog_listing,seller_sku,available_quantity,shipping,attributes'});
+      const det = await ml(idx, '/items', {ids:chunk.join(','), attributes:'id,title,price,original_price,thumbnail,catalog_listing,seller_sku,available_quantity,shipping,attributes,listing_type_id'});
       const list = Array.isArray(det) ? det : [det];
       allItems = [...allItems, ...list.map(w=>{ const it=w.body||w; it._sku=extrairSKU(it); return it; })];
     }
@@ -1980,6 +1980,8 @@ for (const pg of ['painel.html', 'painel_ads.html', 'apuracao_painel.html'])
 process.on('unhandledRejection', e => console.error('[erro não tratado]', e?.message || e));
 process.on('uncaughtException', e => console.error('[exceção não tratada]', e?.message || e));
 const PORT = process.env.PORT || 3000;
+require('./precos').rotas(app, { ml: () => dadosCache, shp: () => SHP, az: () => AZ_ANUNCIOS }); // Conferência de preços: planilha × sites
+
 app.listen(PORT, async () => {
   console.log('Servidor rodando na porta ' + PORT + ' — dados em ' + DATA);
   await renovarTodos();
