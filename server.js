@@ -1980,6 +1980,13 @@ for (const pg of ['painel.html', 'painel_ads.html', 'apuracao_painel.html'])
 process.on('unhandledRejection', e => console.error('[erro não tratado]', e?.message || e));
 process.on('uncaughtException', e => console.error('[exceção não tratada]', e?.message || e));
 const PORT = process.env.PORT || 3000;
+// Aviso no Telegram vindo da extensão "Monitor Full ML" (Chrome do Diego, logado no painel)
+app.post('/alertas/telegram', express.json(), async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario) return res.status(401).json({ erro: 'login' });
+  const texto = String(req.body?.texto || '').slice(0, 1000);
+  if (!texto) return res.status(400).json({ erro: 'sem texto' });
+  try { await require('./telegram').sendTelegram(texto); res.json({ ok: true }); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
 require('./precos').rotas(app, { ml: () => dadosCache, shp: () => SHP, az: () => AZ_ANUNCIOS }); // Conferência de preços: planilha × sites
 
 app.listen(PORT, async () => {
