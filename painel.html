@@ -356,6 +356,7 @@ body{background:#f0f2f5;color:#111}
     <button class="tab" onclick="showTab('ganhando',this)">🟢 Ganhando (<span id="tc-ganhando">...</span>)</button>
     <button class="tab" onclick="showTab('atualizando',this)">🔄 Atualizando (<span id="tc-atualizando">...</span>)</button>
     <button class="tab" onclick="showTab('sempromo',this)">⚠️ Sem promo (<span id="tc-sempromo">...</span>)</button>
+    <button class="tab" onclick="showTab('promos',this);carregarPromosML()">🏷️ Promoções <span class="badge" id="tc-promos-alerta" style="display:none;background:#2e7d32"></span></button>
     <button class="tab" onclick="showTab('perguntas',this)">💬 Perguntas (<span id="tc-perguntas">...</span>)</button>
     <button class="tab" onclick="showTab('estoque',this);carregarEstoque()">📦 Estoque</button>
     <button class="tab" onclick="showTab('ads',this);initAds()">📣 ADS</button>
@@ -440,6 +441,15 @@ body{background:#f0f2f5;color:#111}
   <div id="tab-perguntas" class="tab-content">
     <div class="section"><div class="sec-head">💬 Perguntas pendentes <span class="cnt" id="c-perguntas">-</span></div><div id="b-perguntas"><div class="loading">Carregando...</div></div></div>
     <div class="footer"><span id="upd-q">-</span><button class="btn" onclick="recarregarConta()">↺ Atualizar</button></div>
+  </div>
+  <div id="tab-promos" class="tab-content">
+    <div class="sf">
+      <input class="sinput" type="text" placeholder="Buscar por SKU, nome ou MLB..." oninput="renderPromosML()" id="pm-q">
+      <select class="sselect" id="pm-f" onchange="renderPromosML()"><option value="sem">Sem promoção (com opções para entrar)</option><option value="rebate">💰 Rebate com margem maior que a atual</option><option value="perdendo">🔴 Perdendo catálogo (opção que passa a ganhar)</option><option value="todos">Todos com opções</option></select>
+      <button class="btn" onclick="carregarPromosML(1)">↺ Atualizar</button>
+    </div>
+    <div id="pm-info" style="font-size:12px;color:#777;margin-bottom:8px"></div>
+    <div class="section"><div class="sec-head">🏷️ Promoções do Mercado Livre <span class="cnt" id="c-promos">-</span></div><div id="b-promos"><div class="loading">Clique na aba para carregar...</div></div></div>
   </div>
   <div id="tab-precos" class="tab-content">
     <div class="sf">
@@ -544,6 +554,58 @@ function showTab(name,btn){
   if(btn)btn.classList.add('active');
 }
 function goTab(idx){showTab(['inicio','perdendo','ganhando','atualizando','sempromo','perguntas'][idx],document.querySelectorAll('.tab')[idx]);}
+let _pm=null,_pmEmp=null,_pmTimer=null;
+async function carregarPromosML(forcar){
+  clearTimeout(_pmTimer);
+  if(forcar){await fetch('/ml/promos/'+ci+'/recarregar',{method:'POST'});_pm=null;}
+  if(!forcar&&_pm&&_pmEmp===ci&&_pm.status==='pronto'){renderPromosML();return;}
+  _pmEmp=ci;
+  try{
+    const d=await (await fetch('/ml/promos/'+ci)).json(); _pm=d;
+    if(d.status!=='pronto'){
+      el('b-promos').innerHTML='<div class="loading">'+(d.status==='erro'?'<span style="color:#c0392b">'+shpEsc(d.erro||'erro')+'</span>':'Consultando as promoções de cada anúncio no ML… '+(d.total?d.feito+' de '+d.total:'')+'<br><small>Na primeira vez leva alguns minutos; depois atualiza sozinho a cada 6h.</small>')+'</div>';
+      if(d.status!=='erro'){const emp=ci;_pmTimer=setTimeout(()=>{if(ci===emp&&el('tab-promos').classList.contains('active'))carregarPromosML();},5000);}
+      return;
+    }
+    const nr=d.itens.filter(x=>x.rebateMelhor).length, b=el('tc-promos-alerta'); b.style.display=nr?'inline-block':'none'; b.textContent=nr?'💰'+nr:'';
+    el('pm-info').innerHTML='Atualizado '+new Date(d.em).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})+' · '+d.itens.filter(x=>x.semPromo).length+' sem promoção · <b style="color:#2e7d32">'+nr+' com rebate que dá mais lucro que o preço atual</b>. Lucro = preço − custo (Bling/Tiny) − tarifa e frete do ML − imposto − embalagem + rebate do ML. Opções ordenadas da maior para a menor margem.';
+    renderPromosML();
+  }catch(e){el('b-promos').innerHTML='<div class="loading" style="color:#c0392b">Erro ao carregar.</div>';}
+}
+function renderPromosML(){
+  if(!_pm||_pm.status!=='pronto')return;
+  const f=el('pm-f').value,q=(el('pm-q').value||'').toLowerCase();
+  const brl=v=>v==null?'—':'R$ '+Number(v).toFixed(2).replace('.',',');
+  const luc=m=>!m||m.erro?'<span style="color:#888;font-size:11px">'+shpEsc(m?.erro||'—')+'</span>':'<b style="color:'+(m.lucro<0?'#c62828':'#2e7d32')+'">'+brl(m.lucro)+'</b> <small>('+String(m.pct).replace('.',',')+'%)</small>';
+  let L=_pm.itens.filter(x=>f==='sem'?x.semPromo:f==='rebate'?x.rebateMelhor>0:f==='perdendo'?(x.catalogo?.status==='competing'&&x.opcoes.some(o=>o.catalogo==='passa a ganhar')):x.opcoes.length);
+  if(q)L=L.filter(x=>((x.sku||'')+' '+(x.titulo||'')+' '+x.id).toLowerCase().includes(q));
+  if(f==='rebate')L.sort((a,b)=>((b.opcoes.find(o=>o.rebate>0&&o.status==='candidate')?.m?.lucro||0)-(b.atual?.lucro||0))-((a.opcoes.find(o=>o.rebate>0&&o.status==='candidate')?.m?.lucro||0)-(a.atual?.lucro||0)));
+  set('c-promos',L.length);
+  if(!L.length){el('b-promos').innerHTML='<div class="loading" style="color:green">✓ Nada nesta lista.</div>';return;}
+  el('b-promos').innerHTML=L.slice(0,300).map(x=>{
+    const cat=x.catalogo?(x.catalogo.status==='winning'?'<span style="background:#e8f5e9;color:#2e7d32;border-radius:8px;padding:1px 7px;font-size:11px">🟢 Ganhando catálogo'+(x.catalogo.s2?' · 2º em '+brl(x.catalogo.s2):'')+'</span>':'<span style="background:#ffebee;color:#c62828;border-radius:8px;padding:1px 7px;font-size:11px">🔴 Perdendo catálogo'+(x.catalogo.ptw?' · ganha com '+brl(x.catalogo.ptw):'')+'</span>'):'';
+    const ops=x.opcoes.map((o,i)=>{const melhor=o.status==='candidate'&&o.rebate>0&&o.m?.lucro!=null&&x.atual?.lucro!=null&&o.m.lucro>x.atual.lucro+0.05;
+      return '<tr style="'+(melhor?'background:#f1f8e9':'')+'"><td class="l">'+shpEsc(o.nome)+'<br><small style="color:#888">'+shpEsc(o.tipoNome)+' · '+o.situacao+(o.fim?' · até '+new Date(o.fim).toLocaleDateString('pt-BR'):'')+'</small></td>'+
+      '<td><b>'+brl(o.preco)+'</b>'+(o.faixa?'<br><small style="color:#888">permitido até '+brl(o.faixa[1])+'</small>':'')+'</td>'+
+      '<td>'+(o.rebate?'<b style="color:#2e7d32">+'+brl(o.rebate)+'</b><br><small>'+String(o.meliPct).replace('.',',')+'% ML</small>':'—')+'</td>'+
+      '<td>'+luc(o.m)+(melhor?'<br><small style="color:#2e7d32;font-weight:600">💰 mais que o atual</small>':'')+'</td>'+
+      '<td>'+(o.catalogo?'<small style="color:'+(/ganha/.test(o.catalogo)?'#2e7d32':'#c62828')+'">'+o.catalogo+'</small>':'')+'</td>'+
+      '<td>'+(o.podeEntrar?'<button class="btn" style="padding:4px 10px;font-size:12px" onclick="entrarPromoML(\''+x.id+'\','+i+',this)">Entrar</button>':o.status==='candidate'?'<a href="https://www.mercadolivre.com.br/anuncios/lista/promos?search='+x.id+'" target="_blank" style="font-size:12px">pelo ML ↗</a>':'<small style="color:#888">'+o.situacao+'</small>')+'</td></tr>';}).join('');
+    return '<div style="border:1px solid #eee;border-radius:10px;padding:10px 12px;margin:8px 0"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+(x.thumb?'<img src="'+shpEsc(x.thumb)+'" style="width:44px;height:44px;object-fit:cover;border-radius:6px">':'')+
+      '<div style="flex:1;min-width:240px"><a href="'+shpEsc(x.link)+'" target="_blank" style="color:inherit;font-weight:600">'+shpEsc(x.titulo)+'</a><div style="font-size:11px;color:#888">SKU '+shpEsc(x.sku||'—')+' · '+x.id+' '+cat+'</div></div>'+
+      '<div style="font-size:12px;text-align:right">Hoje: <b>'+brl(x.precoAtual)+'</b>'+(x.ativa?' <small>('+shpEsc(x.ativa.nome)+')</small>':x.semPromo?' <small style="color:#E65100">sem promoção</small>':'')+'<br>Lucro atual: '+luc(x.atual)+'</div></div>'+
+      (x.opcoes.length?'<div class="gwrap" style="margin-top:6px"><table class="gtab" style="border:none;border-radius:0;font-size:12px"><tr><th class="l">Promoção</th><th>Preço</th><th>Rebate ML</th><th>Lucro</th><th>Catálogo</th><th></th></tr>'+ops+'</table></div>':'<div style="font-size:12px;color:#888;margin-top:6px">Nenhuma promoção disponível no ML para este anúncio agora.</div>')+'</div>';
+  }).join('')+(L.length>300?'<div class="loading">Mostrando 300 de '+L.length+' — use a busca.</div>':'');
+}
+async function entrarPromoML(item,i,btn){
+  const x=_pm.itens.find(y=>y.id===item),o=x.opcoes[i];
+  if(!confirm('Entrar na promoção "'+o.nome+'" com o anúncio\n'+x.titulo+'\n\nPreço: R$ '+o.preco.toFixed(2).replace('.',',')+(o.rebate?' (+ rebate ML R$ '+o.rebate.toFixed(2).replace('.',',')+')':'')+'\nLucro estimado: '+(o.m?.lucro!=null?'R$ '+o.m.lucro.toFixed(2).replace('.',',')+' ('+o.m.pct+'%)':'sem custo no ERP')+'?'))return;
+  btn.disabled=true;btn.textContent='Entrando…';
+  try{const r=await (await fetch('/ml/promos/'+ci+'/entrar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item,opcao:i})})).json();
+    if(r.erro)throw new Error(r.erro+(r.detalhe?' — '+JSON.stringify(r.detalhe):''));
+    Object.assign(x,r.item||{});renderPromosML();
+  }catch(e){alert('O ML recusou: '+e.message);btn.disabled=false;btn.textContent='Entrar';}
+}
 let _precos=null,_precosEmp=null;
 async function carregarPrecos(forcar){
   if(!forcar&&_precos&&_precosEmp===ci){renderPrecos();return;}
@@ -580,6 +642,7 @@ function trocarConta(idx,btn){
   _estoqueCache=null;
   el('b-estoque').innerHTML='<div class="loading">Clique na aba para carregar...</div>';
   _precos=null; if(el('tab-precos').classList.contains('active'))setTimeout(()=>carregarPrecos(),0);
+  _pm=null; if(el('tab-promos').classList.contains('active'))setTimeout(()=>carregarPromosML(),0);
   set('c-estoque','-');
   document.querySelectorAll('.conta-tab').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');

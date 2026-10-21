@@ -261,6 +261,21 @@ async function calcularMargens(ml, idx, uid, itens) {
   }
 }
 
+/** Lucro de um anúncio do ML a um preço (com rebate do ML, se houver). Custo só do ERP (Bling/Tiny). */
+async function margemPreco(ml, idx, uid, it, preco, rebate = 0, erp) {
+  if (!(preco > 0)) return { erro: 'sem preço' };
+  const cf = custoComFonte(idx, it._sku || it.seller_sku, erp || await custosErp(idx));
+  if (!cf || cf.fonte === 'planilha') return { erro: 'sem custo no ' + (idx === 2 ? 'Tiny' : 'Bling') };
+  if (!it.listing_type_id || !it.category_id) return { erro: 'sem dados do anúncio' };
+  const t = await tarifaML(ml, idx, preco, it.listing_type_id, it.category_id);
+  if (!t) return { erro: 'tarifa do ML indisponível' };
+  const fr = await freteML(ml, idx, uid, it.id);
+  const r2 = x => Math.round(x * 100) / 100, imp = aliquota(idx), emb = embalagem(idx);
+  const frete = fr?.valor || 0, imposto = preco * imp;
+  const lucro = preco - cf.v - t.valor - frete - emb - imposto + (rebate || 0);
+  return { preco: r2(preco), custo: r2(cf.v), tarifa: r2(t.valor), frete: r2(frete), imposto: r2(imposto), embalagem: r2(emb), rebate: r2(rebate || 0), lucro: r2(lucro), pct: Math.round(lucro / preco * 1000) / 10 };
+}
+
 function recarregarErp(idx) { if (_erp[idx]) _erp[idx].ts = 0; }
 
-module.exports = { PLANILHAS, fixosCanal, recarregarErp, calcularMargens, custoSku, custosConta, custosErp, custoComFonte, aliquota };
+module.exports = { PLANILHAS, fixosCanal, recarregarErp, calcularMargens, margemPreco, custoSku, custosConta, custosErp, custoComFonte, aliquota };

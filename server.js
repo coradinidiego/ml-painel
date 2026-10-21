@@ -386,7 +386,7 @@ async function carregarConta(idx) {
     let allItems = [];
     for (let i = 0; i < idsAtivos.length; i += 20) {
       const chunk = idsAtivos.slice(i, i+20);
-      const det = await ml(idx, '/items', {ids:chunk.join(','), attributes:'id,title,price,original_price,thumbnail,catalog_listing,seller_sku,available_quantity,shipping,attributes,listing_type_id'});
+      const det = await ml(idx, '/items', {ids:chunk.join(','), attributes:'id,title,price,original_price,thumbnail,catalog_listing,seller_sku,available_quantity,shipping,attributes,listing_type_id,category_id,permalink'});
       const list = Array.isArray(det) ? det : [det];
       allItems = [...allItems, ...list.map(w=>{ const it=w.body||w; it._sku=extrairSKU(it); return it; })];
     }
@@ -1987,6 +1987,8 @@ app.post('/alertas/telegram', express.json(), async (req, res) => {
   if (!texto) return res.status(400).json({ erro: 'sem texto' });
   try { await require('./telegram').sendTelegram(texto); res.json({ ok: true }); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
+const _uidML = {};
+require('./promos_ml').rotas(app, { ml, mlReq, dados: () => dadosCache, uid: async idx => (_uidML[idx] ||= (await ml(idx, '/users/me')).id) }); // Promoções do ML com margem, rebate e catálogo
 require('./precos').rotas(app, { ml: () => dadosCache, shp: () => SHP, az: () => AZ_ANUNCIOS }); // Conferência de preços: planilha × sites
 
 app.listen(PORT, async () => {
