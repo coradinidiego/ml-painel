@@ -1991,7 +1991,15 @@ app.post('/alertas/telegram', express.json(), async (req, res) => {
 const _uidML = {};
 require('./promos_ml').rotas(app, { ml, mlReq, dados: () => dadosCache, uid: async idx => (_uidML[idx] ||= (await ml(idx, '/users/me')).id) }); // Promoções do ML com margem, rebate e catálogo
 require('./ads_ml').rotas(app, { ml, token: getToken, dados: () => dadosCache, uid: async idx => (_uidML[idx] ||= (await ml(idx, '/users/me')).id) }); // ADS do ML com lucro real
-require('./precos').rotas(app, { ml: () => dadosCache, shp: () => SHP, az: () => AZ_ANUNCIOS }); // Conferência de preços: planilha × sites
+require('./precos').rotas(app, { ml: () => dadosCache, shp: () => SHP, az: () => AZ_ANUNCIOS,
+  // "Refazer análise agora": baixa a planilha de novo e recarrega os sites da empresa
+  refazer: (idx, k) => {
+    require('./onedrive').sincronizar(idx).catch(() => {});
+    if (statusCache[idx] !== 'carregando') carregarConta(idx);
+    if (SHP[k] && SHP[k].status !== 'carregando') { SHP[k].status = 'aguardando'; carregarShopee(k); }
+    if (amazon.loja(k).configurada() && AZ_ANUNCIOS[k]?.status !== 'carregando') carregarAnunciosAmazon(k).catch(() => {});
+  },
+  situacao: (idx, k) => ({ ml: { status: statusCache[idx], progresso: progressoCache[idx] }, shopee: SHP[k]?.status || null, amazon: AZ_ANUNCIOS[k]?.status || null, amazonEtapa: AZ_ANUNCIOS[k]?.etapa || null }) }); // Conferência de preços: planilha × sites
 
 app.listen(PORT, async () => {
   console.log('Servidor rodando na porta ' + PORT + ' — dados em ' + DATA);

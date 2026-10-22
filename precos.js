@@ -174,5 +174,14 @@ function rotas(app, fontes) {
     try { res.json(conferir(parseInt(req.query.emp) || 0, fontes)); } catch (e) { res.status(500).json({ erro: e.message }); }
   });
   app.get('/precos', (req, res) => res.send(pagina()));
+  app.post('/precos/refazer', (req, res) => {
+    const e = EMP.find(x => x.idx === (parseInt(req.query.emp) || 0)); if (!e) return res.status(400).json({ erro: 'empresa inválida' });
+    try { fontes.refazer(e.idx, e.id); res.json({ ok: true }); } catch (er) { res.status(500).json({ erro: er.message }); }
+  });
+  app.get('/precos/refazer', (req, res) => {
+    const e = EMP.find(x => x.idx === (parseInt(req.query.emp) || 0)); if (!e) return res.status(400).json({ erro: 'empresa inválida' });
+    const pl = (() => { try { return JSON.parse(require('fs').readFileSync(require('path').join(DATA, 'onedrive_planilhas.json'))).sync?.[e.idx] || null; } catch (er) { return null; } })();
+    res.json({ planilha: pl, ...fontes.situacao(e.idx, e.id) });
+  });
 }
 module.exports = { rotas, conferir, lerPlanilha };

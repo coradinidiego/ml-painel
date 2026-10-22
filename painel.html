@@ -470,6 +470,7 @@ body{background:#f0f2f5;color:#111}
       <select class="sselect" id="pr-canal" onchange="renderPrecos()"><option value="">Todos os sites</option><option value="ml">Mercado Livre</option><option value="shopee">Shopee</option><option value="amazon">Amazon</option><option value="shein">SHEIN</option></select>
       <select class="sselect" id="pr-sit" onchange="renderPrecos()"><option value="dif">Só diferenças</option><option value="sem">Fora da planilha / sem SKU</option><option value="">Tudo</option></select>
       <button class="btn" onclick="carregarPrecos(1)">↺ Atualizar</button>
+      <button class="btn" id="pr-refazer" onclick="refazerPrecos()" title="Baixa a planilha de novo do OneDrive e recarrega os preços do Mercado Livre, Shopee e Amazon desta empresa">🔄 Refazer análise agora</button>
     </div>
     <div id="pr-info" style="margin-bottom:10px"></div>
     <div class="section"><div class="sec-head">💲 Preço no site × planilha de precificação <span class="cnt" id="c-precos">-</span></div><div id="b-precos"><div class="loading">Clique na aba para carregar...</div></div></div>
@@ -695,6 +696,26 @@ async function entrarPromoML(item,i,btn){
     if(r.erro)throw new Error(r.erro+(r.detalhe?' — '+JSON.stringify(r.detalhe):''));
     Object.assign(x,r.item||{});renderPromosML();
   }catch(e){alert('O ML recusou: '+e.message);btn.disabled=false;btn.textContent='Entrar';}
+}
+let _prRef=null;
+async function refazerPrecos(){
+  const b=el('pr-refazer'), emp=ci, inicio=Date.now();
+  b.disabled=true; clearTimeout(_prRef);
+  try{await fetch('/precos/refazer?emp='+emp,{method:'POST'});}catch(e){}
+  const passo=async()=>{
+    try{
+      const s=await (await fetch('/precos/refazer?emp='+emp)).json();
+      const pr=s.ml?.progresso||{}, pct=Math.round(((pr.conta||0)+(pr.cat||0)+(pr.promo||0)+(pr.perguntas||0))/4*100);
+      const plOk=s.planilha&&Date.parse(s.planilha.em)>=inicio-5000;
+      const mlOk=s.ml?.status==='pronto'&&Date.now()-inicio>8000, shOk=!s.shopee||['pronto','erro','sem_auth'].includes(s.shopee), azOk=!s.amazon||s.amazon!=='carregando';
+      el('pr-info').innerHTML='<div class="loading" style="text-align:left">🔄 Refazendo a análise… '+
+        (plOk?'✓ planilha':'⏳ planilha')+' · '+(mlOk?'✓ Mercado Livre':'⏳ Mercado Livre '+pct+'%')+' · '+(shOk?'✓ Shopee':'⏳ Shopee')+' · '+(azOk?'✓ Amazon':'⏳ Amazon'+(s.amazonEtapa?' ('+shpEsc(s.amazonEtapa)+')':''))+
+        '<br><small style="color:#888">O Mercado Livre leva alguns minutos (a Zagodini é a mais demorada). Pode sair da aba: quando terminar, é só clicar em ↺ Atualizar.</small></div>';
+      if((plOk||Date.now()-inicio>60000)&&mlOk&&shOk&&azOk){b.disabled=false;if(ci===emp)carregarPrecos(1);return;}
+    }catch(e){}
+    if(Date.now()-inicio<40*60e3)_prRef=setTimeout(passo,6000);else b.disabled=false;
+  };
+  _prRef=setTimeout(passo,3000);
 }
 let _precos=null,_precosEmp=null;
 async function carregarPrecos(forcar){
