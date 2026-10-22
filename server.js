@@ -446,10 +446,15 @@ const semPromo = [], comPromo = [];
     console.log(new Date().toLocaleTimeString('pt-BR') + ' - ' + CONTAS[idx].nome + ': carregado!');
   } catch(e) {
     statusCache[idx] = 'erro';
-    console.log('Erro conta ' + idx + ': ' + e.message);
+    const det = e.response ? (e.response.status + ' ' + JSON.stringify(e.response.data || '').slice(0, 200) + ' em ' + (e.config?.url || '').replace(/access_token=[^&]+/, '').slice(0, 120)) : '';
+    erroCache[idx] = { em: new Date().toISOString(), msg: e.message, det };
+    console.log('Erro conta ' + idx + ': ' + e.message + ' ' + det);
+    // tenta de novo em 5 min (sem esperar o ciclo normal)
+    clearTimeout(_retryConta[idx]); _retryConta[idx] = setTimeout(() => { if (statusCache[idx] === 'erro') carregarConta(idx).catch(() => {}); }, 5 * 60e3);
   }
 }
 
+const erroCache = {}, _retryConta = {};
 async function carregarTodas() {
   console.log(new Date().toLocaleTimeString('pt-BR') + ' - Iniciando carregamento de todas as contas...');
   await Promise.all([carregarConta(0), carregarConta(1), carregarConta(2)]);
@@ -469,6 +474,7 @@ app.get('/dados/:idx', (req, res) => {
   res.json({
     status: statusCache[idx],
     progresso: progressoCache[idx],
+    erro: statusCache[idx] === 'erro' ? erroCache[idx] || null : null,
     dados: dadosCache[idx]
   });
 });

@@ -1578,6 +1578,7 @@ async function pollDados(){
       const d=await r.json();
       const dot=el('dot-'+i);
       if(dot)dot.className='sdot '+(d.status==='pronto'?'sp':d.status==='erro'?'se':'sl');
+      if(dot)dot.parentElement.title=d.erro?('Erro ao atualizar o Mercado Livre: '+d.erro.msg+(d.erro.det?' — '+d.erro.det:'')+' (tenta de novo em 5 min)'):'';
       if(d.status!=='pronto')todasProntas=false;
       const p=d.progresso||{};
       progTotal+=((p.conta||0)+(p.cat||0)+(p.promo||0)+(p.perguntas||0))/4;
