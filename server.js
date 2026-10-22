@@ -67,7 +67,9 @@ async function carregarShopee(chave = 'zagodini') {
           p._variacoes = await shopee_.variacoes(p.item_id);
           const comPromo = new Set(p._promoAtiva.map(x => String(x.modelo)));
           for (const v of p._variacoes) v.emPromo = comPromo.has(String(v.model_id));
-          p._varSemPromo = p._variacoes.filter(v => !v.emPromo).length;
+          // variação com saldo zero não aceita promoção na Shopee: não conta
+          const estV = v => v.estoqueVendedor ?? v.estoque ?? 0;
+          p._varSemPromo = p._variacoes.filter(v => !v.emPromo && estV(v) > 0).length;
         } catch (e) {}
       }
       p._promoProibida = PROMO_PROIBIDA.test(p.item_name || ''); // mamadeiras etc. não podem ter promoção
