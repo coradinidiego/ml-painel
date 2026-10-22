@@ -22,7 +22,7 @@ try {
   }
 } catch (e) {}
 
-const TOKEN = process.env.TINY_LUFE_TOKEN;
+const TOKEN = (process.env.TINY_LUFE_TOKEN || '').trim().replace(/^["']|["']$/g, '');
 const BASE  = 'https://api.tiny.com.br/api2';
 const PAUSA = 1100; // ms entre chamadas (limite da API por minuto)
 const delay = ms => new Promise(r => setTimeout(r, ms));

@@ -6,7 +6,7 @@
  *   - ações: ativar, pausar, mover de campanha, tirar da campanha, colocar na campanha
  *
  *  Leitura:  GET /advertising/advertisers?product_id=PADS (Api-Version 1)
- *            GET /advertising/advertisers/{id}/product_ads/items  e  /product_ads/campaigns (api-version 2)
+ *            GET /marketplace/advertising/{site}/advertisers/{id}/product_ads/ads  e  .../product_ads/campaigns (api-version 2)
  *  Escrita:  PUT /marketplace/advertising/{site}/product_ads/ads/{item}?channel=marketplace (api-version 2) { status | campaign_id }
  *
  *  GET  /ml/ads/:idx?dias=30     dados
@@ -47,7 +47,7 @@ async function anunciante(idx) {
 async function todosItens(idx, adv, dias) {
   const out = [], params = { limit: 50, date_from: hojeSP(dias), date_to: hojeSP(0), metrics: METRICAS };
   for (let offset = 0; offset < 5000; offset += 50) {
-    const d = await req(idx, 'get', `/advertising/advertisers/${adv.id}/product_ads/items`, { params: { ...params, offset } });
+    const d = await req(idx, 'get', `/marketplace/advertising/${adv.site}/advertisers/${adv.id}/product_ads/ads`, { params: { ...params, offset } });
     const L = d.results || d.items || [];
     out.push(...L);
     if (L.length < 50 || (d.paging?.total != null && offset + 50 >= d.paging.total)) break;
@@ -56,7 +56,7 @@ async function todosItens(idx, adv, dias) {
   return out;
 }
 async function campanhas(idx, adv, dias) {
-  const d = await req(idx, 'get', `/advertising/advertisers/${adv.id}/product_ads/campaigns`, { params: { limit: 50, offset: 0, date_from: hojeSP(dias), date_to: hojeSP(0), metrics: 'clicks,prints,cost,acos,units_quantity,total_amount,direct_amount' } });
+  const d = await req(idx, 'get', `/marketplace/advertising/${adv.site}/advertisers/${adv.id}/product_ads/campaigns`, { params: { limit: 50, offset: 0, date_from: hojeSP(dias), date_to: hojeSP(0), metrics: 'clicks,prints,cost,acos,units_quantity,total_amount,direct_amount' } });
   return (d.results || d.campaigns || []).map(c => ({ id: c.id, nome: c.name, status: c.status, orcamento: c.budget ?? null, acosAlvo: c.acos_target ?? null, estrategia: c.strategy || null,
     custo: r2(c.metrics?.cost), vendas: r2(c.metrics?.total_amount), unidades: c.metrics?.units_quantity || 0, acos: c.metrics?.acos ?? null, cliques: c.metrics?.clicks || 0 }));
 }
@@ -113,8 +113,8 @@ function rotas(app, fontes) {
     if (!admin(req)) return res.status(403).json({ erro: 'só admin' });
     const idx = parseInt(req.params.idx), out = {};
     try { out.advertisers = await req_(idx, 'get', '/advertising/advertisers', { params: { product_id: 'PADS' }, versao: 1 }); } catch (e) { out.erroAdvertisers = e.response?.status + ' ' + JSON.stringify(e.response?.data || e.message).slice(0, 400); }
-    try { const a = await anunciante(idx); out.items = await req_(idx, 'get', `/advertising/advertisers/${a.id}/product_ads/items`, { params: { limit: 2, offset: 0, date_from: hojeSP(7), date_to: hojeSP(0), metrics: METRICAS } }); } catch (e) { out.erroItems = e.response?.status + ' ' + JSON.stringify(e.response?.data || e.message).slice(0, 400); }
-    try { const a = await anunciante(idx); out.campaigns = await req_(idx, 'get', `/advertising/advertisers/${a.id}/product_ads/campaigns`, { params: { limit: 5, offset: 0, date_from: hojeSP(7), date_to: hojeSP(0), metrics: 'clicks,cost,acos' } }); } catch (e) { out.erroCampaigns = e.response?.status + ' ' + JSON.stringify(e.response?.data || e.message).slice(0, 400); }
+    try { const a = await anunciante(idx); out.items = await req_(idx, 'get', `/marketplace/advertising/${a.site}/advertisers/${a.id}/product_ads/ads`, { params: { limit: 2, offset: 0, date_from: hojeSP(7), date_to: hojeSP(0), metrics: METRICAS } }); } catch (e) { out.erroItems = e.response?.status + ' ' + JSON.stringify(e.response?.data || e.message).slice(0, 400); }
+    try { const a = await anunciante(idx); out.campaigns = await req_(idx, 'get', `/marketplace/advertising/${a.site}/advertisers/${a.id}/product_ads/campaigns`, { params: { limit: 5, offset: 0, date_from: hojeSP(7), date_to: hojeSP(0), metrics: 'clicks,cost,acos' } }); } catch (e) { out.erroCampaigns = e.response?.status + ' ' + JSON.stringify(e.response?.data || e.message).slice(0, 400); }
     res.json(out);
   });
   const req_ = req;
