@@ -345,9 +345,11 @@ module.exports = function montar(app, ctx) {
         .map(x => { const q = x.relampago ? x.relampago.normal : x.qtd; return { ...x, qtd: q, diff: q - x.erpDisp }; });
       itens.sort((p, q) => Math.abs(q.diff) - Math.abs(p.diff));
       if (e.erp !== 'Tiny' && erp._semDeposito) R.avisoSync = 'Sincronização automática desligada nesta empresa: o app do Bling não tem permissão de Estoques/Depósitos (precisa autorizar de novo com esse escopo).'; else delete R.avisoSync;
-      if (syncCfg.on && itens.length > 40) console.warn(`[sync] ${e.id}: ${itens.length} divergências — anormal, sincronização automática suspensa nesta rodada`);
+      const lib = (syncCfg.liberado || {})[e.id];
+      if (lib && itens.length <= 40) { delete syncCfg.liberado[e.id]; gravar(ARQ_SYNC_CFG, syncCfg); }
+      if (syncCfg.on && itens.length > 40 && !lib) console.warn(`[sync] ${e.id}: ${itens.length} divergências — anormal, sincronização automática suspensa nesta rodada`);
       // Tiny (Lufe): não há depósito do Full no Tiny — o saldo total é o que vai para os sites
-      if (syncCfg.on && itens.length <= 40 && !erp._semDeposito) { R.etapa = 'atualizando o estoque nos sites'; await sincronizarDivergencias(e, itens).catch(er => console.warn('[sync] ' + e.id, er.message)); }
+      if (syncCfg.on && (itens.length <= 40 || lib) && !erp._semDeposito) { R.etapa = 'atualizando o estoque nos sites'; await sincronizarDivergencias(e, itens).catch(er => console.warn('[sync] ' + e.id, er.message)); }
       const curto = x => ({ canal: x.canal, anuncio: x.anuncio, nome: x.nome, sku: x.sku, link: x.link, nomeVar: x.nomeVar });
       Object.assign(R, { status: 'pronto', erro: null, em: new Date().toISOString(), erp: e.erp, itens, comparados, ignorados,
         semSku: semSku.map(curto), semErp: semErp.map(curto), erros, duracaoSeg: Math.round((Date.now() - R.inicio) / 1000), etapa: null });
@@ -368,6 +370,13 @@ module.exports = function montar(app, ctx) {
   app.post('/inicio/estoque/sync-auto', (req, res) => {
     if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
     syncCfg.on = req.query.on === '1' || req.body?.on === true; gravar(ARQ_SYNC_CFG, syncCfg); res.json(syncCfg);
+  });
+  app.post('/inicio/estoque/liberar', (req, res) => {
+    if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+    const e = EMP.find(x => x.id === req.query.emp); if (!e) return res.status(400).json({ erro: 'empresa inválida' });
+    (syncCfg.liberado ||= {})[e.id] = Date.now(); gravar(ARQ_SYNC_CFG, syncCfg);
+    ultimaEst[e.id] = Date.now(); compararEmpresa(e).catch(() => {});
+    res.json({ ok: true });
   });
   app.get('/inicio/estoque/sync', (req, res) => res.json({ auto: syncCfg.on, itens: SYNC }));         // "emp|sku" -> { em, n, status, aguardaAte, canal, erpId }
   const OBS = 'Painel: reenviar estoque aos canais (balanço com o mesmo saldo)';
@@ -421,6 +430,7 @@ module.exports = function montar(app, ctx) {
       }
       return q;
     }
+    if (x.canal === 'amazon') { await require('./amazon').loja(e.id).atualizarEstoque(x.sku, x.anuncio, q); return q; }
     throw new Error('canal ' + x.canal + ' ainda não sincroniza automático');
   }
   async function sincronizarDivergencias(e, itens) {
@@ -435,10 +445,9 @@ module.exports = function montar(app, ctx) {
       if (x.relampago) {                      // Shopee bloqueia durante a oferta: agenda para depois do fim
         S.status = 'aguardando fim do relâmpago'; S.aguardaAte = (x.relampago.fim || agora + 6 * 3600e3) + 10 * 60e3; S.item = { canal: x.canal, anuncio: x.anuncio, variacao: x.variacao || null, sku: x.sku };
       } else if (S.n >= 2 && agora - (S.em || 0) < 24 * 3600e3) {
-        S.status = 'continua diferente depois de 2 atualizações (conferir vínculo/estoque no Bling)';
+        S.status = 'continua diferente depois de 2 atualizações (conferir vínculo/estoque no ' + (e.erp === 'Tiny' ? 'Tiny' : 'Bling') + ')';
       } else if (!S.em || agora - S.em > 2 * 3600e3) {
         if (feitos >= 30) continue;
-        if (x.canal === 'amazon') { S.status = 'Amazon: corrigir manualmente'; x.sync = { status: S.status }; continue; }
         try { const q = await atualizarCanal(e, x); S.em = Date.now(); S.n = (S.n || 0) + 1; S.status = 'atualizado no site para ' + q + ' (disponível do ' + (e.erp === 'Tiny' ? 'Tiny' : 'Bling') + ')'; S.erro = null; feitos++; }
         catch (er) { const d = er.response?.data; S.erro = d?.cause?.[0]?.message || d?.message || d?.error?.description || d?.error?.message || er.message; S.status = 'erro'; }
       }
@@ -455,8 +464,14 @@ module.exports = function montar(app, ctx) {
     const agora = Date.now();
     for (const [k, S] of Object.entries(SYNC)) {
       if (!syncCfg.on || !S.aguardaAte || agora < S.aguardaAte) continue;
-      const e = EMP.find(x => x.id === k.split('|')[0]); if (!e || e.erp === 'Tiny') continue;
+      const e = EMP.find(x => x.id === k.split('|')[0]); if (!e) continue;
       try {
+        let disp;
+        if (e.erp === 'Tiny') {
+          // saldo atual do Tiny (pode ter vendido durante a oferta)
+          const p = (await require('./tiny').chamar('produto.obter.estoque.php', { id: S.erpId })).produto || {};
+          disp = num(p.saldo) - num(p.saldoReservado);
+        } else {
         // saldo atual do Bling (pode ter vendido durante a oferta)
         const c = require('./bling').client(e.idx);
         const sd = (await blingReq(c, 'get', '/estoques/saldos', { params: { idsProdutos: [S.erpId] } })).data?.data?.[0];
@@ -464,7 +479,8 @@ module.exports = function montar(app, ctx) {
         if (!deps.length) throw new Error('sem depósitos do Bling');
         const ign = new Set(deps.filter(d => /full/i.test(d.descricao || '') || d.desconsiderarSaldo === true).map(d => String(d.id)));
         const D = (sd?.depositos || []).filter(d => !ign.has(String(d.id)));
-        let disp = D.length ? D.reduce((a, d) => a + num(d.saldoVirtual), 0) : num(sd?.saldoVirtualTotal);
+        disp = D.length ? D.reduce((a, d) => a + num(d.saldoVirtual), 0) : num(sd?.saldoVirtualTotal);
+        }
         const m = String(S.item?.sku || '').match(/-(\d+)$/); if (m && parseInt(m[1]) > 1 && parseInt(m[1]) <= 20 && !/^0/.test(m[1])) disp = Math.floor(disp / parseInt(m[1]));
         const q = await atualizarCanal(e, { ...S.item, erpDisp: Math.floor(disp) });
         S.em = Date.now(); S.n = (S.n || 0) + 1; S.status = 'atualizado no site para ' + q + ' (após relâmpago)'; S.erro = null;

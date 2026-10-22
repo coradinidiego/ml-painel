@@ -221,9 +221,42 @@ function criar(chave) {
     return { porSku: out, freteMedioPedido: fretePed ? freteTot / fretePed : null, pedidosComFrete: fretePed, freteFaixas, dias };
   }
 
+  // ID do vendedor (Merchant Token): a estimativa de tarifas devolve no identificador
+  let _seller = null;
+  async function sellerId(asin) {
+    if (_seller) return _seller;
+    if (process.env['AMAZON_' + L.env + '_SELLER_ID']) return (_seller = process.env['AMAZON_' + L.env + '_SELLER_ID'].trim());
+    const d = await post('/products/fees/v0/feesEstimate', [{ FeesEstimateRequest: { MarketplaceId: MARKETPLACE_BR, IsAmazonFulfilled: false, Identifier: 'seller',
+      PriceToEstimateFees: { ListingPrice: { CurrencyCode: 'BRL', Amount: 50 }, Shipping: { CurrencyCode: 'BRL', Amount: 0 } } }, IdType: 'ASIN', IdValue: asin }]);
+    const id = (Array.isArray(d) ? d : [])[0]?.FeesEstimateIdentifier?.SellerId;
+    if (!id) throw new Error('não consegui descobrir o ID de vendedor da Amazon');
+    return (_seller = id);
+  }
+  /** Muda a quantidade (envio pelo vendedor / DBA, não FBA) de um SKU pela Listings API. */
+  async function atualizarEstoque(sku, asin, qtd) {
+    const seller = await sellerId(asin);
+    const base = '/listings/2021-08-01/items/' + encodeURIComponent(seller) + '/' + encodeURIComponent(sku);
+    const it = await get(base, { marketplaceIds: MARKETPLACE_BR, includedData: 'summaries' });
+    const productType = it.summaries?.[0]?.productType;
+    if (!productType) throw new Error('Amazon não devolveu o tipo do produto do SKU ' + sku);
+    for (let i = 0; i < 4; i++) {
+      try {
+        const r = await axios.patch(ENDPOINT + base, { productType, patches: [{ op: 'replace', path: '/attributes/fulfillment_availability', value: [{ fulfillment_channel_code: 'DEFAULT', quantity: qtd }] }] },
+          { params: { marketplaceIds: MARKETPLACE_BR }, timeout: 30000, headers: { 'x-amz-access-token': await accessToken(), 'Content-Type': 'application/json' } });
+        if (r.data?.status && r.data.status !== 'ACCEPTED') throw new Error('Amazon recusou: ' + (r.data.issues || []).map(x => x.message).join('; ').slice(0, 200));
+        return r.data;
+      } catch (e) {
+        const st = e.response?.status;
+        if ((st === 429 || st >= 500) && i < 3) { await delay(3000 * (i + 1)); continue; }
+        const er = e.response?.data?.errors?.[0];
+        throw er ? new Error('Amazon: ' + er.code + ' — ' + er.message) : e;
+      }
+    }
+  }
+
   async function participacoes() { return (await get('/sellers/v1/marketplaceParticipations')).payload || []; }
 
-  return { chave, nome: L.nome, configurada, get, post, relatorio, tsv, ofertas, catalogo, tarifas, historicoTarifas, pedidos, pedidosCache, participacoes, MARKETPLACE_BR };
+  return { chave, nome: L.nome, configurada, get, post, relatorio, tsv, ofertas, catalogo, tarifas, historicoTarifas, pedidos, pedidosCache, participacoes, atualizarEstoque, MARKETPLACE_BR };
 }
 
 const _l = {};
