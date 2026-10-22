@@ -247,7 +247,8 @@ app.post('/promo/ignorar/:idx', (req, res) => {
 // Shopee: itens ocultados à mão da lista "Sem promoção" (mesmo arquivo, chave shopee_<loja>)
 function shpMarcarOculto(chave, p, ign = promoIgnorar('shopee_' + chave)) {
   p._ocultoPromo = ign.has(String(p.item_id));
-  p._semPromo = (p._promoAtiva || []).length === 0 && !p._promoProibida && !p._ocultoPromo;
+  // sem promoção = o item não tem nenhuma promoção ativa OU alguma variação ficou de fora dela
+  p._semPromo = ((p._promoAtiva || []).length === 0 || (p._varSemPromo || 0) > 0) && !p._promoProibida && !p._ocultoPromo;
 }
 app.post('/shopee/promo/ignorar', (req, res) => {
   const chave = lojaDe(req), { id, ignorar = true } = req.body || {};
