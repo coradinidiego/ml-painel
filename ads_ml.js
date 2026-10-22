@@ -44,10 +44,23 @@ async function anunciante(idx) {
   if (!a) throw new Error('esta conta não tem anunciante de Product Ads (ou o app do ML não tem permissão de Publicidade)');
   return (_adv[idx] = { id: a.advertiser_id, site: a.site_id || 'MLB', nome: a.advertiser_name || null });
 }
+const CAND = {
+  ads: a => [`/advertising/${a.site}/advertisers/${a.id}/product_ads/ads/search`, `/marketplace/advertising/${a.site}/advertisers/${a.id}/product_ads/ads/search`, `/marketplace/advertising/${a.site}/advertisers/${a.id}/product_ads/ads`, `/advertising/advertisers/${a.id}/product_ads/items`],
+  camps: a => [`/advertising/${a.site}/advertisers/${a.id}/product_ads/campaigns/search`, `/marketplace/advertising/${a.site}/advertisers/${a.id}/product_ads/campaigns/search`, `/marketplace/advertising/${a.site}/advertisers/${a.id}/product_ads/campaigns`, `/advertising/advertisers/${a.id}/product_ads/campaigns`],
+};
+const _caminho = {};   // tipo -> caminho que funcionou
+async function getCand(idx, adv, tipo, params) {
+  let ult;
+  for (const p of _caminho[idx + tipo] ? [_caminho[idx + tipo]] : CAND[tipo](adv)) {
+    try { const d = await req(idx, 'get', p, { params }); _caminho[idx + tipo] = p; return d; }
+    catch (e) { ult = e; if (![400, 404].includes(e.response?.status)) throw e; }
+  }
+  throw ult;
+}
 async function todosItens(idx, adv, dias) {
   const out = [], params = { limit: 50, date_from: hojeSP(dias), date_to: hojeSP(0), metrics: METRICAS };
   for (let offset = 0; offset < 5000; offset += 50) {
-    const d = await req(idx, 'get', `/marketplace/advertising/${adv.site}/advertisers/${adv.id}/product_ads/ads`, { params: { ...params, offset } });
+    const d = await getCand(idx, adv, 'ads', { ...params, offset });
     const L = d.results || d.items || [];
     out.push(...L);
     if (L.length < 50 || (d.paging?.total != null && offset + 50 >= d.paging.total)) break;
@@ -56,7 +69,7 @@ async function todosItens(idx, adv, dias) {
   return out;
 }
 async function campanhas(idx, adv, dias) {
-  const d = await req(idx, 'get', `/marketplace/advertising/${adv.site}/advertisers/${adv.id}/product_ads/campaigns`, { params: { limit: 50, offset: 0, date_from: hojeSP(dias), date_to: hojeSP(0), metrics: 'clicks,prints,cost,acos,units_quantity,total_amount,direct_amount' } });
+  const d = await getCand(idx, adv, 'camps', { limit: 50, offset: 0, date_from: hojeSP(dias), date_to: hojeSP(0), metrics: 'clicks,prints,cost,acos,units_quantity,total_amount,direct_amount' });
   return (d.results || d.campaigns || []).map(c => ({ id: c.id, nome: c.name, status: c.status, orcamento: c.budget ?? null, acosAlvo: c.acos_target ?? null, estrategia: c.strategy || null,
     custo: r2(c.metrics?.cost), vendas: r2(c.metrics?.total_amount), unidades: c.metrics?.units_quantity || 0, acos: c.metrics?.acos ?? null, cliques: c.metrics?.clicks || 0 }));
 }
@@ -113,8 +126,14 @@ function rotas(app, fontes) {
     if (!admin(req)) return res.status(403).json({ erro: 'só admin' });
     const idx = parseInt(req.params.idx), out = {};
     try { out.advertisers = await req_(idx, 'get', '/advertising/advertisers', { params: { product_id: 'PADS' }, versao: 1 }); } catch (e) { out.erroAdvertisers = e.response?.status + ' ' + JSON.stringify(e.response?.data || e.message).slice(0, 400); }
-    try { const a = await anunciante(idx); out.items = await req_(idx, 'get', `/marketplace/advertising/${a.site}/advertisers/${a.id}/product_ads/ads`, { params: { limit: 2, offset: 0, date_from: hojeSP(7), date_to: hojeSP(0), metrics: METRICAS } }); } catch (e) { out.erroItems = e.response?.status + ' ' + JSON.stringify(e.response?.data || e.message).slice(0, 400); }
-    try { const a = await anunciante(idx); out.campaigns = await req_(idx, 'get', `/marketplace/advertising/${a.site}/advertisers/${a.id}/product_ads/campaigns`, { params: { limit: 5, offset: 0, date_from: hojeSP(7), date_to: hojeSP(0), metrics: 'clicks,cost,acos' } }); } catch (e) { out.erroCampaigns = e.response?.status + ' ' + JSON.stringify(e.response?.data || e.message).slice(0, 400); }
+    try {
+      const a = await anunciante(idx), p = { limit: 2, offset: 0, date_from: hojeSP(7), date_to: hojeSP(0), metrics: 'clicks,cost,acos' };
+      out.testes = {};
+      for (const t of ['ads', 'camps']) for (const c of CAND[t](a)) {
+        try { const d = await req_(idx, 'get', c, { params: p }); out.testes[c] = 'OK ' + JSON.stringify(d).slice(0, 600); }
+        catch (e) { out.testes[c] = (e.response?.status || '') + ' ' + JSON.stringify(e.response?.data || e.message).slice(0, 150); }
+      }
+    } catch (e) { out.erro = e.message; }
     res.json(out);
   });
   const req_ = req;
