@@ -399,6 +399,7 @@ const semPromo = [], comPromo = [];
       const it = allItems[i];
       try {
         const sp = await ml(idx, '/items/'+it.id+'/sale_price');
+        if (sp.regular_amount) it.regular_amount = sp.regular_amount;   // preço cheio (o "price" do anúncio pode já vir com desconto)
         const temPromo = sp.amount && sp.regular_amount && sp.amount < sp.regular_amount;
         if (temPromo) { it.sale_amount = sp.amount; comPromo.push(it); }
         else { if(catStatusMap[it.id]){it.status_cat=catStatusMap[it.id].status_cat;it.catalog_listing=true;} semPromo.push(it); }

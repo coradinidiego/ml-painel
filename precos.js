@@ -87,7 +87,7 @@ function itensSites(e, fontes) {
   // Mercado Livre
   const d = fontes.ml()[e.idx];
   for (const it of [...(d?.semPromo || []), ...(d?.comPromo || []), ...(d?.semPromo?.ignorados || [])]) {
-    const cheio = it.original_price || it.price, promo = it.sale_amount && it.sale_amount < cheio ? it.sale_amount : (it.original_price && it.price < it.original_price ? it.price : null);
+    const cheio = it.regular_amount || it.original_price || it.price, promo = it.sale_amount && it.sale_amount < cheio ? it.sale_amount : (it.original_price && it.price < it.original_price ? it.price : null);
     out.push({ canal: 'ml', sku: it._sku, nome: it.title, anuncio: it.id, link: 'https://www.mercadolivre.com.br/anuncios/lista?search=' + it.id,
       cheio, promo, tipo: it.shipping?.logistic_type === 'fulfillment' ? 'full' : it.listing_type_id || null });
   }

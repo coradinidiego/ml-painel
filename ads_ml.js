@@ -78,7 +78,7 @@ async function carregar(idx, dias) {
     for (const a of itens) {
       const it = porId[a.item_id];
       const m = a.metrics || {};
-      const preco = it ? (it.sale_amount && it.sale_amount < (it.original_price || it.price) ? it.sale_amount : it.price) : (+a.price || 0);
+      const preco = it ? (it.sale_amount && it.sale_amount < (it.regular_amount || it.original_price || it.price) ? it.sale_amount : it.price) : (+a.price || 0);
       const mg = it ? await cm.margemPreco(F.ml, idx, uid, it, preco, 0, erp) : { erro: 'anúncio fora da lista do painel' };
       const un = (+m.units_quantity || ((+m.direct_units_quantity || 0) + (+m.indirect_units_quantity || 0)));
       const custo = r2(m.cost);

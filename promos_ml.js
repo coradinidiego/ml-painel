@@ -42,7 +42,7 @@ async function opcoesItem(idx, uid, it, cat, erp) {
   let lista = [];
   try { lista = await F.ml(idx, '/seller-promotions/items/' + it.id, { app_version: 'v2' }); } catch (e) { lista = []; }
   if (!Array.isArray(lista)) lista = [];
-  const precoAtual = it.sale_amount && it.sale_amount < (it.original_price || it.price) ? it.sale_amount : it.price;
+  const precoAtual = it.sale_amount && it.sale_amount < (it.regular_amount || it.original_price || it.price) ? it.sale_amount : it.price;
   const ativa = lista.find(p => p.status === 'started' && Math.abs((+p.price || 0) - precoAtual) < 0.05);
   const rebAtual = ativa && +ativa.meli_percentage > 0 ? r2((+ativa.original_price || 0) * +ativa.meli_percentage / 100) : 0;
   const atual = await cm.margemPreco(F.ml, idx, uid, it, precoAtual, rebAtual, erp);
@@ -67,7 +67,7 @@ async function opcoesItem(idx, uid, it, cat, erp) {
   if (ativa?.finish_date) {
     const fim = Date.parse(ativa.finish_date);
     const seguinte = lista.filter(p => p !== ativa && p.status === 'started' && +p.price > 0 && (!p.finish_date || Date.parse(p.finish_date) > fim)).sort((a, b) => b.price - a.price)[0];
-    const precoDepois = seguinte ? +seguinte.price : (+ativa.original_price || it.original_price || it.price);
+    const precoDepois = seguinte ? +seguinte.price : (+ativa.original_price || it.regular_amount || it.original_price || it.price);
     const rebDepois = seguinte && +seguinte.meli_percentage > 0 ? r2((+seguinte.original_price || 0) * +seguinte.meli_percentage / 100) : 0;
     saida = { fim: ativa.finish_date, precoDepois: r2(precoDepois), depoisCom: seguinte ? (seguinte.name || NOME_TIPO[seguinte.type] || seguinte.type) : null, depois: await cm.margemPreco(F.ml, idx, uid, it, precoDepois, rebDepois, erp) };
   }
