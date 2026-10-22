@@ -433,6 +433,8 @@ module.exports = function montar(app, ctx) {
     if (x.canal === 'amazon') { await require('./amazon').loja(e.id).atualizarEstoque(x.sku, x.anuncio, q); return q; }
     throw new Error('canal ' + x.canal + ' ainda não sincroniza automático');
   }
+  // um registro por anúncio (o mesmo SKU aparece em vários canais/anúncios)
+  const chaveSync = (e, x) => [e.id, x.sku, x.canal, x.anuncio, x.variacao || ''].join('|');
   async function sincronizarDivergencias(e, itens) {
     const agora = Date.now();
     let feitos = 0;
@@ -440,7 +442,7 @@ module.exports = function montar(app, ctx) {
     for (const x of itens) {
       if (!x.erpId || x.full) continue;
       if (x.semInfoRelampago) { x.sync = { status: 'não sincronizado: não deu para conferir oferta relâmpago' }; continue; }
-      const k = e.id + '|' + x.sku, S = SYNC[k] ||= { n: 0 };
+      const k = chaveSync(e, x), S = SYNC[k] ||= { n: 0 };
       S.canal = x.canal; S.erpId = x.erpId;
       if (x.relampago) {                      // Shopee bloqueia durante a oferta: agenda para depois do fim
         S.status = 'aguardando fim do relâmpago'; S.aguardaAte = (x.relampago.fim || agora + 6 * 3600e3) + 10 * 60e3; S.item = { canal: x.canal, anuncio: x.anuncio, variacao: x.variacao || null, sku: x.sku };
@@ -454,7 +456,7 @@ module.exports = function montar(app, ctx) {
       x.sync = { status: S.status, em: S.em || null, n: S.n || 0, erro: S.erro || null, aguardaAte: S.aguardaAte || null };
     }
     // itens que deixaram de divergir: zera o contador
-    const atuais = new Set(itens.map(x => e.id + '|' + x.sku));
+    const atuais = new Set(itens.map(x => chaveSync(e, x)));
     for (const k of Object.keys(SYNC)) if (k.startsWith(e.id + '|') && !atuais.has(k) && !SYNC[k].aguardaAte) delete SYNC[k];
     gravar(ARQ_SYNC, SYNC);
     if (feitos) console.log(`[sync] ${e.id}: ${feitos} produtos reenviados pelo Bling`);
@@ -521,7 +523,7 @@ module.exports = function montar(app, ctx) {
     let id = x?.erpId || req.query.id;
     if (!id) return res.status(404).json({ erro: 'SKU não está nas divergências; passe &id=<id do produto no Bling>' });
     if (!x) return res.status(404).json({ erro: 'SKU não está nas divergências atuais' });
-    try { const q = await atualizarCanal(e, x); const k = e.id + '|' + x.sku; SYNC[k] = { ...(SYNC[k] || {}), em: Date.now(), n: (SYNC[k]?.n || 0) + 1, status: 'atualizado no site para ' + q + ' (manual)', erpId: id }; gravar(ARQ_SYNC, SYNC); res.json({ ok: true, qtd: q }); }
+    try { const q = await atualizarCanal(e, x); const k = chaveSync(e, x); SYNC[k] = { ...(SYNC[k] || {}), em: Date.now(), n: (SYNC[k]?.n || 0) + 1, status: 'atualizado no site para ' + q + ' (manual)', erpId: id }; gravar(ARQ_SYNC, SYNC); res.json({ ok: true, qtd: q }); }
     catch (er) { res.status(500).json({ erro: er.response?.data || er.message }); }
   });
 
