@@ -134,6 +134,7 @@ function renovarToken(conta, refresh) {
   });
 }
 
+const RENOV_ML = {};   // última renovação do token do ML por conta (ok/erro)
 async function renovarTodos() {
   try {
     const tokens = getTokens();
@@ -141,8 +142,13 @@ async function renovarTodos() {
       try {
         const novo = await renovarToken(conta, tokens[conta.nome].refresh);
         tokens[conta.nome] = novo;
+        RENOV_ML[conta.nome] = { ok: true, em: new Date().toISOString() };
         console.log(new Date().toLocaleTimeString('pt-BR') + ' - ' + conta.nome + ': renovado!');
-      } catch(e) { console.log('Erro ' + conta.nome); }
+      } catch(e) {
+        const msg = (typeof e === 'string' ? e : e?.message || String(e)).slice(0, 200);
+        RENOV_ML[conta.nome] = { ok: false, em: new Date().toISOString(), erro: msg };
+        console.log('Erro renovando token ML ' + conta.nome + ': ' + msg);
+      }
     }
     fs.writeFileSync('tokens.json', JSON.stringify(tokens, null, 2));
   } catch(e) { console.log('Erro geral renovacao: ' + e); }
@@ -1314,6 +1320,8 @@ app.get('/bling/auth-check', (req, res) => {
   }
   res.json(resultado);
 });
+
+app.get('/ml/token-status', (req, res) => res.json(RENOV_ML));
 
 app.get('/bling/token-status/:idx', async (req, res) => {
   const idx = parseInt(req.params.idx);
