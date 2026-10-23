@@ -1206,7 +1206,7 @@ app.get('/bling/produto-raw/:idx', async (req, res) => {
   try {
     await bling.refreshToken(idx).catch(() => {});
     const t = bling.getToken(idx);
-    const r = await axios.get('https://www.bling.com.br/Api/v3/produtos', {
+    const r = await axios.get('https://api.bling.com.br/Api/v3/produtos', {
       headers: { Authorization: 'Bearer ' + t.access_token },
       params: { limite: 5, pagina: 1, criterio: 1 },
     });
@@ -1240,7 +1240,7 @@ app.get('/bling/pedido-raw/:idx', async (req, res) => {
   try {
     await bling.refreshToken(idx).catch(() => {});
     const t = bling.getToken(idx);
-    const lista = await axios.get('https://www.bling.com.br/Api/v3/pedidos/vendas', {
+    const lista = await axios.get('https://api.bling.com.br/Api/v3/pedidos/vendas', {
       headers: { Authorization: 'Bearer ' + t.access_token },
       params: { dataInicial, dataFinal, 'situacoes[]': 9, limite: 2, pagina: 1 },
     });
@@ -1248,7 +1248,7 @@ app.get('/bling/pedido-raw/:idx', async (req, res) => {
 
     // Busca detalhe completo dos primeiros 2 pedidos (inclui itens, comissão, etc.)
     const detalhes = await Promise.all(ids.map(id =>
-      axios.get(`https://www.bling.com.br/Api/v3/pedidos/vendas/${id}`, {
+      axios.get(`https://api.bling.com.br/Api/v3/pedidos/vendas/${id}`, {
         headers: { Authorization: 'Bearer ' + t.access_token },
       }).then(r => r.data?.data)
     ));
@@ -1336,7 +1336,7 @@ app.get('/bling/token-status/:idx', async (req, res) => {
 
   // Testa o token atual chamando um endpoint simples
   try {
-    const r = await require('axios').get('https://www.bling.com.br/Api/v3/depositos', {
+    const r = await require('axios').get('https://api.bling.com.br/Api/v3/depositos', {
       headers: { Authorization: 'Bearer ' + t.access_token },
     });
     info.token_valido = true;
@@ -1365,7 +1365,7 @@ app.get('/bling/canais/:idx', async (req, res) => {
   try {
     await bling.refreshToken(idx).catch(() => {});
     const t = bling.getToken(idx);
-    const r = await axios.get('https://www.bling.com.br/Api/v3/canais-venda', {
+    const r = await axios.get('https://api.bling.com.br/Api/v3/canais-venda', {
       headers: { Authorization: 'Bearer ' + t.access_token },
     });
     res.json({ ok: true, data: r.data });
@@ -1384,14 +1384,14 @@ app.get('/bling/pedido-numero/:idx', async (req, res) => {
     await bling.refreshToken(idx).catch(() => {});
     const t = bling.getToken(idx);
     // Busca pelo numero do pedido
-    const lista = await axios.get('https://www.bling.com.br/Api/v3/pedidos/vendas', {
+    const lista = await axios.get('https://api.bling.com.br/Api/v3/pedidos/vendas', {
       headers: { Authorization: 'Bearer ' + t.access_token },
       params: { numero, limite: 5, pagina: 1 },
     });
     const ids = (lista.data?.data || []).map(p => p.id);
     if (!ids.length) return res.json({ erro: 'Pedido não encontrado', numero });
     const detalhes = await Promise.all(ids.map(id =>
-      axios.get(`https://www.bling.com.br/Api/v3/pedidos/vendas/${id}`, {
+      axios.get(`https://api.bling.com.br/Api/v3/pedidos/vendas/${id}`, {
         headers: { Authorization: 'Bearer ' + t.access_token },
       }).then(r => r.data?.data)
     ));
