@@ -33,7 +33,8 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
 const DIAS = 30;
 const iso = v => v ? new Date(typeof v === 'number' ? v * 1000 : v).toISOString() : null;
 
-const ST = lerJson(ARQ, {});          // emp -> { em, ml, shopee, shein }
+const ST = lerJson(ARQ, {});
+const _tit = {};                      // item_id -> título/foto (anúncios fora da lista do painel)          // emp -> { em, ml, shopee, shein }
 const CONF = lerJson(ARQ_CONF, {});   // chave -> { em, por }
 
 // ─── Mercado Livre ──────────────────────────────────────────────────────────
@@ -49,8 +50,12 @@ async function coletarML(ctx, e) {
   const out = { analisar: [], chegou: [], caminho: 0, disputa: 0 };
   const limite = Date.now() - DIAS * 864e5;
   const devolucao = async id => { try { return await ml(e.idx, '/post-purchase/v2/claims/' + id + '/returns'); } catch (er) { return null; } };
-  const item = (r, c) => {
+  const item = async (r, c) => {
     const o = (r?.orders || [])[0] || {};
+    if (o.item_id && !itens[o.item_id]) {
+      if (!_tit[o.item_id]) try { const x = await ml(e.idx, '/items/' + o.item_id, { attributes: 'id,title,thumbnail,seller_custom_field' }); _tit[o.item_id] = { title: x.title, thumbnail: x.thumbnail, _sku: x.seller_custom_field || '' }; } catch (er) { _tit[o.item_id] = {}; }
+      itens[o.item_id] = _tit[o.item_id];
+    }
     const it = itens[o.item_id] || {};
     const orderId = o.order_id || c.resource_id;
     return { item: o.item_id || null, titulo: it.title || o.item_id || 'Pedido ' + orderId, thumb: it.thumbnail || null, sku: it._sku || '', pedido: String(orderId || ''),
@@ -69,7 +74,7 @@ async function coletarML(ctx, e) {
     const comDev = c.type === 'returns' || (c.related_entities || []).includes('return') || revisar;
     const r = comDev ? await devolucao(c.id) : null;
     const sh = (r?.shipments || []).find(s => s.destination?.name === 'seller_address');
-    const base = { chave: 'ml|' + c.id, canal: 'ml', id: String(c.id), tipo: MOTIVO_ML[c.type] || c.type, etapa: c.stage, aberto, ...item(r, c) };
+    const base = { chave: 'ml|' + c.id, canal: 'ml', id: String(c.id), tipo: MOTIVO_ML[c.type] || c.type, etapa: c.stage, aberto, ...(await item(r, c)) };
     if (revisar || sh?.status === 'delivered') {
       if (Date.parse(quandoChegou(r) || c.last_updated) >= limite || revisar)
         out.chegou.push({ ...base, chegouEm: quandoChegou(r), acao: revisar ? 'revisar a devolução no ML' : null, prazo: acoes.find(a => ACOES_REVISAR.has(a.action))?.due_date || null });
