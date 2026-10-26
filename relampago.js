@@ -67,6 +67,8 @@ async function montar(k, ini, fim) {
   for (const it of itens) {
     const precos = desc[it.item_id];
     if (!precos) continue;
+    const rec = (st.recusados || {})[it.item_id];
+    if (rec && Date.now() - rec.em < 14 * 864e5) continue;   // recusado pela Shopee há pouco (critérios da relâmpago)
     const models = [];
     if (it.has_model) {
       const d = await sp.shopeeGet('/api/v2/product/get_model_list', { item_id: it.item_id });
@@ -86,7 +88,7 @@ async function montar(k, ini, fim) {
   }
   // revezamento: há mais tempo sem relâmpago primeiro; empate = mais estoque
   cand.sort((a, b) => a.ultimo - b.ultimo || b.estoque - a.estoque);
-  return { candidatos: cand.length, itens: cand.slice(0, CFG.maxItens) };
+  return { candidatos: cand.length, itens: cand.slice(0, CFG.maxItens), reservas: cand.slice(CFG.maxItens, CFG.maxItens + 15) };
 }
 
 /** Horários das próximas `janelaH` horas e as relâmpagos já existentes (programadas/em andamento). */
@@ -110,15 +112,31 @@ async function criarNoHorario(k, slot) {
   const fsId = c.response?.flash_sale_id;
   if (!fsId) throw new Error('Shopee não devolveu o id da relâmpago: ' + JSON.stringify(c).slice(0, 300));
   reg.flash_sale_id = fsId;
-  const items = plano.itens.map(it => it.models[0].model_id
+  const montarItem = it => it.models[0].model_id
     ? { item_id: Number(it.item_id), purchase_limit: 0, models: it.models.map(m => ({ model_id: Number(m.model_id), input_promo_price: m.preco, stock: m.qtd })) }
-    : { item_id: Number(it.item_id), purchase_limit: 0, item_input_promo_price: it.models[0].preco, item_stock: it.models[0].qtd });
-  const a = await sp.shopeePost('/api/v2/shop_flash_sale/add_shop_flash_sale_items', { flash_sale_id: Number(fsId), items });
-  const falhas = (a.response?.failed_items || []).map(f => ({ item_id: f.item_id, model_id: f.model_id, motivo: f.err_msg || f.unqualified_conditions?.map(u => u.unqualified_msg || u).join('; ') || String(f.err_code || '') }));
-  const falhou = new Set(falhas.map(f => String(f.item_id)));
-  reg.adicionados = plano.itens.filter(it => !falhou.has(String(it.item_id))).length;
-  reg.falhas = falhas.map(f => ({ ...f, nome: plano.itens.find(i => String(i.item_id) === String(f.item_id))?.nome }));
-  for (const it of plano.itens) if (!falhou.has(String(it.item_id))) st.usados[it.item_id] = slot.start_time;
+    : { item_id: Number(it.item_id), purchase_limit: 0, item_input_promo_price: it.models[0].preco, item_stock: it.models[0].qtd };
+  const adicionar = async lista => {
+    const a = await sp.shopeePost('/api/v2/shop_flash_sale/add_shop_flash_sale_items', { flash_sale_id: Number(fsId), items: lista.map(montarItem) });
+    return (a.response?.failed_items || []).map(f => ({ item_id: f.item_id, model_id: f.model_id, motivo: f.err_msg || f.unqualified_conditions?.map(u => u.unqualified_msg || u).join('; ') || String(f.err_code || '') }));
+  };
+  // recusado pela Shopee: entra o próximo da fila (reservas) até completar os 20
+  let falhas = [], ok = [], fila = plano.itens, reservas = [...(plano.reservas || [])];
+  for (let rodada = 0; rodada < 3 && fila.length; rodada++) {
+    const f = await adicionar(fila);
+    const falhou = new Set(f.map(x => String(x.item_id)));
+    falhas.push(...f.map(x => ({ ...x, nome: fila.find(i => String(i.item_id) === String(x.item_id))?.nome })));
+    ok.push(...fila.filter(it => !falhou.has(String(it.item_id))));
+    fila = reservas.splice(0, Math.min(CFG.maxItens - ok.length, falhou.size));
+  }
+  // lembra os recusados por 14 dias (não tenta de novo amanhã)
+  st.recusados ||= {};
+  for (const f of falhas) st.recusados[f.item_id] = { em: Date.now(), motivo: f.motivo, nome: f.nome };
+  for (const [id, r] of Object.entries(st.recusados)) if (Date.now() - r.em > 14 * 864e5) delete st.recusados[id];
+  reg.adicionados = ok.length;
+  const doPlano = new Set(plano.itens.map(i => String(i.item_id)));
+  reg.substituidos = ok.filter(it => !doPlano.has(String(it.item_id))).length;
+  reg.falhas = falhas;
+  for (const it of ok) st.usados[it.item_id] = slot.start_time;
   st.historico.unshift(reg); st.historico = st.historico.slice(0, 60);
   return reg;
 }
@@ -146,7 +164,7 @@ function avisar(k, feitos) {
   const nome = shopee.LOJAS[k]?.nome || k;
   const txt = feitos.map(r => r.erro
     ? `⚠️ Relâmpago Shopee ${nome} (${r.horario}) NÃO criada: ${r.erro}`
-    : `⚡ Relâmpago Shopee ${nome} criada para ${r.horario}: ${r.adicionados} itens` + (r.falhas?.length ? `\nRecusados pela Shopee (${r.falhas.length}):\n` + r.falhas.slice(0, 10).map(f => `• ${(f.nome || f.item_id).slice(0, 50)}: ${f.motivo}`).join('\n') : '')).join('\n\n');
+    : `⚡ Relâmpago Shopee ${nome} criada para ${r.horario}: ${r.adicionados} itens` + (r.falhas?.length ? `\nRecusados pela Shopee (${r.falhas.length}${r.substituidos ? ', ' + r.substituidos + ' substituídos por outros itens' : ''}; ficam fora por 14 dias):\n` + r.falhas.slice(0, 10).map(f => `• ${(f.nome || f.item_id).slice(0, 50)}: ${f.motivo}`).join('\n') : '')).join('\n\n');
   try { require('./telegram').sendTelegram(txt); } catch (e) {}
 }
 
