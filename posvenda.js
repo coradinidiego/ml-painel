@@ -118,7 +118,7 @@ async function coletarML(ctx, e) {
 }
 
 const MOTIVO_SHP = { ITEM_MISSING: 'item faltando', WRONG_ITEM: 'item errado', FUNCTIONAL_DMG: 'com defeito', PHYSICAL_DMG: 'avariado', ITEM_DAMAGED: 'avariado', DAMAGED_PACKAGE: 'embalagem danificada',
-  CHANGE_MIND: 'desistência', DIFFERENT_DESCRIPTION: 'diferente do anúncio', NOT_RECEIPT: 'não recebido', LACKING_ACCESSORIES: 'faltando acessórios', USED: 'produto usado', EXPECTATION_FAILED: 'não atendeu à expectativa', COUNTERFEIT: 'falsificado', MUTUAL_AGREE: 'acordo com o comprador' };
+  CHANGE_MIND: 'desistência', DIFFERENT_DESCRIPTION: 'diferente do anúncio', NOT_RECEIPT: 'não recebido', LACKING_ACCESSORIES: 'faltando acessórios', USED: 'produto usado', EXPECTATION_FAILED: 'não atendeu à expectativa', COUNTERFEIT: 'falsificado', MUTUAL_AGREE: 'acordo com o comprador', DAMAGED_OTHERS: 'avariado (outros)' };
 // ─── Shopee ─────────────────────────────────────────────────────────────────
 async function coletarShopee(e) {
   const sp = require('./shopee').loja(e.id);
