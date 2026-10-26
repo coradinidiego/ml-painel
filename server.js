@@ -1411,6 +1411,22 @@ app.get('/bling/pedido-numero/:idx', async (req, res) => {
 });
 
 // ─── Debug ────────────────────────────────────────────────────────────────
+// Diagnóstico (admin, só leitura): GET na API v3 do Bling. /debug/bling-raw/0?path=/nfe&situacao=5
+app.get('/debug/bling-raw/:idx', async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const { path: p, ...q } = req.query;
+  if (!/^\/(nfe|pedidos|situacoes|contatos|produtos|naturezas-operacoes|logisticas)/.test(String(p || ''))) return res.status(400).json({ erro: 'path não permitido' });
+  try { const u = new URLSearchParams(); for (const [k, v] of Object.entries(q)) (Array.isArray(v) ? v : [v]).forEach(x => u.append(k, x));
+    res.json((await bling.client(parseInt(req.params.idx)).get(String(p) + (u.toString() ? '?' + u : ''), { timeout: 30000 })).data); }
+  catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
+});
+// Diagnóstico (admin, só leitura): Tiny API v2. /debug/tiny-raw?metodo=notas.fiscais.pesquisa.php&situacao=6
+app.get('/debug/tiny-raw', async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const { metodo, ...q } = req.query;
+  if (!/^(notas?\.fiscais?\.(pesquisa|obter)|nota\.fiscal\.obter|pedidos\.pesquisa|pedido\.obter)\.php$/.test(String(metodo || ''))) return res.status(400).json({ erro: 'método não permitido' });
+  try { res.json(await require('./tiny').chamar(String(metodo), q)); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
 app.get('/debug/bling/:idx', async (req, res) => {
   const idx = parseInt(req.params.idx);
   const CONTAS_BLING = {
