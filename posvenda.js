@@ -51,7 +51,11 @@ async function coletarML(ctx, e) {
   const limite = Date.now() - DIAS * 864e5;
   const devolucao = async id => { try { return await ml(e.idx, '/post-purchase/v2/claims/' + id + '/returns'); } catch (er) { return null; } };
   const item = async (r, c) => {
-    const o = (r?.orders || [])[0] || {};
+    const o = { ...((r?.orders || [])[0] || {}) };
+    if (!o.item_id && c.resource === 'order' && c.resource_id) {   // reclamação sem devolução: item vem do pedido
+      try { const p = await ml(e.idx, '/orders/' + c.resource_id); const oi = (p.order_items || [])[0]?.item || {}; o.item_id = oi.id; o.order_id = c.resource_id;
+        if (oi.id && !itens[oi.id] && !_tit[oi.id]) _tit[oi.id] = { title: oi.title, _sku: oi.seller_sku || oi.seller_custom_field || '' }; } catch (er) {}
+    }
     if (o.item_id && !itens[o.item_id]) {
       if (!_tit[o.item_id]) try { const x = await ml(e.idx, '/items/' + o.item_id, { attributes: 'id,title,thumbnail,seller_custom_field' }); _tit[o.item_id] = { title: x.title, thumbnail: x.thumbnail, _sku: x.seller_custom_field || '' }; } catch (er) { _tit[o.item_id] = {}; }
       itens[o.item_id] = _tit[o.item_id];
