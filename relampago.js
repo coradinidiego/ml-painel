@@ -122,7 +122,14 @@ async function criarNoHorario(k, slot) {
   // recusado pela Shopee: entra o próximo da fila (reservas) até completar os 20
   let falhas = [], ok = [], fila = plano.itens, reservas = [...(plano.reservas || [])];
   for (let rodada = 0; rodada < 3 && fila.length; rodada++) {
-    const f = await adicionar(fila);
+    let f;
+    try { f = await adicionar(fila); }
+    catch (er) {
+      if (rodada === 0) throw er;
+      // a Shopee conta também os recusados no limite de itens da relâmpago: fica com o que já entrou
+      reg.aviso = /exceed_max_item/.test(er.message) ? 'a Shopee não deixou repor os recusados (limite de itens da oferta)' : 'não deu para repor os recusados: ' + er.message;
+      break;
+    }
     const falhou = new Set(f.map(x => String(x.item_id)));
     falhas.push(...f.map(x => ({ ...x, nome: fila.find(i => String(i.item_id) === String(x.item_id))?.nome })));
     ok.push(...fila.filter(it => !falhou.has(String(it.item_id))));
@@ -164,7 +171,7 @@ function avisar(k, feitos) {
   const nome = shopee.LOJAS[k]?.nome || k;
   const txt = feitos.map(r => r.erro
     ? `⚠️ Relâmpago Shopee ${nome} (${r.horario}) NÃO criada: ${r.erro}`
-    : `⚡ Relâmpago Shopee ${nome} criada para ${r.horario}: ${r.adicionados} itens` + (r.falhas?.length ? `\nRecusados pela Shopee (${r.falhas.length}${r.substituidos ? ', ' + r.substituidos + ' substituídos por outros itens' : ''}; ficam fora por 14 dias):\n` + r.falhas.slice(0, 10).map(f => `• ${(f.nome || f.item_id).slice(0, 50)}: ${f.motivo}`).join('\n') : '')).join('\n\n');
+    : `⚡ Relâmpago Shopee ${nome} criada para ${r.horario}: ${r.adicionados} itens` + (r.aviso ? `\n(${r.aviso})` : '') + (r.falhas?.length ? `\nRecusados pela Shopee (${r.falhas.length}${r.substituidos ? ', ' + r.substituidos + ' substituídos por outros itens' : ''}; ficam fora por 14 dias):\n` + r.falhas.slice(0, 10).map(f => `• ${(f.nome || f.item_id).slice(0, 50)}: ${f.motivo}`).join('\n') : '')).join('\n\n');
   try { require('./telegram').sendTelegram(txt); } catch (e) {}
 }
 
