@@ -6,7 +6,7 @@
  *  - Bling (Zagodini, Mãe): pedidos com situação Cancelado (id 12) → nota do pedido → situação da NF-e (5/6/7 = autorizada)
  *      (precisa do escopo "Notas Fiscais" no app do Bling)
  *  - O prazo normal de cancelamento na SEFAZ é de 24 h depois da autorização; depois disso só cancelamento extemporâneo
- *  - Cada nota pendente vira um cartão no Trello (lista da Rafaela) e o cartão é concluído quando a nota aparece cancelada.
+ *  - Cada nota pendente vira um cartão no Trello (lista "Notas a cancelar") e o cartão é concluído quando a nota aparece cancelada.
  *
  *  GET  /nfcancelar            situação
  *  POST /nfcancelar/atualizar
@@ -113,7 +113,8 @@ async function sincronizarTrello() {
       x.emissao ? `Emitida: ${new Date(x.emissao).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' })} (prazo normal da SEFAZ: 24 h)` : null,
       `Venda: ${x.pedido}${x.pedidoErp ? ' (pedido ' + x.pedidoErp + ' no ' + x.emp.erp + ')' : ''}`, x.cliente ? `Cliente: ${x.cliente}` : null, x.valor ? `Valor: R$ ${x.valor.toFixed(2).replace('.', ',')}` : null,
       `Abrir no ${x.emp.erp}: ${x.link}`, '', '(criado automaticamente pelo painel)'].filter(v => v !== null).join('\n');
-    const card = await trello('post', '/cards', { idList: process.env.TRELLO_LISTA || '69e8e3565598d810d650ddc8', idMembers: process.env.TRELLO_MEMBRO || '69e931078c84db34c843a722',
+    const card = await trello('post', '/cards', { idList: process.env.TRELLO_LISTA_NF || '6adf69b10e63fa14064aa3da',   // lista "Notas a cancelar"
+     
       name: `${x.emp.nome} - Cancelar NF ${x.nf} (venda ${x.pedido})`, desc, pos: 'top', ...(venc ? { due: venc.toISOString() } : {}) });
     TR[chave] = { card: card.id, url: card.shortUrl, em: new Date().toISOString(), emp: x.emp.id };
     gravar(ARQ_TR, TR);
