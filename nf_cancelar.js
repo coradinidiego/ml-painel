@@ -33,7 +33,7 @@ const FULL = lerJson(ARQ_FULL, {});   // "idx|pedidoML" -> true/false (venda pel
 const EXCLUIDOS = new Set();          // chaves fora por serem Full (o cartão é arquivado)
 const ARQ_DEV = path.join(DATA, 'apuracao_cache', 'nf_devolucao.json');
 const DEV = lerJson(ARQ_DEV, {});     // chave -> nota de venda enviada e cancelada: esperar o produto voltar e emitir NF de devolução
-let DEV_NOVOS = [];
+let DEV_NOVOS = [], NAO_CONF = [];
 const ENTRADAS = new Set();           // "emp|pedido" com NF de entrada (devolução) já emitida
 let ML = null;
 // SHEIN: se o pedido saiu (enviado/coletado) a nota vale — o "cancelado" do ERP não reflete a SHEIN
@@ -43,6 +43,32 @@ async function sheinEnviado(empId, pedido) {
     const P = (await shein.detalhes(empId, [String(pedido)], { idadeMin: 60 }))[String(pedido)];
     return !!(P && (P.coletado || P.enviado));
   } catch (er) { return false; }
+}
+// Confere o pedido no site (marketplace): { cancelado: true|false|null, enviado, full, ...devolução do ML }
+async function conferirSite(empId, idx, pedido) {
+  const n = String(pedido || '');
+  try {
+    if (/^2\d{15}$/.test(n)) {                                     // Mercado Livre
+      if (await ehFull(idx, n)) return { full: true };
+      const s = await situacaoML(idx, n);
+      return s ? { ...s, canal: 'Mercado Livre' } : { cancelado: null, canal: 'Mercado Livre' };
+    }
+    if (/^GSH/i.test(n)) {                                          // SHEIN (st 6 = cancelado)
+      const shein = require('./shein'); if (!shein.autorizada(empId)) return { cancelado: null, canal: 'SHEIN' };
+      const P = (await shein.detalhes(empId, [n], { idadeMin: 60 }))[n];
+      return P ? { cancelado: Number(P.st) === 6, enviado: !!(P.coletado || P.enviado), canal: 'SHEIN' } : { cancelado: null, canal: 'SHEIN' };
+    }
+    if (/^\d{3}-\d{7}-\d{7}$/.test(n)) {                            // Amazon
+      const o = (await require('./amazon').loja(empId).get('/orders/v0/orders/' + n))?.payload || {};
+      return { cancelado: o.OrderStatus ? o.OrderStatus === 'Canceled' : null, enviado: (o.NumberOfItemsShipped || 0) > 0, canal: 'Amazon' };
+    }
+    if (/^\d{6}[A-Z0-9]{6,10}$/.test(n)) {                            // Shopee
+      const d = await require('./shopee').loja(empId).shopeeGet('/api/v2/order/get_order_detail', { order_sn_list: n, response_optional_fields: 'order_status,pickup_done_time' });
+      const o = d.response?.order_list?.[0];
+      return o ? { cancelado: ['CANCELLED', 'IN_CANCEL'].includes(o.order_status), enviado: ['SHIPPED', 'TO_CONFIRM_RECEIVE', 'COMPLETED', 'TO_RETURN'].includes(o.order_status) || !!o.pickup_done_time, canal: 'Shopee' } : { cancelado: null, canal: 'Shopee' };
+    }
+  } catch (er) { return { cancelado: null, erro: er.message }; }
+  return { cancelado: null, canal: 'outro' };
 }
 async function pedidoML(idx, pedido) {
   try { return await ML(idx, '/orders/' + pedido); }
@@ -69,7 +95,8 @@ async function situacaoML(idx, pedido) {
     const sh = o.shipping?.id ? await ML(idx, '/shipments/' + o.shipping.id) : null;
     const hist = sh?.status_history || {};
     const enviado = ['shipped', 'delivered', 'not_delivered'].includes(sh?.status) || !!hist.date_shipped || !!hist.date_delivered;
-    if (!enviado) return { enviado: false };
+    const cancelado = o.status === 'cancelled';
+    if (!enviado) return { enviado: false, cancelado };
     let devolucao = 'sem devolução', chegouEm = null;
     const cs = await ML(idx, '/post-purchase/v1/claims/search', { resource: 'order', resource_id: o.id });
     for (const c of cs.data || []) {
@@ -79,7 +106,7 @@ async function situacaoML(idx, pedido) {
       if (s2.status === 'delivered' || r.status === 'delivered') { devolucao = 'chegou'; chegouEm = r.last_updated || null; break; }
       if (['shipped', 'ready_to_ship', 'pending'].includes(s2.status) || ['label_generated', 'shipped', 'opened'].includes(r.status)) devolucao = 'a caminho';
     }
-    return { enviado: true, devolucao, chegouEm, entregue: sh?.status === 'delivered' || !!hist.date_delivered };
+    return { enviado: true, cancelado, devolucao, chegouEm, entregue: sh?.status === 'delivered' || !!hist.date_delivered };
   } catch (er) { return null; }
 }
 const TR = lerJson(ARQ_TR, {});
@@ -110,9 +137,9 @@ async function coletarTiny() {
     if (!['6', '7'].includes(String(n.situacao)) || n.tipo === 'E') continue;   // 6 autorizada, 7 emitida DANFE
     const p = porLoja.get(String(n.numero_ecommerce || ''));
     if (!p) continue;
-    if (await ehFull(2, n.numero_ecommerce)) { EXCLUIDOS.add('tiny|' + n.id); continue; }
-    if (await sheinEnviado('lufe', n.numero_ecommerce)) { EXCLUIDOS.add('tiny|' + n.id); continue; }
-    const sit = await situacaoML(2, n.numero_ecommerce);
+    const sit = await conferirSite('lufe', 2, n.numero_ecommerce);
+    if (sit.full) { EXCLUIDOS.add('tiny|' + n.id); continue; }   // Full: nota não se cancela pelo ERP
+    if (sit.cancelado !== true) { EXCLUIDOS.add('tiny|' + n.id); if (sit.cancelado === null) NAO_CONF.push({ emp: 'lufe', nf: n.numero, pedido: String(n.numero_ecommerce), canal: sit.canal, erro: sit.erro || null }); continue; }   // só quando Tiny, site e nota concordam
     if (sit?.enviado) { DEV_NOVOS.push({ chave: 'tiny|' + n.id, emp: 'lufe', nf: n.numero, serie: n.serie, nfId: n.id, emissao: deBr(n.data_emissao), pedido: String(n.numero_ecommerce), pedidoErp: p.numero,
       cliente: n.nome, valor: +n.valor || null, link: 'https://erp.tiny.com.br/notas_fiscais#edit/' + n.id, devolucao: sit.devolucao, chegouEm: sit.chegouEm, entregue: sit.entregue }); continue; }
     out.push({ chave: 'tiny|' + n.id, nf: n.numero, serie: n.serie, nfId: n.id, emissao: deBr(n.data_emissao), pedido: String(n.numero_ecommerce), pedidoErp: p.numero,
@@ -152,9 +179,9 @@ async function coletarBling(e, cache) {
     try { nf = (await blingGet(c, '/nfe/' + nfId))?.data; await delay(340); }
     catch (er) { if (er.response?.status === 403) throw Object.assign(new Error('o app do Bling não tem permissão de Notas Fiscais'), { semEscopo: true }); throw er; }
     if (!nf || !NF_AUTORIZADA.has(Number(nf.situacao))) continue;
-    if (await ehFull(e.idx, p.numeroLoja)) { EXCLUIDOS.add('bling' + e.idx + '|' + nfId); continue; }   // venda do Full: não se cancela pelo Bling
-    if (await sheinEnviado(e.id, p.numeroLoja)) { EXCLUIDOS.add('bling' + e.idx + '|' + nfId); continue; }   // SHEIN enviou: pedido não está cancelado lá
-    const sit = await situacaoML(e.idx, p.numeroLoja);
+    const sit = await conferirSite(e.id, e.idx, p.numeroLoja);
+    if (sit.full) { EXCLUIDOS.add('bling' + e.idx + '|' + nfId); continue; }   // Full: nota não se cancela pelo Bling
+    if (sit.cancelado !== true) { EXCLUIDOS.add('bling' + e.idx + '|' + nfId); if (sit.cancelado === null) NAO_CONF.push({ emp: e.id, nf: nf.numero, pedido: String(p.numeroLoja || p.numero), canal: sit.canal, erro: sit.erro || null }); continue; }   // só quando Bling, site e nota concordam
     if (sit?.enviado) { DEV_NOVOS.push({ chave: 'bling' + e.idx + '|' + nfId, emp: e.id, nf: nf.numero, serie: nf.serie, nfId, emissao: nf.dataEmissao ? new Date(nf.dataEmissao.replace(' ', 'T') + '-03:00').toISOString() : null,
       pedido: String(p.numeroLoja || p.numero), pedidoErp: p.numero, cliente: p.contato?.nome || '', valor: +p.total || null, link: 'https://www.bling.com.br/notas.fiscais.php#edit/' + nfId,
       devolucao: sit.devolucao, chegouEm: sit.chegouEm, entregue: sit.entregue }); continue; }
@@ -229,7 +256,7 @@ module.exports = function montar(app, ctx = {}) {
   async function atualizar() {
     if (rodando) return; rodando = true;
     try {
-      DEV_NOVOS = [];
+      DEV_NOVOS = []; NAO_CONF = [];
       for (const e of EMP) {
         const R = ST[e.id] ||= {};
         try {
@@ -249,7 +276,7 @@ module.exports = function montar(app, ctx = {}) {
   }
   setTimeout(() => atualizar().catch(er => console.warn('[nf_cancelar]', er.message)), 150e3);
   setInterval(() => atualizar().catch(er => console.warn('[nf_cancelar]', er.message)), 30 * 60e3).unref?.();
-  app.get('/nfcancelar', (req, res) => res.json({ rodando, trelloErro: trErro, empresas: Object.fromEntries(EMP.map(e => [e.id, { erp: e.erp, ...(ST[e.id] || {}), devolucoes: Object.values(DEV).filter(d => d.emp === e.id && (!d.feito || Date.now() - Date.parse(d.feito) < 7 * 864e5)) }])) }));
+  app.get('/nfcancelar', (req, res) => res.json({ rodando, trelloErro: trErro, empresas: Object.fromEntries(EMP.map(e => [e.id, { erp: e.erp, ...(ST[e.id] || {}), naoConferidos: NAO_CONF.filter(x => x.emp === e.id), devolucoes: Object.values(DEV).filter(d => d.emp === e.id && (!d.feito || Date.now() - Date.parse(d.feito) < 7 * 864e5)) }])) }));
   app.post('/nfcancelar/devolucao', require('express').json(), (req, res) => {
     const d = DEV[String(req.body?.chave || '')]; if (!d) return res.status(404).json({ erro: 'não encontrado' });
     if (req.body?.feito === false) { delete d.feito; delete d.feitoPor; } else { d.feito = new Date().toISOString(); d.feitoPor = req.usuario?.nome || req.usuario?.email || 'painel'; }
