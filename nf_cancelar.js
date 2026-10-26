@@ -28,6 +28,22 @@ const lerJson = (f, d) => { try { return JSON.parse(fs.readFileSync(f)); } catch
 const gravar = (f, o) => { try { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(o)); } catch (e) {} };
 const delay = ms => new Promise(r => setTimeout(r, ms));
 const ST = lerJson(ARQ, {});
+const ARQ_FULL = path.join(DATA, 'apuracao_cache', 'nf_cancelar_full.json');
+const FULL = lerJson(ARQ_FULL, {});   // "idx|pedidoML" -> true/false (venda pelo Full)
+const EXCLUIDOS = new Set();          // chaves fora por serem Full (o cartão é arquivado)
+let ML = null;
+async function ehFull(idx, pedido) {
+  if (!/^2\d{15}$/.test(String(pedido)) || !ML) return false;   // só vendas do Mercado Livre
+  const k = idx + '|' + pedido;
+  if (FULL[k] !== undefined) return FULL[k];
+  try {
+    let o; try { o = await ML(idx, '/orders/' + pedido); } catch (er) { o = (await ML(idx, '/packs/' + pedido))?.orders?.[0] ? await ML(idx, '/orders/' + (await ML(idx, '/packs/' + pedido)).orders[0].id) : null; }
+    const sh = o?.shipping?.id ? await ML(idx, '/shipments/' + o.shipping.id) : null;
+    FULL[k] = sh?.logistic_type === 'fulfillment';
+  } catch (er) { return false; }
+  gravar(ARQ_FULL, FULL);
+  return FULL[k];
+}
 const TR = lerJson(ARQ_TR, {});
 const br = d => d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 const iso = d => d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
@@ -54,6 +70,7 @@ async function coletarTiny() {
     if (!['6', '7'].includes(String(n.situacao)) || n.tipo === 'E') continue;   // 6 autorizada, 7 emitida DANFE
     const p = porLoja.get(String(n.numero_ecommerce || ''));
     if (!p) continue;
+    if (await ehFull(2, n.numero_ecommerce)) { EXCLUIDOS.add('tiny|' + n.id); continue; }
     out.push({ chave: 'tiny|' + n.id, nf: n.numero, serie: n.serie, nfId: n.id, emissao: deBr(n.data_emissao), pedido: String(n.numero_ecommerce), pedidoErp: p.numero,
       cliente: n.nome, valor: +n.valor || null, canal: p.nome_ecommerce || null, link: 'https://erp.tiny.com.br/notas_fiscais#edit/' + n.id });
   }
@@ -91,6 +108,7 @@ async function coletarBling(e, cache) {
     try { nf = (await blingGet(c, '/nfe/' + nfId))?.data; await delay(340); }
     catch (er) { if (er.response?.status === 403) throw Object.assign(new Error('o app do Bling não tem permissão de Notas Fiscais'), { semEscopo: true }); throw er; }
     if (!nf || !NF_AUTORIZADA.has(Number(nf.situacao))) continue;
+    if (await ehFull(e.idx, p.numeroLoja)) { EXCLUIDOS.add('bling' + e.idx + '|' + nfId); continue; }   // venda do Full: não se cancela pelo Bling
     out.push({ chave: 'bling' + e.idx + '|' + nfId, nf: nf.numero, serie: nf.serie, nfId, emissao: nf.dataEmissao ? new Date(nf.dataEmissao.replace(' ', 'T') + '-03:00').toISOString() : null,
       pedido: String(p.numeroLoja || p.numero), pedidoErp: p.numero, cliente: p.contato?.nome || nf.contato?.nome || '', valor: +p.total || null,
       link: 'https://www.bling.com.br/notas.fiscais.php#edit/' + nfId });
@@ -121,6 +139,10 @@ async function sincronizarTrello() {
   }
   for (const [chave, t] of Object.entries(TR)) {
     if (t.resolvido || pend.has(chave) || !ok.has(t.emp)) continue;
+    if (EXCLUIDOS.has(chave)) {   // venda do Full: não era para ter cartão
+      try { await trello('put', '/cards/' + t.card, { closed: true }); } catch (er) { if (er.response?.status !== 404) throw er; }
+      t.resolvido = new Date().toISOString(); t.full = true; gravar(ARQ_TR, TR); continue;
+    }
     try { await trello('put', '/cards/' + t.card, { dueComplete: true }); await trello('post', '/cards/' + t.card + '/actions/comments', { text: '✅ Nota cancelada (conferido pelo painel).' }); }
     catch (er) { if (er.response?.status !== 404) throw er; }
     t.resolvido = new Date().toISOString(); gravar(ARQ_TR, TR);
@@ -130,7 +152,8 @@ async function sincronizarTrello() {
   return null;
 }
 
-module.exports = function montar(app) {
+module.exports = function montar(app, ctx = {}) {
+  ML = ctx.ml || null;
   let rodando = false, trErro = null;
   const cachePed = lerJson(path.join(DATA, 'apuracao_cache', 'nf_cancelar_pedidos.json'), {});
   async function atualizar() {
