@@ -97,6 +97,8 @@ async function coletarML(ctx, e) {
   return out;
 }
 
+const MOTIVO_SHP = { ITEM_MISSING: 'item faltando', WRONG_ITEM: 'item errado', FUNCTIONAL_DMG: 'com defeito', PHYSICAL_DMG: 'avariado', ITEM_DAMAGED: 'avariado', DAMAGED_PACKAGE: 'embalagem danificada',
+  CHANGE_MIND: 'desistência', DIFFERENT_DESCRIPTION: 'diferente do anúncio', NOT_RECEIPT: 'não recebido', LACKING_ACCESSORIES: 'faltando acessórios', USED: 'produto usado', EXPECTATION_FAILED: 'não atendeu à expectativa', COUNTERFEIT: 'falsificado', MUTUAL_AGREE: 'acordo com o comprador' };
 // ─── Shopee ─────────────────────────────────────────────────────────────────
 async function coletarShopee(e) {
   const sp = require('./shopee').loja(e.id);
@@ -117,7 +119,7 @@ async function coletarShopee(e) {
     if (vistos.has(r0.return_sn) || ['CANCELLED'].includes(r0.status)) continue;
     vistos.add(r0.return_sn);
     const it = (r0.item || [])[0] || {};
-    const base = { chave: 'shopee|' + r0.return_sn, canal: 'shopee', id: r0.return_sn, pedido: r0.order_sn, tipo: r0.reason ? r0.reason.toLowerCase().replace(/_/g, ' ') : 'devolução',
+    const base = { chave: 'shopee|' + r0.return_sn, canal: 'shopee', id: r0.return_sn, pedido: r0.order_sn, tipo: 'devolução' + (r0.reason ? ' · ' + (MOTIVO_SHP[r0.reason] || r0.reason.toLowerCase().replace(/_/g, ' ')) : ''),
       titulo: it.name || r0.order_sn, thumb: (it.images || [])[0] || null, sku: it.variation_sku || it.item_sku || '', valor: r0.refund_amount, status: r0.status,
       link: 'https://seller.shopee.com.br/portal/sale/returnrefundcancel?search=' + encodeURIComponent(r0.order_sn) };
     if (r0.status === 'REQUESTED') { out.analisar.push({ ...base, prazo: iso(r0.due_date), criado: iso(r0.create_time) }); continue; }
@@ -179,7 +181,7 @@ module.exports = function montar(app, ctx) {
     try {
       for (const e of EMP) {
         const R = ST[e.id] ||= {};
-        if (ctx.dadosCache[e.idx]?.uid || ctx.dadosCache[e.idx]) {
+        {
           try { R.ml = await coletarML(ctx, e); } catch (er) { R.ml = { ...(R.ml || {}), erro: er.response?.status === 401 ? 'token ML expirado' : (er.response?.data?.message || er.message) }; }
         }
         try { R.shopee = await coletarShopee(e); } catch (er) { R.shopee = { ...(R.shopee || {}), erro: er.message }; }
