@@ -39,7 +39,7 @@ const CONF = lerJson(ARQ_CONF, {});   // chave -> { em, por }
 
 // ─── Mercado Livre ──────────────────────────────────────────────────────────
 const ACOES_ANALISE = new Set(['refund', 'open_dispute', 'allow_return', 'allow_partial_refund', 'partial_refund']);
-const ACOES_REVISAR = new Set(['return_review_ok', 'return_review_fail']);
+const ACOES_REVISAR = new Set(['return_review_ok', 'return_review_fail', 'return_review_unified_ok', 'return_review_unified_fail']);
 const MOTIVO_ML = { mediations: 'mediação', returns: 'devolução', ml_case: 'caso ML', cancel_purchase: 'cancelamento', change: 'troca' };
 
 async function coletarML(ctx, e) {
@@ -82,7 +82,8 @@ async function coletarML(ctx, e) {
     const sh = (r?.shipments || []).find(s => s.destination?.name === 'seller_address');
     const base = { chave: 'ml|' + c.id, canal: 'ml', id: String(c.id), tipo: MOTIVO_ML[c.type] || c.type, etapa: c.stage, aberto, ...(await item(r, c)) };
     if (revisar || sh?.status === 'delivered') {
-      if (Date.parse(quandoChegou(r) || c.last_updated) >= limite || revisar)
+      // só entra o que pede ação sua: revisar a devolução que chegou (o resto o ML já resolveu)
+      if (revisar)
         out.chegou.push({ ...base, chegouEm: quandoChegou(r), acao: revisar ? 'revisar a devolução no ML' : null, prazo: acoes.find(a => ACOES_REVISAR.has(a.action))?.due_date || null });
       return;
     }
@@ -144,7 +145,7 @@ async function coletarShopee(e) {
     await delay(80);
     const lg = det.reverse_logistics_status || '';
     if (lg === 'LOGISTICS_DELIVERY_DONE') {
-      out.chegou.push({ ...base, chegouEm: iso(det.update_time || r0.update_time), prazo: r0.status === 'PROCESSING' && r0.return_seller_due_date ? iso(r0.return_seller_due_date) : null,
+      if (r0.status === 'PROCESSING') out.chegou.push({ ...base, chegouEm: iso(det.update_time || r0.update_time), prazo: r0.status === 'PROCESSING' && r0.return_seller_due_date ? iso(r0.return_seller_due_date) : null,
         acao: r0.status === 'PROCESSING' ? 'validar a devolução na Shopee' : null });
     } else if (/PICKUP_DONE|IN_TRANSIT|PICKUP|ARRANGE|REQUEST_CREATED/.test(lg) && r0.status !== 'CLOSED') out.caminho++;
   }
@@ -180,7 +181,7 @@ async function coletarShein(e) {
         titulo: g.goodsName || g.goodsTitle || g.skuSn || x.orderNo, sku: g.skuSn || g.goodsSn || '', thumb: g.goodsImg || g.imgUrl || null,
         link: 'https://sso.geiwohuo.com/#/order-management/return-order-list?returnOrderNo=' + encodeURIComponent(x.returnOrderNo) };
       const recebida = x.sellerSignedTime ? new Date(x.sellerSignedTime.replace(' ', 'T') + '+08:00') : null;
-      if (recebida && x.returnOrderStatus === 5) { if (recebida.getTime() >= Date.now() - DIAS * 864e5) out.chegou.push({ ...base, chegouEm: recebida.toISOString() }); }
+      if (recebida && x.returnOrderStatus === 5) { if (x.checkStatus === 2 && recebida.getTime() >= Date.now() - DIAS * 864e5) out.chegou.push({ ...base, chegouEm: recebida.toISOString(), acao: 'conferir a devolução na SHEIN' }); }
       else if ([2, 7].includes(x.returnOrderStatus)) out.caminho++;
     }
     await delay(150);
