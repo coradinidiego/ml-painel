@@ -75,7 +75,8 @@ async function coletarML(ctx, e) {
     const sel = (c.players || []).find(p => p.type === 'seller' || p.role === 'respondent') || {};
     const acoes = sel.available_actions || [];
     // revisar a devolução só quando o ML exige (ação obrigatória com prazo); opcional = já passou do prazo / não precisa
-    const revisar = acoes.some(a => ACOES_REVISAR.has(a.action) && a.mandatory);
+    // a revisão está liberada quando o ML exige (obrigatória) ou oferece a revisão "unificada" (produto chegou e espera sua avaliação)
+    const revisar = acoes.some(a => ACOES_REVISAR.has(a.action) && (a.mandatory || /unified/.test(a.action)));
     const comDev = c.type === 'returns' || (c.related_entities || []).includes('return') || acoes.some(a => ACOES_REVISAR.has(a.action));
     // reclamação aberta: confere sempre se já virou devolução (o ML nem sempre marca related_entities)
     const r = (comDev || aberto) ? await devolucao(c.id) : null;
@@ -85,7 +86,7 @@ async function coletarML(ctx, e) {
     if (revisar || sh?.status === 'delivered') {
       // só entra o que pede ação sua: revisar a devolução que chegou (o resto o ML já resolveu)
       if (revisar)
-        out.chegou.push({ ...base, chegouEm: quandoChegou(r), acao: revisar ? 'revisar a devolução no ML' : null, prazo: acoes.find(a => ACOES_REVISAR.has(a.action) && a.mandatory)?.due_date || null });
+        out.chegou.push({ ...base, chegouEm: quandoChegou(r), acao: revisar ? 'revisar a devolução no ML' : null, prazo: acoes.find(a => ACOES_REVISAR.has(a.action) && a.due_date)?.due_date || null });
       return;
     }
     if (sh && ['shipped', 'ready_to_ship'].includes(sh.status)) out.caminho++;
