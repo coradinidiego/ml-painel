@@ -162,7 +162,7 @@ body{background:#f0f2f5;color:#111}
 .ini-grp{padding:0 14px 12px}
 .ini-grp-t{font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.04em;margin:4px 0 6px}
 .ini-sq{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.ini-sq.c2{grid-template-columns:repeat(2,1fr)}.ini-sq.c4{grid-template-columns:repeat(4,1fr)}
+.ini-sq.c2{grid-template-columns:repeat(2,1fr)}.ini-sq.c3{grid-template-columns:repeat(3,1fr)}.ini-sq.c4{grid-template-columns:repeat(4,1fr)}
 .sq{height:86px;border-radius:12px;background:#f6f7f9;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6px;border:1px solid transparent;transition:transform .1s}
 .sq .v{font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
 .sq .l{font-size:11.5px;color:#666;margin-top:6px;line-height:1.2}
@@ -174,7 +174,7 @@ body{background:#f0f2f5;color:#111}
 .sq.a{background:#FFF3E0}.sq.a .v{color:#E65100}
 .sq.r{background:#FFEBEE}.sq.r .v{color:#C62828}
 .sq.lk .v{font-size:15px;color:#1565C0}
-.ini-tot{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px}
+.ini-tot{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}@media(max-width:900px){.ini-tot{grid-template-columns:repeat(2,1fr)}}
 .ini-tot .sq{aspect-ratio:auto;padding:14px;background:#0d1b2a}.ini-tot .sq .v{color:#fff;font-size:32px}.ini-tot .sq .l{color:#9fb3c8;font-size:12.5px}
 @media(max-width:600px){.ini-tot{grid-template-columns:1fr}}
 .gwrap{overflow-x:auto}
@@ -217,6 +217,7 @@ body{background:#f0f2f5;color:#111}
 <div id="geral-content"><div class="content">
   <div class="sec-head" style="background:none;border:none;padding:0 0 10px"><span style="font-size:16px;font-weight:700">🏠 Início · todas as empresas</span><span style="font-size:12px;color:#888" id="geral-upd"></span></div>
   <div id="ini-cards"><div class="loading">Carregando...</div></div>
+  <div id="ini-pv" class="rbox" style="display:none;margin-top:14px"></div>
   <p style="font-size:12px;color:#888;margin:8px 0 18px">Clique em um número para abrir a lista. Perguntas e chats são conferidos a cada 5 min; o estoque, a cada 30 min. </p>
 
   <div class="section" id="ini-est">
@@ -835,7 +836,7 @@ const IDX_EMP={zagodini:0,mae:1,lufe:2};
 const CANAL_NOME={ml:'🟡 Mercado Livre',shopee:'🟠 Shopee',amazon:'📦 Amazon',shein:'⚫ Shein'};
 async function carregarInicio(){
   try{
-    const r=await fetch('/inicio').then(r=>r.json());_iniEmp=r.empresas;
+    const [r,pv]=await Promise.all([fetch('/inicio').then(r=>r.json()),fetch('/posvenda').then(r=>r.json()).catch(()=>null)]);_iniEmp=r.empresas;_pv=pv;
     const A=t=>String(t||'').replace(/"/g,'&quot;').replace(/'/g,"\\'");
     // um quadrado: valor, rótulo, cor quando > 0, ação ao clicar
     const Q=(v,lab,cls,acao,tit)=>{
@@ -845,7 +846,7 @@ async function carregarInicio(){
       if(v===0)return '<div class="sq ok"><div class="v">0</div><div class="l">'+lab+'</div></div>';
       return '<div class="sq cl '+cls+'"'+(tit?' title="'+shpEsc(tit)+'"':'')+' onclick="'+acao+'"><div class="v">'+v+'</div><div class="l">'+lab+'</div></div>';
     };
-    const T={sp:0,pd:0,es:0};
+    const T={sp:0,pd:0,es:0,pv:0};
     let cards='';
     for(const e of r.empresas){
       const i=e.idx,sp=e.semPromo,p=e.pend,es=e.estoque,shpNC=sp.shopeeStatus==='sem_auth';
@@ -865,15 +866,49 @@ async function carregarInicio(){
           (p.ml.mensagens==null&&p.ml.erroMensagens?Q('err','ML<br>mensagens','','',p.ml.erroMensagens):Q(p.ml.mensagens,'ML<br>mensagens','r',"window.open('https://www.mercadolivre.com.br/vendas/omni/lista?filters=with_unread_messages','_blank')",'Abre as vendas no site do ML (entre com a conta desta empresa)'))+
           (p.shopee.semAuth?Q('nc','Shopee<br>chat'):Q(p.shopee.chat,'Shopee<br>chat','r',"irShp("+i+",'chat')"))+amz+'</div></div>'+
         '<div class="ini-grp"><div class="ini-grp-t">📦 Estoque diferente do '+e.erp+'</div><div class="ini-sq">'+
-          est('ml','Mercado Livre')+est('shopee','Shopee')+est('amazon','Amazon')+est('shein','Shein')+'</div></div></div>';
+          est('ml','Mercado Livre')+est('shopee','Shopee')+est('amazon','Amazon')+est('shein','Shein')+'</div></div>'+
+        (()=>{const P=pv?.empresas?.[e.id]||{};
+          const sqPv=(c,tipo,lab)=>{const x=P[c];if(!pv)return Q('err',lab,'','','sem dados');if(!x)return Q(null,lab,'','','na fila');if(x.naoConectada)return Q('nc',lab);
+            if(x.erro&&!x[tipo]?.length)return Q('err',lab,'','',x.erro);const n=(x[tipo]||[]).length;T.pv+=n;
+            const sub=tipo==='chegou'&&x.caminho?'<br><small>'+x.caminho+' a caminho</small>':tipo==='analisar'&&x.disputa?'<br><small>'+x.disputa+' em mediação</small>':'';
+            if(!n)return '<div class="sq ok"><div class="v">0</div><div class="l">'+lab+sub+'</div></div>';
+            return '<div class="sq cl '+(tipo==='analisar'?'r':'a')+'" onclick="abrirPv(\''+e.id+'\',\''+c+'\',\''+tipo+'\')"><div class="v">'+n+'</div><div class="l">'+lab+sub+'</div></div>';};
+          return '<div class="ini-grp"><div class="ini-grp-t">🔁 Pós-venda — para analisar</div><div class="ini-sq c2">'+sqPv('ml','analisar','Mercado Livre')+sqPv('shopee','analisar','Shopee')+'</div></div>'+
+            '<div class="ini-grp"><div class="ini-grp-t">📥 Pós-venda — chegou na empresa</div><div class="ini-sq c3">'+sqPv('ml','chegou','Mercado Livre')+sqPv('shopee','chegou','Shopee')+sqPv('shein','chegou','Shein')+'</div></div>';})()+'</div>';
     }
-    el('ini-cards').innerHTML='<div class="ini-tot"><div class="sq"><div class="v">'+T.sp+'</div><div class="l">🏷️ produtos sem promoção</div></div><div class="sq"><div class="v">'+T.pd+'</div><div class="l">💬 perguntas e mensagens pendentes</div></div><div class="sq"><div class="v">'+T.es+'</div><div class="l">📦 anúncios com estoque divergente</div></div></div><div class="ini-grid">'+cards+'</div>';
+    el('ini-cards').innerHTML='<div class="ini-tot"><div class="sq"><div class="v">'+T.sp+'</div><div class="l">🏷️ produtos sem promoção</div></div><div class="sq"><div class="v">'+T.pd+'</div><div class="l">💬 perguntas e mensagens pendentes</div></div><div class="sq"><div class="v">'+T.es+'</div><div class="l">📦 anúncios com estoque divergente</div></div><div class="sq"><div class="v">'+T.pv+'</div><div class="l">🔁 pós-venda para analisar ou conferir</div></div></div><div class="ini-grid">'+cards+'</div>';
     // observações do estoque (quando foi conferido, o que ficou de fora)
     el('ini-est-obs').innerHTML=r.empresas.map(e=>{const s=e.estoque;const q=s.status==='carregando'?'conferindo agora ('+(s.etapa||'')+')':s.em?'conferido às '+new Date(s.em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):s.status==='erro'?'erro: '+shpEsc(s.erro||''):'aguardando a 1ª conferência';
       return '<br><b>'+shpEsc(e.nome)+'</b> ('+e.erp+'): '+q+(s.semSku?' · '+s.semSku+' anúncios sem SKU':'')+(s.semErp?' · '+s.semErp+' SKUs não achados no '+e.erp:'')+(s.ignorados&&s.ignorados.full?' · '+s.ignorados.full+' Full/FBA fora':'')+(s.ignorados&&s.ignorados.sheinInativo?' · '+s.ignorados.sheinInativo+' inativos na SHEIN (bloqueio/validação) fora':'')+(s.avisoSync?' · <span style="color:#E65100">⚠️ '+shpEsc(s.avisoSync)+'</span>':'')+(Object.keys(s.erros||{}).length?' · ⚠️ '+Object.entries(s.erros).map(([k,v])=>k+': '+shpEsc(v)).join('; '):'');}).join('');
     const ocup=r.empresas.some(e=>e.estoque.status==='carregando');el('ini-est-btn').disabled=ocup;el('ini-est-btn').textContent=ocup?'⏳ Conferindo…':'🔄 Conferir agora';
-    _iniEst=await fetch('/inicio/estoque').then(r=>r.json());renderIniEstoque();
+    _iniEst=await fetch('/inicio/estoque').then(r=>r.json());renderIniEstoque();renderPv();
   }catch(e){el('ini-cards').innerHTML='<div class="loading" style="color:#c0392b">Sem conexão com o servidor.</div>';}
+}
+let _pv=null,_pvSel=null;
+function abrirPv(emp,canal,tipo){_pvSel={emp,canal,tipo};renderPv();el('ini-pv').scrollIntoView({behavior:'smooth',block:'start'});}
+function renderPv(){
+  const b=el('ini-pv');if(!_pvSel||!_pv){b.style.display='none';return;}
+  const {emp,canal,tipo}=_pvSel,P=_pv.empresas[emp]||{},x=P[canal]||{},L=x[tipo]||[],C=tipo==='chegou'?(x.conferidos||[]):[];
+  const nomeC={ml:'Mercado Livre',shopee:'Shopee',shein:'Shein'}[canal];
+  const dt=v=>v?new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+  const linha=(i,conf)=>'<div class="item-row"'+(conf?' style="opacity:.6"':'')+'><div class="thumb">'+(i.thumb?'<img src="'+shpEsc(i.thumb)+'" alt="">':'📦')+'</div><div class="iinfo"><div class="ititle">'+shpEsc(i.titulo||'')+'</div><div class="imeta">'+
+    shpEsc(i.tipo||'')+(i.status?' · '+shpEsc(i.status):'')+(i.sku?' · SKU '+shpEsc(i.sku):'')+(i.pedido?' · pedido '+shpEsc(i.pedido):'')+(i.valor?' · '+fmt(i.valor):'')+
+    (i.chegouEm?' · chegou '+dt(i.chegouEm):'')+(i.criado?' · aberto '+dt(i.criado):'')+(i.prazo?' · <b style="color:#C62828">prazo '+dt(i.prazo)+'</b>':'')+
+    (i.acao?'<br><b style="color:#E65100">⚠️ '+shpEsc(i.acao)+'</b>':'')+(i.acoes?'<br><small>ações: '+i.acoes.map(shpEsc).join(', ')+'</small>':'')+(conf?'<br><small>conferido '+dt(conf.em)+(conf.por?' por '+shpEsc(conf.por):'')+'</small>':'')+
+    ' · <a class="alink" href="'+shpEsc(i.link||'#')+'" target="_blank" rel="noopener">Abrir no '+nomeC+' ↗</a></div></div>'+
+    (tipo==='chegou'?'<div class="prices"><button class="btn" style="font-size:12px;padding:6px 10px" onclick="conferirPv(\''+i.chave+'\','+(conf?'false':'true')+')">'+(conf?'↩︎ Desfazer':'✓ Conferido')+'</button></div>':'')+'</div>';
+  b.style.display='';
+  b.innerHTML='<h3 style="display:flex;justify-content:space-between;align-items:center">'+(tipo==='analisar'?'🔁 Para analisar':'📥 Chegou na empresa')+' — '+shpEsc(P.nome||emp)+' · '+nomeC+
+    ' <a href="#" onclick="_pvSel=null;renderPv();return false" style="font-size:13px;font-weight:500">fechar ✕</a></h3>'+
+    '<div style="font-size:12px;color:#888;margin-bottom:8px">'+(tipo==='analisar'?'O marketplace está esperando a sua decisão (aceitar, reembolsar ou contestar). Some daqui quando for resolvido no site.':'Produto devolvido entregue na empresa (últimos 30 dias). Confira o produto e marque ✓ Conferido.')+
+    (P.em?' Atualizado '+dt(P.em)+'.':'')+(x.erro?' <span style="color:#C62828">⚠️ '+shpEsc(x.erro)+'</span>':'')+'</div>'+
+    (L.length?L.map(i=>linha(i,null)).join(''):'<div class="loading" style="color:green">✓ Nada pendente.</div>')+
+    (C.length?'<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;color:#666">'+C.length+' já conferidos</summary>'+C.map(i=>linha(i,i.conferido)).join('')+'</details>':'');
+}
+async function conferirPv(chave,conferido){
+  const r=await fetch('/posvenda/conferido',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chave,conferido})}).then(r=>r.json()).catch(()=>({}));
+  if(!r.ok){alert('Não consegui salvar. Tente de novo.');return;}
+  _pv=await fetch('/posvenda').then(r=>r.json());renderPv();carregarInicio();
 }
 function renderIniEstoque(){
   if(!_iniEst)return;
