@@ -420,8 +420,11 @@ function agregar(emp, linhas) {
     if (pendenteProprio(l, hoje)) c.proprio++;
     if (['emitirNF', 'aEmpacotar', 'empacotado', '_alerta'].includes(l.tipo) && l.prazo === 'atrasado') { c.atrasoTotal++; if (l.num && (c.atrasoVendas ||= []).length < 15) c.atrasoVendas.push(String(l.num)); }   // prazo de envio vencido em qualquer etapa
     if (l.tipo === 'futuro') { c.futuros++; continue; }
-    // NF/empacotar com prazo para outro dia continuam na etapa (dá para adiantar), mas não entram no corte de hoje
-    if ((l.tipo === 'emitirNF' || l.tipo === 'aEmpacotar') && l.prazo === 'futuro') c.futuros++;
+    // empacotar com prazo para outro dia (ML libera a etiqueta antes): só em "futuros", não em "a empacotar".
+    // Se já empacotarem, a venda passa a "empacotado" (para coletar) normalmente.
+    if (l.tipo === 'aEmpacotar' && l.prazo === 'futuro') { c.futuros++; continue; }
+    // NF com prazo para outro dia continua na etapa (dá para adiantar), mas não entra no corte de hoje
+    if (l.tipo === 'emitirNF' && l.prazo === 'futuro') c.futuros++;
     if (!ETAPAS.includes(l.tipo)) continue;
     c[l.tipo]++;
     if ((l.tipo === 'emitirNF' || l.tipo === 'aEmpacotar') && l.prazo === 'atrasado') c.atrasados++;
