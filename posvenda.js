@@ -186,7 +186,7 @@ async function coletarShein(e) {
         titulo: g.goodsName || g.goodsTitle || g.skuSn || x.orderNo, sku: g.skuSn || g.goodsSn || '', thumb: g.goodsImg || g.imgUrl || null,
         link: 'https://sso.geiwohuo.com/#/order-management/return-order-list?returnOrderNo=' + encodeURIComponent(x.returnOrderNo) };
       const recebida = x.sellerSignedTime ? new Date(x.sellerSignedTime.replace(' ', 'T') + '+08:00') : null;
-      if (recebida && x.returnOrderStatus === 5) { if (x.checkStatus === 2 && recebida.getTime() >= Date.now() - DIAS * 864e5) out.chegou.push({ ...base, chegouEm: recebida.toISOString(), acao: 'conferir a devolução na SHEIN' }); }
+      if (recebida && x.returnOrderStatus === 5) { if (false && x.checkStatus === 2) out.chegou.push({ ...base, chegouEm: recebida.toISOString(), acao: 'conferir a devolução na SHEIN' }); }
       else if ([2, 7].includes(x.returnOrderStatus)) out.caminho++;
     }
     await delay(150);

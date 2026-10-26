@@ -874,7 +874,7 @@ async function carregarInicio(){
             if(!n)return '<div class="sq ok"><div class="v">0</div><div class="l">'+lab+sub+'</div></div>';
             return '<div class="sq cl '+(tipo==='analisar'?'r':'a')+'" onclick="abrirPv(\''+e.id+'\',\''+c+'\',\''+tipo+'\')"><div class="v">'+n+'</div><div class="l">'+lab+sub+'</div></div>';};
           return '<div class="ini-grp"><div class="ini-grp-t">🔁 Pós-venda — para analisar</div><div class="ini-sq c2">'+sqPv('ml','analisar','Mercado Livre')+sqPv('shopee','analisar','Shopee')+'</div></div>'+
-            '<div class="ini-grp"><div class="ini-grp-t">📥 Pós-venda — chegou, revisar</div><div class="ini-sq c3">'+sqPv('ml','chegou','Mercado Livre')+sqPv('shopee','chegou','Shopee')+sqPv('shein','chegou','Shein')+'</div></div>';})()+'</div>';
+            '<div class="ini-grp"><div class="ini-grp-t">📥 Pós-venda — chegou, revisar</div><div class="ini-sq c2">'+sqPv('ml','chegou','Mercado Livre')+sqPv('shopee','chegou','Shopee')+'</div></div>';})()+'</div>';
     }
     el('ini-cards').innerHTML='<div class="ini-tot"><div class="sq"><div class="v">'+T.sp+'</div><div class="l">🏷️ produtos sem promoção</div></div><div class="sq"><div class="v">'+T.pd+'</div><div class="l">💬 perguntas e mensagens pendentes</div></div><div class="sq"><div class="v">'+T.es+'</div><div class="l">📦 anúncios com estoque divergente</div></div><div class="sq"><div class="v">'+T.pv+'</div><div class="l">🔁 pós-venda para analisar ou conferir</div></div></div><div class="ini-grid">'+cards+'</div>';
     // observações do estoque (quando foi conferido, o que ficou de fora)
