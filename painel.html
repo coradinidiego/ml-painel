@@ -894,7 +894,7 @@ function renderPv(){
   const linha=(i,conf)=>'<div class="item-row"'+(conf?' style="opacity:.6"':'')+'><div class="thumb">'+(i.thumb?'<img src="'+shpEsc(i.thumb)+'" alt="">':'📦')+'</div><div class="iinfo"><div class="ititle">'+shpEsc(i.titulo||'')+'</div><div class="imeta">'+
     shpEsc(i.tipo||'')+(i.status?' · '+shpEsc(i.status):'')+(i.sku?' · SKU '+shpEsc(i.sku):'')+(i.pedido?' · pedido '+shpEsc(i.pedido):'')+(i.valor?' · '+fmt(i.valor):'')+
     (i.chegouEm?' · chegou '+dt(i.chegouEm):'')+(i.criado?' · aberto '+dt(i.criado):'')+(i.prazo?' · <b style="color:#C62828">prazo '+dt(i.prazo)+'</b>':'')+
-    (i.acao?'<br><b style="color:#E65100">⚠️ '+shpEsc(i.acao)+'</b>':'')+(i.acoes?'<br><small>ações: '+i.acoes.map(shpEsc).join(', ')+'</small>':'')+(conf?'<br><small>conferido '+dt(conf.em)+(conf.por?' por '+shpEsc(conf.por):'')+'</small>':'')+
+    (i.acao?'<br><b style="color:#E65100">⚠️ '+shpEsc(i.acao)+'</b>':'')+(i.acoes?'<br><small>pode: '+i.acoes.map(a=>({refund:'reembolsar',open_dispute:'contestar (abrir disputa)',allow_return:'aceitar devolução',partial_refund:'reembolso parcial',allow_partial_refund:'reembolso parcial',send_attachments:'enviar provas'}[a]||a)).map(shpEsc).join(' · ')+'</small>':'')+(conf?'<br><small>conferido '+dt(conf.em)+(conf.por?' por '+shpEsc(conf.por):'')+'</small>':'')+
     ' · <a class="alink" href="'+shpEsc(i.link||'#')+'" target="_blank" rel="noopener">Abrir no '+nomeC+' ↗</a></div></div>'+
     (tipo==='chegou'?'<div class="prices"><button class="btn" style="font-size:12px;padding:6px 10px" onclick="conferirPv(\''+i.chave+'\','+(conf?'false':'true')+')">'+(conf?'↩︎ Desfazer':'✓ Conferido')+'</button></div>':'')+'</div>';
   b.style.display='';
