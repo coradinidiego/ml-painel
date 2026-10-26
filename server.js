@@ -2005,7 +2005,8 @@ app.post('/shopee/reply-rating', async (req, res) => {
 async function mlReq(idx, method, path, body, headers = {}) { const r = await axios({ method, url: BASE + path, data: body, headers: { Authorization: 'Bearer ' + getToken(idx), ...headers } }); return { data: r.data, headers: r.headers }; }
 async function mlPut(idx, path, body) { return (await axios.put(BASE + path, body, { headers: { Authorization: 'Bearer ' + getToken(idx) } })).data; }
 require('./inicio')(app, { ml, mlPut, mlReq, dadosCache, SHP, AZ_ANUNCIOS, extrairSKU, estoqueShp });
-require('./posvenda')(app, { ml, dadosCache }); // Pós-venda: devoluções/reclamações ML, Shopee e SHEIN
+require('./posvenda')(app, { ml, dadosCache });
+require('./nf_cancelar')(app); // NF-e autorizada de pedido cancelado (Bling/Tiny não cancelam a nota sozinhos) // Pós-venda: devoluções/reclamações ML, Shopee e SHEIN
 
 // Só as telas são públicas para quem está logado — nunca a pasta inteira (.env, tokens...)
 app.get('/', (req, res) => res.redirect('/painel.html'));
