@@ -110,6 +110,10 @@ async function coletarML(ctx, e) {
     for (const c of L) if (Date.parse(c.last_updated) >= limite && (c.type === 'returns' || (c.related_entities || []).includes('return'))) await tratar(c, false);
     if (L.length < 50 || Date.parse(L[L.length - 1].last_updated) < limite) break;
   }
+  // número da venda como aparece no ML (pacote, quando o pedido faz parte de um carrinho)
+  for (const x of [...out.analisar, ...out.chegou]) {
+    try { const o = await ml(e.idx, '/orders/' + x.pedido); if (o.pack_id) { x.pedidoId = x.pedido; x.pedido = String(o.pack_id); x.link = 'https://www.mercadolivre.com.br/vendas/' + o.pack_id + '/detalhe'; } } catch (er) {}
+  }
   return out;
 }
 
