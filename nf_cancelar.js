@@ -36,6 +36,14 @@ const DEV = lerJson(ARQ_DEV, {});     // chave -> nota de venda enviada e cancel
 let DEV_NOVOS = [];
 const ENTRADAS = new Set();           // "emp|pedido" com NF de entrada (devolução) já emitida
 let ML = null;
+// SHEIN: se o pedido saiu (enviado/coletado) a nota vale — o "cancelado" do ERP não reflete a SHEIN
+async function sheinEnviado(empId, pedido) {
+  if (!/^GSH/i.test(String(pedido))) return false;
+  try { const shein = require('./shein'); if (!shein.autorizada(empId)) return false;
+    const P = (await shein.detalhes(empId, [String(pedido)], { idadeMin: 60 }))[String(pedido)];
+    return !!(P && (P.coletado || P.enviado));
+  } catch (er) { return false; }
+}
 async function pedidoML(idx, pedido) {
   try { return await ML(idx, '/orders/' + pedido); }
   catch (er) { const pk = await ML(idx, '/packs/' + pedido); return pk?.orders?.[0]?.id ? await ML(idx, '/orders/' + pk.orders[0].id) : null; }
@@ -103,6 +111,7 @@ async function coletarTiny() {
     const p = porLoja.get(String(n.numero_ecommerce || ''));
     if (!p) continue;
     if (await ehFull(2, n.numero_ecommerce)) { EXCLUIDOS.add('tiny|' + n.id); continue; }
+    if (await sheinEnviado('lufe', n.numero_ecommerce)) { EXCLUIDOS.add('tiny|' + n.id); continue; }
     const sit = await situacaoML(2, n.numero_ecommerce);
     if (sit?.enviado) { DEV_NOVOS.push({ chave: 'tiny|' + n.id, emp: 'lufe', nf: n.numero, serie: n.serie, nfId: n.id, emissao: deBr(n.data_emissao), pedido: String(n.numero_ecommerce), pedidoErp: p.numero,
       cliente: n.nome, valor: +n.valor || null, link: 'https://erp.tiny.com.br/notas_fiscais#edit/' + n.id, devolucao: sit.devolucao, chegouEm: sit.chegouEm, entregue: sit.entregue }); continue; }
@@ -144,6 +153,7 @@ async function coletarBling(e, cache) {
     catch (er) { if (er.response?.status === 403) throw Object.assign(new Error('o app do Bling não tem permissão de Notas Fiscais'), { semEscopo: true }); throw er; }
     if (!nf || !NF_AUTORIZADA.has(Number(nf.situacao))) continue;
     if (await ehFull(e.idx, p.numeroLoja)) { EXCLUIDOS.add('bling' + e.idx + '|' + nfId); continue; }   // venda do Full: não se cancela pelo Bling
+    if (await sheinEnviado(e.id, p.numeroLoja)) { EXCLUIDOS.add('bling' + e.idx + '|' + nfId); continue; }   // SHEIN enviou: pedido não está cancelado lá
     const sit = await situacaoML(e.idx, p.numeroLoja);
     if (sit?.enviado) { DEV_NOVOS.push({ chave: 'bling' + e.idx + '|' + nfId, emp: e.id, nf: nf.numero, serie: nf.serie, nfId, emissao: nf.dataEmissao ? new Date(nf.dataEmissao.replace(' ', 'T') + '-03:00').toISOString() : null,
       pedido: String(p.numeroLoja || p.numero), pedidoErp: p.numero, cliente: p.contato?.nome || '', valor: +p.total || null, link: 'https://www.bling.com.br/notas.fiscais.php#edit/' + nfId,
