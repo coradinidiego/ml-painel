@@ -93,7 +93,7 @@ async function coletarML(ctx, e) {
     // só o que depende de você: ação obrigatória com prazo, ou reclamação do comprador (sem devolução) esperando sua resposta.
     // devolução comum (o cliente posta e o ML cuida) e mediação nas mãos do ML não entram.
     const reclamacao = c.type === 'mediations' && c.stage === 'claim' && !comDev && !temDev;
-    const decide = acoes.filter(a => (a.mandatory && !['recontact'].includes(a.action) && !ACOES_REVISAR.has(a.action)) || (reclamacao && ACOES_ANALISE.has(a.action)));
+    const decide = acoes.filter(a => a.mandatory && !['recontact'].includes(a.action) && !ACOES_REVISAR.has(a.action));   // só o que o ML exige de você
     if (decide.length) out.analisar.push({ ...base, acoes: decide.map(a => a.action), prazo: decide.map(a => a.due_date).filter(Boolean).sort()[0] || null, criado: c.date_created });
     else if (c.stage === 'dispute') out.disputa++;
   };
