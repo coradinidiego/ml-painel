@@ -873,9 +873,9 @@ async function carregarInicio(){
             const sub='';
             if(!n)return '<div class="sq ok"><div class="v">0</div><div class="l">'+lab+sub+'</div></div>';
             return '<div class="sq cl '+(tipo==='analisar'?'r':'a')+'" onclick="abrirPv(\''+e.id+'\',\''+c+'\',\''+tipo+'\')"><div class="v">'+n+'</div><div class="l">'+lab+sub+'</div></div>';};
-          const N=nfc?.empresas?.[e.id];const nNf=N?.itens?.length||0;T.pv+=nNf;
+          const N=nfc?.empresas?.[e.id];const nDev=(N?.devolucoes||[]).filter(d=>!d.feito&&d.devolucao==='chegou').length;const nNf=(N?.itens?.length||0)+nDev;T.pv+=nNf;const nEsp=(N?.devolucoes||[]).filter(d=>!d.feito&&d.devolucao!=='chegou').length;
           const sqNf=!nfc?Q('err','NF-e','','','sem dados'):!N||!N.em?Q(null,'NF-e','','','na fila'):N.erro&&!nNf?Q('err',N.semEscopo?'NF-e<br><small>sem permissão no Bling</small>':'NF-e','','',N.erro):
-            nNf?'<div class="sq cl r" onclick="abrirNf(\''+e.id+'\')"><div class="v">'+nNf+'</div><div class="l">NF-e de pedido<br>cancelado</div></div>':'<div class="sq ok"><div class="v">0</div><div class="l">NF-e de pedido<br>cancelado</div></div>';
+            (nNf?'<div class="sq cl r" onclick="abrirNf(\''+e.id+'\')"><div class="v">'+nNf+'</div><div class="l">NF-e para cancelar<br>ou devolver'+(nEsp?'<br><small>'+nEsp+' esperando voltar</small>':'')+'</div></div>':nEsp?'<div class="sq cl" onclick="abrirNf(\''+e.id+'\')"><div class="v">0</div><div class="l">NF-e para cancelar<br><small>'+nEsp+' devolução esperando voltar</small></div></div>':'<div class="sq ok"><div class="v">0</div><div class="l">NF-e para cancelar<br>ou devolver</div></div>');
           return '<div class="ini-grp"><div class="ini-grp-t">🧾 Nota fiscal para cancelar</div><div class="ini-sq c2">'+sqNf+'</div></div>'+
             '<div class="ini-grp"><div class="ini-grp-t">🔁 Pós-venda — para analisar</div><div class="ini-sq c2">'+sqPv('ml','analisar','Mercado Livre')+sqPv('shopee','analisar','Shopee')+'</div></div>'+
             '<div class="ini-grp"><div class="ini-grp-t">📥 Pós-venda — chegou, revisar</div><div class="ini-sq c2">'+sqPv('ml','chegou','Mercado Livre')+sqPv('shopee','chegou','Shopee')+'</div></div>';})()+'</div>';
@@ -889,6 +889,11 @@ async function carregarInicio(){
   }catch(e){el('ini-cards').innerHTML='<div class="loading" style="color:#c0392b">Sem conexão com o servidor.</div>';}
 }
 let _nfc=null,_nfSel=null;
+async function nfDevFeita(chave,feito,emp){
+  const r=await fetch('/nfcancelar/devolucao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chave,feito})}).then(r=>r.json()).catch(()=>({}));
+  if(!r.ok){alert('Não consegui salvar. Tente de novo.');return;}
+  _nfc=await fetch('/nfcancelar').then(r=>r.json());abrirNf(emp,true);
+}
 function abrirNf(emp,semRolar){_pvSel=null;_nfSel=emp;const b=el('ini-pv'),N=_nfc?.empresas?.[emp]||{},L=N.itens||[];
   const dt=v=>v?new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
   b.style.display='';
@@ -896,7 +901,12 @@ function abrirNf(emp,semRolar){_pvSel=null;_nfSel=emp;const b=el('ini-pv'),N=_nf
     '<div style="font-size:12px;color:#888;margin-bottom:8px">Pedido cancelado no marketplace, mas a nota continua autorizada no '+shpEsc(N.erp||'ERP')+'. O prazo normal de cancelamento na SEFAZ é de 24 h depois da emissão. Some daqui quando a nota estiver cancelada.'+(N.em?' Conferido '+dt(N.em)+'.':'')+'</div>'+
     (L.length?L.map(x=>{const h=x.emissao?(Date.now()-Date.parse(x.emissao))/36e5:null;return '<div class="item-row"><div class="thumb">🧾</div><div class="iinfo"><div class="ititle">NF-e '+shpEsc(x.nf)+(x.serie?' / série '+shpEsc(x.serie):'')+' — venda '+shpEsc(x.pedido)+'</div><div class="imeta">'+(x.cliente?shpEsc(x.cliente)+' · ':'')+(x.valor?fmt(x.valor)+' · ':'')+'emitida '+dt(x.emissao)+
       (h!=null?(h>24?' · <b style="color:#C62828">passou de 24 h ('+Math.floor(h)+' h) — cancelamento extemporâneo</b>':' · <b style="color:#E65100">faltam '+Math.max(0,Math.floor(24-h))+' h</b>'):'')+
-      ' · <a class="alink" href="'+shpEsc(x.link)+'" target="_blank" rel="noopener">Abrir no '+shpEsc(N.erp)+' ↗</a></div></div></div>';}).join(''):'<div class="loading" style="color:green">✓ Nenhuma nota para cancelar.</div>');
+      ' · <a class="alink" href="'+shpEsc(x.link)+'" target="_blank" rel="noopener">Abrir no '+shpEsc(N.erp)+' ↗</a></div></div></div>';}).join(''):'<div class="loading" style="color:green">✓ Nenhuma nota para cancelar.</div>')+
+    (()=>{const D=(N.devolucoes||[]);if(!D.length)return '';
+      const st=d=>d.feito?'<span style="color:#2e7d32">✓ NF de devolução emitida '+dt(d.feito)+'</span>':d.devolucao==='chegou'?'<b style="color:#C62828">produto voltou — emitir NF de devolução</b>':d.devolucao==='a caminho'?'<span style="color:#E65100">devolução a caminho</span>':'<span style="color:#888">enviada ao cliente, sem devolução aberta ainda</span>';
+      return '<h4 style="margin:16px 0 4px">↩️ Vendas já enviadas que foram canceladas — não cancelar a nota</h4><div style="font-size:12px;color:#888;margin-bottom:6px">Espere o produto voltar e emita a NF de devolução (entrada). Marque aqui quando emitir'+(N.erp==='Tiny'?' (no Tiny o painel também reconhece sozinho a nota de entrada da venda)':'')+'.</div>'+
+        D.map(d=>'<div class="item-row"'+(d.feito?' style="opacity:.6"':'')+'><div class="thumb">↩️</div><div class="iinfo"><div class="ititle">NF-e '+shpEsc(d.nf)+' — venda '+shpEsc(d.pedido)+'</div><div class="imeta">'+(d.cliente?shpEsc(d.cliente)+' · ':'')+(d.valor?fmt(d.valor)+' · ':'')+st(d)+
+          ' · <a class="alink" href="'+shpEsc(d.link)+'" target="_blank" rel="noopener">Abrir no '+shpEsc(N.erp)+' ↗</a></div></div><div class="prices"><button class="btn" style="font-size:12px;padding:6px 10px" onclick="nfDevFeita(\''+d.chave+'\','+(d.feito?'false':'true')+',\''+d.emp+'\')">'+(d.feito?'↩︎ Desfazer':'✓ NF de devolução emitida')+'</button></div></div>').join('');})();
   if(!semRolar)b.scrollIntoView({behavior:'smooth',block:'start'});
 }
 let _pv=null,_pvSel=null;

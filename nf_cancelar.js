@@ -31,18 +31,48 @@ const ST = lerJson(ARQ, {});
 const ARQ_FULL = path.join(DATA, 'apuracao_cache', 'nf_cancelar_full.json');
 const FULL = lerJson(ARQ_FULL, {});   // "idx|pedidoML" -> true/false (venda pelo Full)
 const EXCLUIDOS = new Set();          // chaves fora por serem Full (o cartão é arquivado)
+const ARQ_DEV = path.join(DATA, 'apuracao_cache', 'nf_devolucao.json');
+const DEV = lerJson(ARQ_DEV, {});     // chave -> nota de venda enviada e cancelada: esperar o produto voltar e emitir NF de devolução
+let DEV_NOVOS = [];
+const ENTRADAS = new Set();           // "emp|pedido" com NF de entrada (devolução) já emitida
 let ML = null;
+async function pedidoML(idx, pedido) {
+  try { return await ML(idx, '/orders/' + pedido); }
+  catch (er) { const pk = await ML(idx, '/packs/' + pedido); return pk?.orders?.[0]?.id ? await ML(idx, '/orders/' + pk.orders[0].id) : null; }
+}
 async function ehFull(idx, pedido) {
   if (!/^2\d{15}$/.test(String(pedido)) || !ML) return false;   // só vendas do Mercado Livre
   const k = idx + '|' + pedido;
   if (FULL[k] !== undefined) return FULL[k];
   try {
-    let o; try { o = await ML(idx, '/orders/' + pedido); } catch (er) { o = (await ML(idx, '/packs/' + pedido))?.orders?.[0] ? await ML(idx, '/orders/' + (await ML(idx, '/packs/' + pedido)).orders[0].id) : null; }
+    const o = await pedidoML(idx, pedido);
     const sh = o?.shipping?.id ? await ML(idx, '/shipments/' + o.shipping.id) : null;
     FULL[k] = sh?.logistic_type === 'fulfillment';
   } catch (er) { return false; }
   gravar(ARQ_FULL, FULL);
   return FULL[k];
+}
+// Venda do ML que já saiu para o cliente: a nota não se cancela — espera o produto voltar e emite NF de devolução.
+// { enviado, devolucao: 'sem devolução' | 'a caminho' | 'chegou', chegouEm }
+async function situacaoML(idx, pedido) {
+  if (!/^2\d{15}$/.test(String(pedido)) || !ML) return null;
+  try {
+    const o = await pedidoML(idx, pedido); if (!o) return null;
+    const sh = o.shipping?.id ? await ML(idx, '/shipments/' + o.shipping.id) : null;
+    const hist = sh?.status_history || {};
+    const enviado = ['shipped', 'delivered', 'not_delivered'].includes(sh?.status) || !!hist.date_shipped || !!hist.date_delivered;
+    if (!enviado) return { enviado: false };
+    let devolucao = 'sem devolução', chegouEm = null;
+    const cs = await ML(idx, '/post-purchase/v1/claims/search', { resource: 'order', resource_id: o.id });
+    for (const c of cs.data || []) {
+      let r; try { r = await ML(idx, '/post-purchase/v2/claims/' + c.id + '/returns'); } catch (er) { continue; }
+      const s2 = (r.shipments || []).find(x => x.destination?.name === 'seller_address') || (r.shipments || [])[0];
+      if (!s2) continue;
+      if (s2.status === 'delivered' || r.status === 'delivered') { devolucao = 'chegou'; chegouEm = r.last_updated || null; break; }
+      if (['shipped', 'ready_to_ship', 'pending'].includes(s2.status) || ['label_generated', 'shipped', 'opened'].includes(r.status)) devolucao = 'a caminho';
+    }
+    return { enviado: true, devolucao, chegouEm, entregue: sh?.status === 'delivered' || !!hist.date_delivered };
+  } catch (er) { return null; }
 }
 const TR = lerJson(ARQ_TR, {});
 const br = d => d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
@@ -65,12 +95,17 @@ async function coletarTiny() {
   const canc = (await tinyTodas('pedidos.pesquisa.php', 'pedidos', { situacao: 'cancelado', dataInicial: desde })).map(x => x.pedido);
   const porLoja = new Map(canc.filter(p => p.numero_ecommerce).map(p => [String(p.numero_ecommerce), p]));
   const nfs = (await tinyTodas('notas.fiscais.pesquisa.php', 'notas_fiscais', { dataInicial: desde, tipoNota: 'S' })).map(x => x.nota_fiscal);
+  try { const ent = (await tinyTodas('notas.fiscais.pesquisa.php', 'notas_fiscais', { dataInicial: br(new Date(Date.now() - 60 * 864e5)), tipoNota: 'E' })).map(x => x.nota_fiscal);
+    for (const n of ent) if (n.numero_ecommerce && ['6', '7'].includes(String(n.situacao))) ENTRADAS.add('lufe|' + n.numero_ecommerce); } catch (er) {}
   const out = [];
   for (const n of nfs) {
     if (!['6', '7'].includes(String(n.situacao)) || n.tipo === 'E') continue;   // 6 autorizada, 7 emitida DANFE
     const p = porLoja.get(String(n.numero_ecommerce || ''));
     if (!p) continue;
     if (await ehFull(2, n.numero_ecommerce)) { EXCLUIDOS.add('tiny|' + n.id); continue; }
+    const sit = await situacaoML(2, n.numero_ecommerce);
+    if (sit?.enviado) { DEV_NOVOS.push({ chave: 'tiny|' + n.id, emp: 'lufe', nf: n.numero, serie: n.serie, nfId: n.id, emissao: deBr(n.data_emissao), pedido: String(n.numero_ecommerce), pedidoErp: p.numero,
+      cliente: n.nome, valor: +n.valor || null, link: 'https://erp.tiny.com.br/notas_fiscais#edit/' + n.id, devolucao: sit.devolucao, chegouEm: sit.chegouEm, entregue: sit.entregue }); continue; }
     out.push({ chave: 'tiny|' + n.id, nf: n.numero, serie: n.serie, nfId: n.id, emissao: deBr(n.data_emissao), pedido: String(n.numero_ecommerce), pedidoErp: p.numero,
       cliente: n.nome, valor: +n.valor || null, canal: p.nome_ecommerce || null, link: 'https://erp.tiny.com.br/notas_fiscais#edit/' + n.id });
   }
@@ -109,6 +144,10 @@ async function coletarBling(e, cache) {
     catch (er) { if (er.response?.status === 403) throw Object.assign(new Error('o app do Bling não tem permissão de Notas Fiscais'), { semEscopo: true }); throw er; }
     if (!nf || !NF_AUTORIZADA.has(Number(nf.situacao))) continue;
     if (await ehFull(e.idx, p.numeroLoja)) { EXCLUIDOS.add('bling' + e.idx + '|' + nfId); continue; }   // venda do Full: não se cancela pelo Bling
+    const sit = await situacaoML(e.idx, p.numeroLoja);
+    if (sit?.enviado) { DEV_NOVOS.push({ chave: 'bling' + e.idx + '|' + nfId, emp: e.id, nf: nf.numero, serie: nf.serie, nfId, emissao: nf.dataEmissao ? new Date(nf.dataEmissao.replace(' ', 'T') + '-03:00').toISOString() : null,
+      pedido: String(p.numeroLoja || p.numero), pedidoErp: p.numero, cliente: p.contato?.nome || '', valor: +p.total || null, link: 'https://www.bling.com.br/notas.fiscais.php#edit/' + nfId,
+      devolucao: sit.devolucao, chegouEm: sit.chegouEm, entregue: sit.entregue }); continue; }
     out.push({ chave: 'bling' + e.idx + '|' + nfId, nf: nf.numero, serie: nf.serie, nfId, emissao: nf.dataEmissao ? new Date(nf.dataEmissao.replace(' ', 'T') + '-03:00').toISOString() : null,
       pedido: String(p.numeroLoja || p.numero), pedidoErp: p.numero, cliente: p.contato?.nome || nf.contato?.nome || '', valor: +p.total || null,
       link: 'https://www.bling.com.br/notas.fiscais.php#edit/' + nfId });
@@ -139,6 +178,11 @@ async function sincronizarTrello() {
   }
   for (const [chave, t] of Object.entries(TR)) {
     if (t.resolvido || pend.has(chave) || !ok.has(t.emp)) continue;
+    if (DEV[chave] && !t.dev) {   // a venda tinha saído: não se cancela, vira NF de devolução
+      try { await trello('post', '/cards/' + t.card + '/actions/comments', { text: '↩️ A venda já tinha sido enviada: não cancelar a nota. Esperar o produto voltar e emitir a NF de devolução (o painel cria outro cartão quando chegar).' });
+        await trello('put', '/cards/' + t.card, { closed: true }); } catch (er) { if (er.response?.status !== 404) throw er; }
+      t.resolvido = new Date().toISOString(); t.virouDev = true; gravar(ARQ_TR, TR); continue;
+    }
     if (EXCLUIDOS.has(chave)) {   // venda do Full: não era para ter cartão
       try { await trello('put', '/cards/' + t.card, { closed: true }); } catch (er) { if (er.response?.status !== 404) throw er; }
       t.resolvido = new Date().toISOString(); t.full = true; gravar(ARQ_TR, TR); continue;
@@ -146,6 +190,22 @@ async function sincronizarTrello() {
     try { await trello('put', '/cards/' + t.card, { dueComplete: true }); await trello('post', '/cards/' + t.card + '/actions/comments', { text: '✅ Nota cancelada (conferido pelo painel).' }); }
     catch (er) { if (er.response?.status !== 404) throw er; }
     t.resolvido = new Date().toISOString(); gravar(ARQ_TR, TR);
+  }
+  // devoluções: cartão quando o produto chegou; concluído quando a NF de devolução for emitida
+  const nomeEmp = id => EMP.find(e => e.id === id)?.nome || id, erpEmp = id => EMP.find(e => e.id === id)?.erp || 'ERP';
+  for (const [chave, d] of Object.entries(DEV)) {
+    const k = 'dev|' + chave;
+    if (!d.feito && d.devolucao === 'chegou' && !TR[k]) {
+      const desc = ['O cliente devolveu uma venda que já tinha sido enviada. NÃO cancelar a nota: emitir a NF de devolução (entrada).', `NF de venda: ${d.nf}${d.serie ? ' série ' + d.serie : ''}`,
+        `Venda: ${d.pedido}${d.pedidoErp ? ' (pedido ' + d.pedidoErp + ' no ' + erpEmp(d.emp) + ')' : ''}`, d.cliente ? `Cliente: ${d.cliente}` : null, d.valor ? `Valor: R$ ${d.valor.toFixed(2).replace('.', ',')}` : null,
+        `Abrir a nota no ${erpEmp(d.emp)}: ${d.link}`, '', '(criado automaticamente pelo painel)'].filter(v => v !== null).join('\n');
+      const card = await trello('post', '/cards', { idList: process.env.TRELLO_LISTA_NF || '6adf69b10e63fa14064aa3da', name: `${nomeEmp(d.emp)} - Emitir NF de devolução (NF ${d.nf}, venda ${d.pedido})`, desc, pos: 'top' });
+      TR[k] = { card: card.id, url: card.shortUrl, em: new Date().toISOString(), emp: d.emp, dev: true }; gravar(ARQ_TR, TR);
+    }
+    if (d.feito && TR[k] && !TR[k].resolvido) {
+      try { await trello('put', '/cards/' + TR[k].card, { dueComplete: true }); await trello('post', '/cards/' + TR[k].card + '/actions/comments', { text: '✅ NF de devolução emitida.' }); } catch (er) { if (er.response?.status !== 404) throw er; }
+      TR[k].resolvido = new Date().toISOString(); gravar(ARQ_TR, TR);
+    }
   }
   for (const [k, t] of Object.entries(TR)) if (t.resolvido && Date.now() - Date.parse(t.resolvido) > 90 * 864e5) delete TR[k];
   gravar(ARQ_TR, TR);
@@ -159,6 +219,7 @@ module.exports = function montar(app, ctx = {}) {
   async function atualizar() {
     if (rodando) return; rodando = true;
     try {
+      DEV_NOVOS = [];
       for (const e of EMP) {
         const R = ST[e.id] ||= {};
         try {
@@ -169,11 +230,20 @@ module.exports = function montar(app, ctx = {}) {
         gravar(ARQ, ST);
         gravar(path.join(DATA, 'apuracao_cache', 'nf_cancelar_pedidos.json'), cachePed);
       }
+      for (const d of DEV_NOVOS) DEV[d.chave] = { ...(DEV[d.chave] || {}), ...d, visto: new Date().toISOString() };
+      for (const d of Object.values(DEV)) if (!d.feito && ENTRADAS.has(d.emp + '|' + d.pedido)) { d.feito = new Date().toISOString(); d.feitoPor = 'NF de entrada encontrada no ERP'; }
+      for (const [k, d] of Object.entries(DEV)) if (d.feito && Date.now() - Date.parse(d.feito) > 90 * 864e5) delete DEV[k];
+      gravar(ARQ_DEV, DEV);
       try { await sincronizarTrello(); trErro = null; } catch (er) { trErro = er.message; console.warn('[nf_cancelar/trello]', er.message); }
     } finally { rodando = false; }
   }
   setTimeout(() => atualizar().catch(er => console.warn('[nf_cancelar]', er.message)), 150e3);
   setInterval(() => atualizar().catch(er => console.warn('[nf_cancelar]', er.message)), 30 * 60e3).unref?.();
-  app.get('/nfcancelar', (req, res) => res.json({ rodando, trelloErro: trErro, empresas: Object.fromEntries(EMP.map(e => [e.id, { erp: e.erp, ...(ST[e.id] || {}) }])) }));
+  app.get('/nfcancelar', (req, res) => res.json({ rodando, trelloErro: trErro, empresas: Object.fromEntries(EMP.map(e => [e.id, { erp: e.erp, ...(ST[e.id] || {}), devolucoes: Object.values(DEV).filter(d => d.emp === e.id && (!d.feito || Date.now() - Date.parse(d.feito) < 7 * 864e5)) }])) }));
+  app.post('/nfcancelar/devolucao', require('express').json(), (req, res) => {
+    const d = DEV[String(req.body?.chave || '')]; if (!d) return res.status(404).json({ erro: 'não encontrado' });
+    if (req.body?.feito === false) { delete d.feito; delete d.feitoPor; } else { d.feito = new Date().toISOString(); d.feitoPor = req.usuario?.nome || req.usuario?.email || 'painel'; }
+    gravar(ARQ_DEV, DEV); sincronizarTrello().catch(() => {}); res.json({ ok: true });
+  });
   app.post('/nfcancelar/atualizar', (req, res) => { atualizar().catch(() => {}); res.json({ ok: true }); });
 };
