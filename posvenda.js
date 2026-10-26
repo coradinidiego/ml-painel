@@ -77,7 +77,9 @@ async function coletarML(ctx, e) {
     }
     if (sh && ['shipped', 'ready_to_ship'].includes(sh.status)) out.caminho++;
     if (!aberto) return;
-    const decide = acoes.filter(a => ACOES_ANALISE.has(a.action) || (a.mandatory && !/message/.test(a.action)));
+    // devolução já em andamento (etiqueta gerada / postada): o ML só espera o produto voltar — não é decisão do vendedor
+    const emAndamento = r && ['label_generated', 'shipped', 'opened'].includes(r.status) && (r.shipments || []).length;
+    const decide = acoes.filter(a => (ACOES_ANALISE.has(a.action) && !emAndamento) || (a.mandatory && !/message/.test(a.action)));
     if (decide.length) out.analisar.push({ ...base, acoes: decide.map(a => a.action), prazo: decide.map(a => a.due_date).filter(Boolean).sort()[0] || null, criado: c.date_created });
     else if (c.stage === 'dispute') out.disputa++;
   };
