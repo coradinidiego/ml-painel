@@ -76,7 +76,9 @@ async function coletarML(ctx, e) {
     const acoes = sel.available_actions || [];
     const revisar = acoes.some(a => ACOES_REVISAR.has(a.action));
     const comDev = c.type === 'returns' || (c.related_entities || []).includes('return') || revisar;
-    const r = comDev ? await devolucao(c.id) : null;
+    // reclamação aberta: confere sempre se já virou devolução (o ML nem sempre marca related_entities)
+    const r = (comDev || aberto) ? await devolucao(c.id) : null;
+    const temDev = !!(r && r.status && (r.shipments || []).length);
     const sh = (r?.shipments || []).find(s => s.destination?.name === 'seller_address');
     const base = { chave: 'ml|' + c.id, canal: 'ml', id: String(c.id), tipo: MOTIVO_ML[c.type] || c.type, etapa: c.stage, aberto, ...(await item(r, c)) };
     if (revisar || sh?.status === 'delivered') {
@@ -86,10 +88,9 @@ async function coletarML(ctx, e) {
     }
     if (sh && ['shipped', 'ready_to_ship'].includes(sh.status)) out.caminho++;
     if (!aberto) return;
-    // devolução já em andamento (etiqueta gerada / postada): o ML só espera o produto voltar — não é decisão do vendedor
     // só o que depende de você: ação obrigatória com prazo, ou reclamação do comprador (sem devolução) esperando sua resposta.
     // devolução comum (o cliente posta e o ML cuida) e mediação nas mãos do ML não entram.
-    const reclamacao = c.type === 'mediations' && c.stage === 'claim' && !comDev;
+    const reclamacao = c.type === 'mediations' && c.stage === 'claim' && !comDev && !temDev;
     const decide = acoes.filter(a => a.mandatory || (reclamacao && ACOES_ANALISE.has(a.action)));
     if (decide.length) out.analisar.push({ ...base, acoes: decide.map(a => a.action), prazo: decide.map(a => a.due_date).filter(Boolean).sort()[0] || null, criado: c.date_created });
     else if (c.stage === 'dispute') out.disputa++;
