@@ -194,6 +194,60 @@ async function coletarShein(e) {
   return out;
 }
 
+// ─── Trello: um cartão para a Rafaela por pendência ─────────────────────────
+// Railway: TRELLO_KEY, TRELLO_TOKEN  (opcionais: TRELLO_LISTA, TRELLO_MEMBRO)
+const ARQ_TR = path.join(DATA, 'apuracao_cache', 'posvenda_trello.json');
+const TR = lerJson(ARQ_TR, {});   // chave -> { card, url, em, resolvido }
+const TR_LISTA = () => process.env.TRELLO_LISTA || '69e8e3565598d810d650ddc8';    // quadro "Meu quadro do Trello" → lista "Rafaela"
+const TR_MEMBRO = () => process.env.TRELLO_MEMBRO || '69e931078c84db34c843a722';  // Rafaela Zago
+const trOk = () => !!(process.env.TRELLO_KEY && process.env.TRELLO_TOKEN);
+let trErro = null;
+async function trello(metodo, caminho, params = {}) {
+  const axios = require('axios');
+  const r = await axios({ method: metodo, url: 'https://api.trello.com/1' + caminho, params: { key: process.env.TRELLO_KEY.trim(), token: process.env.TRELLO_TOKEN.trim(), ...params }, timeout: 20000 });
+  return r.data;
+}
+const NOME_CANAL = { ml: 'Mercado Livre', shopee: 'Shopee', shein: 'SHEIN' };
+const NOME_EMP = { zagodini: 'Zagodini', mae: 'Com Amor de Mae', lufe: 'Lufe' };
+async function sincronizarTrello() {
+  if (!trOk()) return;
+  try {
+    const pend = new Map(), canaisOk = new Set();
+    for (const e of EMP) {
+      const R = ST[e.id] || {};
+      for (const c of ['ml', 'shopee']) {
+        const x = R[c]; if (!x || x.naoConectada) continue;
+        if (!x.erro) canaisOk.add(e.id + '|' + c);
+        for (const i of [...(x.analisar || []), ...(x.chegou || [])]) pend.set(i.chave, { ...i, emp: e.id });
+      }
+    }
+    // novas pendências → cartão
+    for (const [chave, i] of pend) {
+      if (TR[chave] && !TR[chave].resolvido) continue;
+      const o_que = i.acao || (i.acoes ? 'responder no ' + NOME_CANAL[i.canal] + ' (' + i.acoes.join(', ') + ')' : 'resolver no ' + NOME_CANAL[i.canal]);
+      const desc = [`Pós-venda ${NOME_CANAL[i.canal]} — ${i.tipo || 'devolução'}`, `O que fazer: ${o_que}`, i.prazo ? `Prazo: ${new Date(i.prazo).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' })}` : null,
+        `Produto: ${i.titulo || ''}${i.sku ? ' (SKU ' + i.sku + ')' : ''}`, `Venda: ${i.pedido}`, i.link ? `Abrir: ${i.link}` : null, '', '(criado automaticamente pelo painel)'].filter(v => v !== null).join('\n');
+      const card = await trello('post', '/cards', { idList: TR_LISTA(), idMembers: TR_MEMBRO(), name: `${NOME_EMP[i.emp]} - ${i.pedido}`, desc, pos: 'top', ...(i.prazo ? { due: new Date(i.prazo).toISOString() } : {}) });
+      TR[chave] = { card: card.id, url: card.shortUrl || card.url, em: new Date().toISOString() };
+      gravar(ARQ_TR, TR);
+    }
+    // resolvidas no site → conclui o cartão (só quando a coleta daquele canal deu certo)
+    for (const [chave, t] of Object.entries(TR)) {
+      if (t.resolvido || pend.has(chave)) continue;
+      const [canal] = chave.split('|'); const emp = t.emp;
+      if (![...canaisOk].some(k => k.endsWith('|' + canal))) continue;
+      try {
+        await trello('put', '/cards/' + t.card, { dueComplete: true });
+        await trello('post', '/cards/' + t.card + '/actions/comments', { text: '✅ Resolvido no site (conferido pelo painel).' });
+      } catch (er) { if (er.response?.status !== 404) throw er; }
+      t.resolvido = new Date().toISOString(); gravar(ARQ_TR, TR);
+    }
+    for (const [k, t] of Object.entries(TR)) if (t.resolvido && Date.now() - Date.parse(t.resolvido) > 90 * 864e5) delete TR[k];
+    gravar(ARQ_TR, TR);
+    trErro = null;
+  } catch (er) { trErro = (er.response?.status ? er.response.status + ' ' : '') + (typeof er.response?.data === 'string' ? er.response.data : er.response?.data?.message || er.message); console.warn('[posvenda/trello]', trErro); }
+}
+
 module.exports = function montar(app, ctx) {
   let rodando = false;
   async function atualizar() {
@@ -209,6 +263,7 @@ module.exports = function montar(app, ctx) {
         R.em = new Date().toISOString();
         gravar(ARQ, ST);
       }
+      await sincronizarTrello();
     } finally { rodando = false; }
   }
   setTimeout(() => atualizar().catch(er => console.warn('[posvenda]', er.message)), 90e3);
@@ -224,7 +279,7 @@ module.exports = function montar(app, ctx) {
     };
     return [e.id, { nome: e.nome, idx: e.idx, em: R.em || null, ml: canal('ml'), shopee: canal('shopee'), shein: canal('shein') }];
   }));
-  app.get('/posvenda', (req, res) => res.json({ rodando, empresas: visao() }));
+  app.get('/posvenda', (req, res) => res.json({ rodando, empresas: visao(), trello: { configurado: trOk(), erro: trErro, cartoes: Object.values(TR).filter(t => !t.resolvido).length } }));
   app.post('/posvenda/atualizar', (req, res) => { atualizar().catch(() => {}); res.json({ ok: true }); });
   app.post('/posvenda/conferido', require('express').json(), (req, res) => {
     const chave = String(req.body?.chave || '');
