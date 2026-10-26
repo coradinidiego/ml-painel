@@ -870,7 +870,7 @@ async function carregarInicio(){
         (()=>{const P=pv?.empresas?.[e.id]||{};
           const sqPv=(c,tipo,lab)=>{const x=P[c];if(!pv)return Q('err',lab,'','','sem dados');if(!x)return Q(null,lab,'','','na fila');if(x.naoConectada)return Q('nc',lab);
             if(x.erro&&!x[tipo]?.length)return Q('err',lab,'','',x.erro);const n=(x[tipo]||[]).length;T.pv+=n;
-            const sub=tipo==='chegou'&&x.caminho?'<br><small>'+x.caminho+' a caminho</small>':tipo==='analisar'&&x.disputa?'<br><small>'+x.disputa+' em mediação</small>':'';
+            const sub='';
             if(!n)return '<div class="sq ok"><div class="v">0</div><div class="l">'+lab+sub+'</div></div>';
             return '<div class="sq cl '+(tipo==='analisar'?'r':'a')+'" onclick="abrirPv(\''+e.id+'\',\''+c+'\',\''+tipo+'\')"><div class="v">'+n+'</div><div class="l">'+lab+sub+'</div></div>';};
           return '<div class="ini-grp"><div class="ini-grp-t">🔁 Pós-venda — para analisar</div><div class="ini-sq c2">'+sqPv('ml','analisar','Mercado Livre')+sqPv('shopee','analisar','Shopee')+'</div></div>'+
@@ -900,7 +900,7 @@ function renderPv(){
   b.style.display='';
   b.innerHTML='<h3 style="display:flex;justify-content:space-between;align-items:center">'+(tipo==='analisar'?'🔁 Para analisar':'📥 Chegou na empresa')+' — '+shpEsc(P.nome||emp)+' · '+nomeC+
     ' <a href="#" onclick="_pvSel=null;renderPv();return false" style="font-size:13px;font-weight:500">fechar ✕</a></h3>'+
-    '<div style="font-size:12px;color:#888;margin-bottom:8px">'+(tipo==='analisar'?'O marketplace está esperando a sua decisão (aceitar, reembolsar ou contestar). Some daqui quando for resolvido no site.':'Produto devolvido entregue na empresa (últimos 30 dias). Confira o produto e marque ✓ Conferido.')+
+    '<div style="font-size:12px;color:#888;margin-bottom:8px">'+(tipo==='analisar'?'Só o que depende de você: resposta a reclamação do comprador ou ação obrigatória com prazo. Some daqui quando for resolvido no site.':'Produto devolvido entregue na empresa (últimos 30 dias). Confira o produto e marque ✓ Conferido.')+
     (P.em?' Atualizado '+dt(P.em)+'.':'')+(x.erro?' <span style="color:#C62828">⚠️ '+shpEsc(x.erro)+'</span>':'')+'</div>'+
     (L.length?L.map(i=>linha(i,null)).join(''):'<div class="loading" style="color:green">✓ Nada pendente.</div>')+
     (C.length?'<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;color:#666">'+C.length+' já conferidos</summary>'+C.map(i=>linha(i,i.conferido)).join('')+'</details>':'');
