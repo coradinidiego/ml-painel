@@ -460,8 +460,9 @@ async function ajustarShein(emp, linhas) {
     }
     if (P.pago) l.criado = Math.floor(Date.parse(P.pago) / 1000);
     // prazo de envio da SHEIN vencido sem coleta = atrasado, em qualquer etapa (inclusive já empacotado esperando a coleta)
-    // prazo que vale: aguardando coleta (st 7, já despachado pelo vendedor) = prazo de entrega à transportadora; senão prazo de envio
-    const lim = P.st === 7 ? (P.prazoEntrega || P.prazoEnvio) : P.prazoEnvio;
+    // prazo que vale: entrega à transportadora (requestHandoverTime) em qualquer etapa; o requestDeliveryTime vence
+    // ~24h após o pagamento mas não é atraso de verdade (Diego, 26/10)
+    const lim = P.prazoEntrega || P.prazoEnvio;
     if (lim) l.prazo = Date.parse(lim) < agora ? 'atrasado' : 'hoje';
     l.sheinApi = true;
     return true;
@@ -485,7 +486,7 @@ async function atrasadosSheinApi(emp, linhas) {
   const C = await shein.detalhes(emp.id, nums, { idadeMin: 10 }), agora = Date.now(), extra = [];
   for (const n of nums) {
     const P = C[n]; if (!P || !SHEIN_ABERTOS.has(P.st)) continue;
-    const lim = P.st === 7 ? (P.prazoEntrega || P.prazoEnvio) : P.prazoEnvio;
+    const lim = P.prazoEntrega || P.prazoEnvio;
     if (lim && Date.parse(lim) < agora) extra.push({ tipo: '_alerta', canal: 'Shein', prazo: 'atrasado', num: n, sheinApi: true });
   }
   return extra.length ? [...linhas, ...extra] : linhas;
