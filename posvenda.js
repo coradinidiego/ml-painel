@@ -143,6 +143,8 @@ async function coletarShopee(e) {
     const base = { chave: 'shopee|' + r0.return_sn, canal: 'shopee', id: r0.return_sn, pedido: r0.order_sn, tipo: 'devolução' + (r0.reason ? ' · ' + (MOTIVO_SHP[r0.reason] || r0.reason.toLowerCase().replace(/_/g, ' ')) : ''),
       titulo: it.name || r0.order_sn, thumb: (it.images || [])[0] || null, sku: it.variation_sku || it.item_sku || '', valor: r0.refund_amount, status: r0.status,
       link: 'https://seller.shopee.com.br/portal/sale/returnrefundcancel?search=' + encodeURIComponent(r0.order_sn) };
+    // "Não recebi o pacote" (consta entregue): quem analisa é a Shopee (logística), não o vendedor
+    if (r0.status === 'REQUESTED' && r0.reason === 'NOT_RECEIPT') { out.disputa++; continue; }
     if (r0.status === 'REQUESTED') { out.analisar.push({ ...base, prazo: iso(r0.due_date), criado: iso(r0.create_time) }); continue; }
     if (['SELLER_DISPUTE', 'JUDGING'].includes(r0.status)) out.disputa++;
     if (!r0.needs_logistics) continue;
