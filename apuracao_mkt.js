@@ -306,9 +306,9 @@ async function calcular(empKey, ini, fim) {
   const sheinReal = (num, sku, q, receita, valPed) => { const P = SH[num]; const D = P?.itens?.[String(sku).toUpperCase()]; if (!D || !D.n) return null; const u = q / D.n; return { comissao: D.com * u, taxa: (D.fixo + D.serv) * u, frete: (P.frete || 0) * (valPed > 0 ? receita / valPed : 1), origem: 'SHEIN (real)' }; };
   const hist = lerJson(path.join(DIR, `amazon_anuncios_${E.amazon}.json`), {})?.hist?.porSku || {};
   const linhas = [];
-  const custoDe = (sku, canal, extra) => {
-    // custo só do sistema (Bling / Tiny): sem custo lá = alerta para corrigir no ERP (não usa planilha)
-    const c = cm.custoComFonte(E.idx, sku, erp);
+  const custoDe = (sku, canal, extra, data) => {
+    // custo só do sistema (Bling / Tiny), vigente na data da venda: sem custo lá = alerta para corrigir no ERP (não usa planilha)
+    const c = cm.custoComFonte(E.idx, sku, cm.custosNaData(E.idx, data, erp));
     if (c && c.fonte !== 'planilha') return [c.v, c.fonte];
     return [null, 'SEM CUSTO'];
   };
@@ -379,7 +379,7 @@ async function calcular(empKey, ini, fim) {
       const com = num(p.taxas?.taxaComissao), fre = num(p.taxas?.custoFrete);
       itens.forEach((it, i) => {
         const sku = String(it.codigo || '').trim(), q = num(it.quantidade) || 1, pu = num(it.valor), receita = r2(pu * q);
-        const [cu, origemCusto] = custoDe(sku, canal, s => { const m = procurar(mapaPlanilha('custo_por_sku.json', E.conta, canal), s); return typeof m === 'number' ? m : null; }) ;
+        const [cu, origemCusto] = custoDe(sku, canal, s => { const m = procurar(mapaPlanilha('custo_por_sku.json', E.conta, canal), s); return typeof m === 'number' ? m : null; }, (p.data || '').slice(0, 10));
         const prop = valPed > 0 ? receita / valPed : 1 / Math.max(itens.length, 1);
         let t;
         if (canal === 'Amazon') t = tarifasAmazon(p.numeroLoja, receita, valPed, sku, q, pu);
@@ -411,7 +411,7 @@ async function calcular(empKey, ini, fim) {
       const valPed = itens.reduce((s, x) => s + num(x.item?.valor_unitario) * fator * num(x.item?.quantidade), 0);
       itens.forEach((x, i) => {
         const it = x.item || {}, sku = K(it.codigo), q = num(it.quantidade) || 1, pu = num(it.valor_unitario) * fator, receita = r2(pu * q);
-        const [cu, origemCusto] = custoDe(sku, canal, s => P.custo(s));
+        const [cu, origemCusto] = custoDe(sku, canal, s => P.custo(s), (p.data_pedido || '').split('/').reverse().join('-'));
         let t;
         if (canal === 'Amazon') t = tarifasAmazon(p.numero_ecommerce, receita, valPed, sku, q, pu);
         else { const rg = P.regra(canal, sku); t = canal === 'Shein' && sheinReal(p.numero_ecommerce, sku, q, receita, valPed) ? sheinReal(p.numero_ecommerce, sku, q, receita, valPed) : canal === 'Shein' ? { comissao: receita * SHEIN_PCT, taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: '18% + fixo planilha Lufe' } : { comissao: receita * (rg.rate || 0), taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: 'planilha Lufe' }; }
@@ -435,7 +435,7 @@ async function calcular(empKey, ini, fim) {
       const rebate = C.desc[id] || 0, valPed = o.itens.reduce((a, x) => a + x.pu * x.q, 0) || o.total;
       o.itens.forEach((x, i) => {
         const receita = r2(x.pu * x.q), prop = valPed > 0 ? receita / valPed : 1;
-        const [cu, origemCusto] = custoDe(x.sku, 'Mercado Livre');
+        const [cu, origemCusto] = custoDe(x.sku, 'Mercado Livre', null, o.data);
         add({ empresa: E.nome, canal: 'Mercado Livre', data: o.data, pedido, pedidoCanal: String(o.id), situacao: o.status, cliente: o.cliente, sku: x.sku, descricao: x.titulo, qtd: x.q, precoUn: r2(x.pu), receita,
           custoUn: cu, origemCusto, cmv: (cu || 0) * x.q, comissao: x.fee * x.q - rebate * prop, taxa: 0, frete: freteOrd * prop, imposto: receita * aliq, embalagem: i === 0 ? emb : 0,
           origemTaxa: 'ML (real)' + (rebate ? ' · rebate ML' : '') + (C.envio[o.ship] ? '' : ' · frete pendente'), _valPed: valPed, _devolucao: o.refund > 0 ? o.refund * prop : 0 });
@@ -462,7 +462,7 @@ async function calcular(empKey, ini, fim) {
       }
       itens.forEach((x, i) => {
         const prop = recTot > 0 ? x.receita / recTot : 1 / itens.length;
-        const [cu, origemCusto] = custoDe(x.sku, 'Shopee');
+        const [cu, origemCusto] = custoDe(x.sku, 'Shopee', null, o.data);
         add({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: o.status, cliente: o.cliente, sku: x.sku, descricao: x.titulo, qtd: x.q, precoUn: r2(x.receita / (x.q || 1)), receita: x.receita,
           custoUn: cu, origemCusto, cmv: (cu || 0) * x.q, comissao: com * prop, taxa: taxa * prop, frete: frete * prop, imposto: x.receita * aliq, embalagem: i === 0 ? emb : 0, origemTaxa: origem, _valPed: recTot });
       });

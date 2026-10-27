@@ -93,6 +93,7 @@ const _erp = {};
 async function custosErp(idx) {
   const arq = path.join(DATA, 'apuracao_cache', `custos_erp_v2_${idx}.json`);
   if (!_erp[idx]) { try { _erp[idx] = JSON.parse(fs.readFileSync(arq)); } catch (e) { _erp[idx] = { ts: 0, mapa: {} }; } }
+  if (!Object.keys(historico(idx)).length && Object.keys(_erp[idx].mapa || {}).length) registrarHistorico(idx, _erp[idx].mapa);
   if (Date.now() - _erp[idx].ts < 6 * 3600e3) return _erp[idx].mapa;
   const mapa = {};
   try {
@@ -118,8 +119,42 @@ async function custosErp(idx) {
     }
     _erp[idx] = { ts: Date.now(), mapa };
     try { fs.mkdirSync(path.dirname(arq), { recursive: true }); fs.writeFileSync(arq, JSON.stringify(_erp[idx])); } catch (e) {}
+    registrarHistorico(idx, mapa);
   } catch (e) { console.warn('[custos ERP]', idx, e.message); }  // falhou: mantém o último cache
   return _erp[idx].mapa;
+}
+
+// ─── Histórico de custos do ERP (o painel guarda cada mudança de custo com a data) ───
+// O Bling não guarda data do custo e a API v2 do Tiny também não: a cada leitura do ERP (6 h) o painel
+// anota { sku: [[AAAA-MM-DD, custo], ...] } quando o custo muda. A apuração usa o custo vigente na data da venda.
+const arqHist = idx => path.join(DATA, 'apuracao_cache', `custos_hist_${idx}.json`);
+const _hist = {};
+const hojeSP = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+function historico(idx) { if (!_hist[idx]) { try { _hist[idx] = JSON.parse(fs.readFileSync(arqHist(idx))); } catch (e) { _hist[idx] = {}; } } return _hist[idx]; }
+function registrarHistorico(idx, mapa) {
+  const h = historico(idx), d = hojeSP(); let mud = 0;
+  for (const [k, v] of Object.entries(mapa)) {
+    const L = h[k] ||= [], u = L[L.length - 1];
+    if (u && Math.abs(u[1] - v) < 0.005) continue;
+    if (u && u[0] === d) u[1] = v; else L.push([d, v]);
+    mud++;
+  }
+  if (mud) try { fs.writeFileSync(arqHist(idx), JSON.stringify(h)); console.log('[custos] histórico', idx, mud, 'mudanças'); } catch (e) {}
+}
+/** Mapa de custos do ERP vigente na data (AAAA-MM-DD). Antes do 1º registro vale o 1º custo conhecido. */
+const _naData = {};
+function custosNaData(idx, data, erpAtual) {
+  const h = historico(idx); if (!data || !Object.keys(h).length) return erpAtual;
+  const ck = idx + '|' + data + '|' + (_erp[idx]?.ts || 0);
+  if (_naData[ck]) return _naData[ck];
+  const m = { ...erpAtual };
+  for (const [k, L] of Object.entries(h)) {
+    if (!(k in m)) continue;   // produto sem custo hoje: segue sem custo
+    let v = L[0][1]; for (const [d, c] of L) { if (d <= data) v = c; else break; }
+    m[k] = v;
+  }
+  for (const x of Object.keys(_naData)) if (x.startsWith(idx + '|') && !x.endsWith('|' + (_erp[idx]?.ts || 0))) delete _naData[x];
+  return (_naData[ck] = m);
 }
 
 function procurar(mapa, sku) {
@@ -280,4 +315,4 @@ async function margemPreco(ml, idx, uid, it, preco, rebate = 0, erp) {
 
 function recarregarErp(idx) { if (_erp[idx]) _erp[idx].ts = 0; }
 
-module.exports = { PLANILHAS, fixosCanal, recarregarErp, calcularMargens, margemPreco, custoSku, custosConta, custosErp, custoComFonte, aliquota };
+module.exports = { custosNaData, historico, PLANILHAS, fixosCanal, recarregarErp, calcularMargens, margemPreco, custoSku, custosConta, custosErp, custoComFonte, aliquota };
