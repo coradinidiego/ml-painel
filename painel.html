@@ -396,6 +396,7 @@ body{background:#f0f2f5;color:#111}
     <button class="tab" onclick="showTab('estoque',this);carregarEstoque()">📦 Estoque</button>
     <button class="tab" onclick="showTab('adsml',this);carregarAdsML()">📣 ADS</button>
     <button class="tab" onclick="showTab('precos',this);carregarPrecos()">💲 Preços × planilha</button>
+    <button class="tab" onclick="showTab('turbo',this);carregarTurbo()">⚡ Custos × Turbo</button>
   </div>
   <div id="tab-inicio" class="tab-content active">
     <div class="cards">
@@ -488,6 +489,17 @@ body{background:#f0f2f5;color:#111}
     </div>
     <div id="ad-resumo"></div>
     <div class="section"><div class="sec-head">📣 Anúncios <span class="cnt" id="c-adsml">-</span></div><div id="b-adsml"><div class="loading">Clique na aba para carregar...</div></div></div>
+  </div>
+  <div id="tab-turbo" class="tab-content">
+    <div class="sf">
+      <input class="sinput" type="text" placeholder="Buscar SKU ou nome..." oninput="renderTurbo()" id="mt-q">
+      <select class="sselect" id="mt-f" onchange="renderTurbo()"><option value="">Todos</option><option value="div">ERP ≠ planilha</option><option value="sem">Sem custo</option><option value="dif">Turbo estava diferente</option><option value="nao">Ainda não enviados</option><option value="erro">Com erro</option></select>
+      <label style="font-size:12px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="mt-imp"> enviar imposto (<span id="mt-imp-v">-</span>%)</label>
+      <button class="btn" onclick="enviarTurbo()">⚡ Enviar custos ao Turbo</button>
+      <button class="btn" onclick="carregarTurbo()">↺</button>
+    </div>
+    <div id="mt-info" style="font-size:12px;color:#666;margin:6px 0 10px"></div>
+    <div class="section"><div class="sec-head">⚡ Custo por SKU <span class="cnt" id="c-mt">-</span></div><div id="b-mt"><div class="loading">Clique na aba para carregar...</div></div></div>
   </div>
   <div id="tab-promos" class="tab-content">
     <div class="sf">
@@ -597,6 +609,43 @@ fetch('/amazon/lojas').then(r=>r.json()).then(m=>{AZ_LOJAS=m;atualizarBotaoAmz()
 function atualizarBotaoAmz(){el('canal-sw-amz').style.display=AZ_LOJAS[SHP_LOJAS[ci]]?'flex':'none';}
 CONTAS.forEach((c,i)=>el('cb-'+i).querySelector('.ct-canal').textContent='Mercado Livre · Shopee');
 
+
+let _mt=null,_mtTimer=null;
+async function carregarTurbo(){
+  clearTimeout(_mtTimer);
+  const r=await fetch('/turbo/'+ci).then(r=>r.json()).catch(e=>({erro:e.message}));
+  if(r.carregando){el('b-mt').innerHTML='<div class="loading">Conta ainda carregando...</div>';_mtTimer=setTimeout(carregarTurbo,5000);return;}
+  if(r.erro){el('b-mt').innerHTML='<div class="loading">'+r.erro+'</div>';return;}
+  _mt=r;el('mt-imp-v').textContent=String(r.imposto).replace('.',',');renderTurbo();
+  if(r.job?.rodando)_mtTimer=setTimeout(carregarTurbo,4000);
+}
+function renderTurbo(){
+  if(!_mt)return;const r=_mt,q=(el('mt-q').value||'').toLowerCase(),f=el('mt-f').value;
+  const fm=v=>v==null?'<span style="color:#bbb">—</span>':'R$ '+v.toFixed(2).replace('.',',');
+  const j=r.job;
+  el('mt-info').innerHTML=(r.token?'':'<b style="color:#c62828">Falta a variável '+r.variavel+' no Railway.</b> ')+
+    'Custo enviado = '+r.erp+' (planilha só quando o '+r.erp+' não tem). A API do Turbo não devolve o custo dele: ao enviar, "igual" = o Turbo já tinha esse valor, "diferente" = estava outro e foi atualizado.'+
+    (j?'<br><b>'+(j.rodando?'Enviando… ':'Último envio: ')+j.feitos+'/'+j.total+'</b> · iguais '+j.iguais+' · diferentes (atualizados) '+j.atualizados+' · criados '+j.criados+' · erros '+j.erros+(j.ultimoErro?' <span style="color:#c62828">('+j.ultimoErro+')</span>':''):'');
+  let it=r.itens.filter(x=>!q||x.sku.toLowerCase().includes(q)||(x.titulo||'').toLowerCase().includes(q));
+  if(f==='div')it=it.filter(x=>x.divergente);
+  if(f==='sem')it=it.filter(x=>x.enviar==null);
+  if(f==='dif')it=it.filter(x=>x.turbo&&(x.turbo.http===200||x.turbo.http===201));
+  if(f==='nao')it=it.filter(x=>!x.turbo&&x.enviar!=null);
+  if(f==='erro')it=it.filter(x=>x.turbo&&![200,201,304].includes(x.turbo.http));
+  it.sort((a,b)=>(b.divergente-a.divergente)||a.sku.localeCompare(b.sku));
+  el('c-mt').textContent=it.length+' de '+r.itens.length+' · '+r.itens.filter(x=>x.divergente).length+' com ERP ≠ planilha · '+r.itens.filter(x=>x.enviar==null).length+' sem custo';
+  const tb=t=>{if(!t)return'<span style="color:#bbb">não enviado</span>';const c=t.http===304?'#2e7d32':t.http===200?'#e65100':t.http===201?'#1565c0':'#c62828';const l=t.http===304?'igual':t.http===200?'era diferente → atualizado':t.http===201?'criado no Turbo':'erro '+t.http+' '+(t.status||'');return'<span style="color:'+c+'">'+l+'</span><br><small style="color:#999">'+fm(t.custo)+(t.imposto!=null?' · '+t.imposto+'%':'')+' · '+new Date(t.em).toLocaleString('pt-BR')+'</small>';};
+  el('b-mt').innerHTML=it.length?'<table class="tbl" style="width:100%;font-size:12px"><tr><th style="text-align:left">SKU</th><th style="text-align:left">Produto</th><th>'+r.erp+'</th><th>Planilha</th><th>Vai para o Turbo</th><th>Turbo</th><th></th></tr>'+
+    it.slice(0,800).map(x=>'<tr style="'+(x.divergente?'background:#fff8e1':'')+'"><td><b>'+x.sku+'</b></td><td>'+(x.titulo||'').slice(0,60)+'</td><td style="text-align:right">'+fm(x.erp)+'</td><td style="text-align:right">'+fm(x.planilha)+(x.divergente?' <b style="color:#e65100">≠</b>':'')+'</td><td style="text-align:right"><b>'+fm(x.enviar)+'</b>'+(x.fonte?'<br><small style="color:#999">'+x.fonte+'</small>':'')+'</td><td style="text-align:center">'+tb(x.turbo)+'</td><td>'+(x.enviar!=null?'<button class="btn" style="padding:2px 8px;font-size:11px" onclick="enviarTurbo([\''+x.sku.replace(/'/g,"\\'")+'\'])">enviar</button>':'')+'</td></tr>').join('')+'</table>'+(it.length>800?'<div class="loading">Mostrando 800 — use a busca.</div>':''):'<div class="loading">Nada aqui.</div>';
+}
+async function enviarTurbo(skus){
+  if(!_mt)return;const imp=el('mt-imp').checked;
+  const n=skus?skus.length:_mt.itens.filter(x=>x.enviar!=null).length;
+  if(!confirm('Gravar o custo'+(imp?' e o imposto ('+_mt.imposto+'%)':'')+' de '+n+' SKU(s) no Mercado Turbo da conta '+_mt.conta+'?\nO valor atual no Turbo será substituído.'))return;
+  const r=await fetch('/turbo/'+ci+'/enviar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({skus:skus||[],imposto:imp})}).then(r=>r.json()).catch(e=>({erro:e.message}));
+  if(r.erro){alert(r.erro);return;}
+  setTimeout(carregarTurbo,1500);
+}
 function showTab(name,btn){
   if(name==='sempromo'){_pmAberto.sem=true;name='promos';btn=[...document.querySelectorAll('#ml-content .tab')].find(x=>(x.getAttribute('onclick')||'').includes("'promos'"));setTimeout(()=>carregarPromosML(),0);}
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
