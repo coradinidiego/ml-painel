@@ -204,6 +204,16 @@ body{background:#f0f2f5;color:#111}
 .pm-faixa{font-size:10.5px;color:#999;margin-top:3px}
 .pm-vazio{padding:10px 14px;font-size:12px;color:#888}
 @media(max-width:800px){.pm-op{grid-template-columns:1fr 1fr}.pm-op-nome{grid-column:1/-1}.pm-op-acao{text-align:left}}
+.pm-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:4px 0 14px}
+.pm-kpi{background:#fff;border:1px solid #e6e8ec;border-top:4px solid #90a4ae;border-radius:12px;padding:10px 12px;cursor:pointer;transition:transform .1s}.pm-kpi:hover{transform:translateY(-2px)}
+.pm-kpi .v{font-size:24px;font-weight:800;color:#1a1a1a}.pm-kpi .v small{font-size:13px;color:#999;font-weight:600}.pm-kpi .l{font-size:12px;color:#666;margin-top:2px}
+.pm-sec{background:#fff;border:1px solid #e6e8ec;border-radius:12px;margin:10px 0;overflow:hidden}
+.pm-sec>summary{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;list-style:none;flex-wrap:wrap}.pm-sec>summary::-webkit-details-marker{display:none}
+.pm-sec>summary:hover{background:#fafbfc}
+.pm-sec-t{border-left:4px solid #999;padding-left:8px;font-weight:700;font-size:14px}
+.pm-sec>summary small{color:#888;font-size:12px;flex:1}
+.pm-sec-seta{color:#999;transition:transform .15s}.pm-sec[open] .pm-sec-seta{transform:rotate(180deg)}
+.pm-sec-b{padding:0 10px 8px;border-top:1px solid #f0f1f3}
 </style>
 </head><body>
 <header class="hd">
@@ -482,13 +492,13 @@ body{background:#f0f2f5;color:#111}
   <div id="tab-promos" class="tab-content">
     <div class="sf">
       <input class="sinput" type="text" placeholder="Buscar por SKU, nome ou MLB..." oninput="renderPromosML()" id="pm-q">
-      <select class="sselect" id="pm-f" onchange="renderPromosML()"><option value="sem">⚠️ Sem promoção (com as opções para entrar)</option><option value="rebate">💰 Rebate com margem maior que a atual</option><option value="perdendo">🔴 Perdendo catálogo (opção que passa a ganhar)</option><option value="todos">Todos com opções</option></select>
       <select class="sselect" id="pm-ord" onchange="renderPromosML()"><option value="margem">Maior lucro possível primeiro</option><option value="preco">Mais caros primeiro</option><option value="az">A-Z</option></select>
       <button class="btn" onclick="carregarPromosML(1)">↺ Atualizar</button>
     </div>
     <div id="pm-info" style="font-size:12px;color:#777;margin-bottom:8px"></div>
-    <div class="section"><div class="sec-head">🏷️ Promoções do Mercado Livre <span class="cnt" id="c-promos">-</span></div><div id="b-promos"><div class="loading">Clique na aba para carregar...</div></div></div>
-    <div class="section" style="margin-top:14px"><details id="pm-saida-box"><summary class="sec-head" style="cursor:pointer;list-style:none">⏳ Próximos a sair de promoção <span class="cnt" id="c-pm-saida">-</span> <select class="sselect" id="pm-dias" onclick="event.stopPropagation()" onchange="renderSaidaML()" style="margin-left:8px;padding:3px 6px;font-size:12px"><option value="3">próximos 3 dias</option><option value="7" selected>próximos 7 dias</option><option value="15">próximos 15 dias</option><option value="30">próximos 30 dias</option></select> <small style="font-weight:400;color:#888">(clique para abrir)</small></summary><div id="b-pm-saida"></div></details></div>
+    <div id="pm-kpis" class="pm-kpis"></div>
+    <div id="b-promos"><div class="loading">Clique na aba para carregar...</div></div><span id="c-promos" style="display:none"></span>
+    <div class="section" style="margin-top:14px"><details id="pm-saida-box" ontoggle="_pmAberto.saida=this.open;if(this.open)renderSaidaML()"><summary class="sec-head" style="cursor:pointer;list-style:none">⏳ Próximos a sair de promoção <span class="cnt" id="c-pm-saida">-</span> <select class="sselect" id="pm-dias" onclick="event.stopPropagation()" onchange="renderSaidaML()" style="margin-left:8px;padding:3px 6px;font-size:12px"><option value="3">próximos 3 dias</option><option value="7" selected>próximos 7 dias</option><option value="15">próximos 15 dias</option><option value="30">próximos 30 dias</option></select> <small style="font-weight:400;color:#888">(clique para abrir)</small></summary><div id="b-pm-saida"></div></details></div>
   </div>
   <div id="tab-precos" class="tab-content">
     <div class="sf">
@@ -588,7 +598,7 @@ function atualizarBotaoAmz(){el('canal-sw-amz').style.display=AZ_LOJAS[SHP_LOJAS
 CONTAS.forEach((c,i)=>el('cb-'+i).querySelector('.ct-canal').textContent='Mercado Livre · Shopee');
 
 function showTab(name,btn){
-  if(name==='sempromo'){el('pm-f').value='sem';name='promos';btn=[...document.querySelectorAll('#ml-content .tab')].find(x=>(x.getAttribute('onclick')||'').includes("'promos'"));setTimeout(()=>carregarPromosML(),0);}
+  if(name==='sempromo'){_pmAberto.sem=true;name='promos';btn=[...document.querySelectorAll('#ml-content .tab')].find(x=>(x.getAttribute('onclick')||'').includes("'promos'"));setTimeout(()=>carregarPromosML(),0);}
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
   el('tab-'+name).classList.add('active');
@@ -662,7 +672,7 @@ async function carregarPromosML(forcar){
     const d=await (await fetch('/ml/promos/'+ci)).json(); _pm=d;
     if(d.status==='carregando'){const emp=ci;_pmTimer=setTimeout(()=>{if(ci===emp&&el('tab-promos').classList.contains('active'))carregarPromosML();},8000);}
     if(d.status!=='pronto'&&!(d.itens||[]).length){
-      if(el('pm-f').value==='sem'&&d.status!=='erro'){renderSemPromoML((el('pm-q').value||'').toLowerCase());return;}
+      if(d.status!=='erro'){renderPromosML();return;}
       el('b-promos').innerHTML='<div class="loading">'+(d.status==='erro'?'<span style="color:#c0392b">'+shpEsc(d.erro||'erro')+'</span>':'Consultando as promoções de cada anúncio no ML… '+(d.total?d.feito+' de '+d.total:'')+'<br><small>Na primeira vez leva alguns minutos; depois atualiza sozinho a cada 6h.</small>')+'</div>';
       return;
     }
@@ -671,40 +681,63 @@ async function carregarPromosML(forcar){
     renderPromosML();
   }catch(e){el('b-promos').innerHTML='<div class="loading" style="color:#c0392b">Erro ao carregar.</div>';}
 }
+// Promoções: painel com indicadores + listas que abrem e fecham (sem promoção, rebate, catálogo, todos)
+const _pmAberto={sem:true};let _pmL={};
+function pmListas(q){
+  const d=window._dados?.[ci], pm=_pm&&_pm.itens?Object.fromEntries(_pm.itens.map(x=>[x.id,x])):{}, I=_pm?.itens||[];
+  const busca=x=>!q||((x.sku||x._sku||x.seller_sku||'')+' '+(x.titulo||x.title||'')+' '+x.id).toLowerCase().includes(q);
+  const ord=el('pm-ord')?.value||'margem';
+  const melhor=x=>x?.opcoes?.length?Math.max(...x.opcoes.filter(o=>o.status==='candidate').map(o=>o.m?.lucro??-1e9)):-1e9;
+  const ordenar=L=>L.sort((a,b)=>ord==='preco'?(b.precoAtual||b.price||0)-(a.precoAtual||a.price||0):ord==='az'?String(a.titulo||a.title||'').localeCompare(b.titulo||b.title||''):melhor(pm[b.id]||b)-melhor(pm[a.id]||a));
+  const sem=ordenar((d?d.semPromo:I.filter(x=>x.semPromo)).filter(busca));
+  const ganho=x=>(x.opcoes.find(o=>o.rebate>0&&o.status==='candidate')?.m?.lucro||0)-(x.atual?.lucro||0);
+  const rebate=I.filter(x=>x.rebateMelhor>0&&busca(x)).sort((a,b)=>ganho(b)-ganho(a));
+  const perdendo=ordenar(I.filter(x=>x.catalogo?.status==='competing'&&busca(x))).sort((a,b)=>(b.opcoes.some(o=>o.catalogo==='passa a ganhar')?1:0)-(a.opcoes.some(o=>o.catalogo==='passa a ganhar')?1:0));
+  const ganhando=ordenar(I.filter(x=>x.catalogo?.status==='winning'&&busca(x)));
+  const todos=ordenar(I.filter(x=>x.opcoes.length&&busca(x)));
+  return _pmL={sem,rebate,perdendo,ganhando,todos,pm};
+}
 function renderPromosML(){
   const ae=document.activeElement;if(ae&&ae.tagName==='INPUT'&&ae.closest&&ae.closest('#b-promos'))return;   // não atrapalha quem está digitando
-  const f=el('pm-f').value,q=(el('pm-q').value||'').toLowerCase();
-  if(f==='sem')return renderSemPromoML(q);
-  if(!_pm||!(_pm.itens||[]).length)return;
-  const brl=v=>v==null?'—':'R$ '+Number(v).toFixed(2).replace('.',',');
-  const luc=m=>!m||m.erro?'<span style="color:#888;font-size:11px">'+shpEsc(m?.erro||'—')+'</span>':'<b style="color:'+(m.lucro<0?'#c62828':'#2e7d32')+'">'+brl(m.lucro)+'</b> <small>('+String(m.pct).replace('.',',')+'%)</small>';
-  let L=_pm.itens.filter(x=>f==='sem'?x.semPromo:f==='rebate'?x.rebateMelhor>0:f==='perdendo'?(x.catalogo?.status==='competing'&&x.opcoes.some(o=>o.catalogo==='passa a ganhar')):x.opcoes.length);
-  if(q)L=L.filter(x=>((x.sku||'')+' '+(x.titulo||'')+' '+x.id).toLowerCase().includes(q));
-  if(f==='rebate')L.sort((a,b)=>((b.opcoes.find(o=>o.rebate>0&&o.status==='candidate')?.m?.lucro||0)-(b.atual?.lucro||0))-((a.opcoes.find(o=>o.rebate>0&&o.status==='candidate')?.m?.lucro||0)-(a.atual?.lucro||0)));
-  set('c-promos',L.length);
-  if(!L.length){el('b-promos').innerHTML='<div class="loading" style="color:green">✓ Nada nesta lista.</div>';return;}
-  el('b-promos').innerHTML=L.slice(0,300).map(x=>cardPromoML(x)).join('')+(L.length>300?'<div class="loading">Mostrando 300 de '+L.length+' — use a busca.</div>':'');
-  renderSaidaML();
-}
-// Sem promoção: lista do painel (atualiza na hora ao ocultar) + opções de promoção quando já carregaram
-function renderSemPromoML(q){
-  const d=window._dados?.[ci];const b=el('b-promos');
-  if(!d){b.innerHTML='<div class="loading">Aguarde...</div>';return;}
-  const pm=_pm&&_pm.itens?Object.fromEntries(_pm.itens.map(x=>[x.id,x])):{};
-  let L=d.semPromo.filter(it=>!q||((it._sku||it.seller_sku||'')+' '+(it.title||'')+' '+it.id).toLowerCase().includes(q));
-  const ord=el('pm-ord')?.value||'margem';
-  const lucroMelhor=it=>{const x=pm[it.id];return x?.opcoes?.length?Math.max(...x.opcoes.map(o=>o.m?.lucro??-1e9)):-1e9;};
-  L.sort((a,b)=>ord==='preco'?(b.price||0)-(a.price||0):ord==='az'?(a.title||'').localeCompare(b.title||''):lucroMelhor(b)-lucroMelhor(a));
-  set('c-promos',L.length);
-  const ocultar=id=>'<div style="font-size:11px;margin-top:4px"><a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="#" onclick="ignorarPromo(\''+id+'\',true);return false" title="Tirar da lista (produto que não pode ter promoção)">Ocultar</a></div>';
+  const q=(el('pm-q').value||'').toLowerCase(), L=pmListas(q), I=_pm?.itens||[];
+  // indicadores
+  const comLucro=I.filter(x=>x.atual?.lucro!=null&&x.precoAtual>0), rec=comLucro.reduce((a,x)=>a+x.precoAtual,0), luc=comLucro.reduce((a,x)=>a+x.atual.lucro,0);
+  const sai=I.filter(x=>x.saida?.fim&&Date.parse(x.saida.fim)<=Date.now()+7*864e5&&Date.parse(x.saida.fim)>=Date.now()-36e5).length;
+  const nCat=I.filter(x=>x.catalogo).length, prej=I.filter(x=>x.atual?.lucro<0).length;
+  const K=(v,l,c,k)=>'<div class="pm-kpi" style="border-top-color:'+c+'"'+(k?' onclick="pmAbrir(\''+k+'\')"':'')+'><div class="v">'+v+'</div><div class="l">'+l+'</div></div>';
+  el('pm-kpis').innerHTML=K(L.sem.length,'⚠️ sem promoção','#E65100','sem')+K(L.rebate.length,'💰 rebate que lucra mais','#2e7d32','rebate')+
+    K(L.perdendo.length+'<small>/'+nCat+'</small>','🔴 perdendo catálogo','#c62828','perdendo')+K(L.ganhando.length,'🟢 ganhando catálogo','#2e7d32','ganhando')+
+    K(rec?String(Math.round(luc/rec*1000)/10).replace('.',',')+'%':'—','📈 margem média hoje','#1565c0')+K(prej,'🔻 anúncios no prejuízo','#c62828','todos')+K(sai,'⏳ saem de promoção em 7 dias','#ef6c00','saida');
   const carregando=!_pm||_pm.status!=='pronto';
-  b.innerHTML=(carregando?'<div style="font-size:12px;color:#888;padding:6px 0">⏳ Atualizando as opções de promoção'+(_pm?.total?' ('+_pm.feito+' de '+_pm.total+')':'')+'… o que já foi calculado aparece abaixo.</div>':'')+
-    (L.length?L.slice(0,300).map(it=>{const x=pm[it.id];
-      if(x)return cardPromoML({...x,semPromo:true},'<div style="padding:0 14px">'+ocultar(it.id)+'</div>');
-      return '<div class="pm-card"><div class="pm-head">'+(it.thumbnail?'<img src="'+it.thumbnail+'">':'<div class="pm-noimg">📦</div>')+'<div class="pm-tit"><b>'+shpEsc(it.title||'-')+'</b><div class="pm-meta"><span class="pm-chip">SKU '+shpEsc(it._sku||it.seller_sku||'—')+'</span><span class="pm-chip">'+it.id+'</span></div>'+ocultar(it.id)+'</div>'+
-        '<div class="pm-hoje"><div class="pm-sub">Hoje</div><div class="pm-preco">'+fmt(it.price||0)+'</div><span class="pm-tag pm-tlaranja">sem promoção</span></div></div><div class="pm-vazio">'+(carregando?'⏳ opções carregando…':'Nenhuma promoção disponível no ML para este anúncio agora.')+'</div></div>';}).join(''):'<div class="loading" style="color:green">✓ Todos os anúncios têm promoção!</div>')+ignoradosHtml(d);
+  const S=(k,t,cor,n,desc)=>'<details class="pm-sec" data-k="'+k+'"'+(_pmAberto[k]?' open':'')+' ontoggle="pmToggle(this)"><summary><span class="pm-sec-t" style="border-left-color:'+cor+'">'+t+'</span><span class="cnt">'+n+'</span><small>'+desc+'</small><span class="pm-sec-seta">▾</span></summary><div class="pm-sec-b" id="pm-sec-'+k+'"></div></details>';
+  el('b-promos').innerHTML=(carregando?'<div style="font-size:12px;color:#888;padding:4px 0 8px">⏳ Atualizando as opções de promoção'+(_pm?.total?' ('+_pm.feito+' de '+_pm.total+')':'')+'… o que já foi calculado aparece nas listas.</div>':'')+
+    S('sem','⚠️ Sem promoção','#E65100',L.sem.length,'anúncios sem promoção ativa, com as opções para entrar')+
+    S('rebate','💰 Rebate que dá mais lucro que hoje','#2e7d32',L.rebate.length,'o ML banca parte do desconto e o lucro fica maior que o atual')+
+    S('perdendo','🔴 Perdendo catálogo','#c62828',L.perdendo.length,'primeiro os que têm uma promoção que faz ganhar')+
+    S('ganhando','🟢 Ganhando catálogo','#2e7d32',L.ganhando.length,'com o preço do 2º colocado')+
+    S('todos','📋 Todos com promoções disponíveis','#607d8b',L.todos.length,'lista completa');
+  for(const k of Object.keys(_pmAberto))if(_pmAberto[k]&&k!=='saida')pmRenderSec(k);
+  if(_pmAberto.saida){el('pm-saida-box').open=true;}
   renderSaidaML();
 }
+function pmAbrir(k){if(k==='saida'){const b=el('pm-saida-box');b.open=true;b.scrollIntoView({behavior:'smooth'});return;}_pmAberto[k]=true;const d=document.querySelector('.pm-sec[data-k="'+k+'"]');if(d){d.open=true;pmRenderSec(k);d.scrollIntoView({behavior:'smooth',block:'start'});}}
+function pmToggle(d){const k=d.dataset.k;_pmAberto[k]=d.open;if(d.open)pmRenderSec(k);}
+function pmRenderSec(k){
+  const b=el('pm-sec-'+k);if(!b)return;const L=_pmL[k]||[],pm=_pmL.pm||{};
+  if(!L.length){b.innerHTML='<div class="pm-vazio" style="color:#2e7d32">✓ Nada nesta lista.</div>';return;}
+  const carregando=!_pm||_pm.status!=='pronto';
+  const ocultar=id=>'<div style="font-size:11px;margin-top:4px;padding:0 14px"><a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="#" onclick="ignorarPromo(\''+id+'\',true);return false" title="Tirar da lista (produto que não pode ter promoção)">Ocultar</a></div>';
+  let html=L.slice(0,150).map(it=>{
+    if(k!=='sem')return cardPromoML(it);
+    const x=pm[it.id];
+    if(x)return cardPromoML({...x,semPromo:true},ocultar(it.id));
+    return '<div class="pm-card"><div class="pm-head">'+(it.thumbnail?'<img src="'+it.thumbnail+'">':'<div class="pm-noimg">📦</div>')+'<div class="pm-tit"><b>'+shpEsc(it.title||'-')+'</b><div class="pm-meta"><span class="pm-chip">SKU '+shpEsc(it._sku||it.seller_sku||'—')+'</span><span class="pm-chip">'+it.id+'</span></div></div>'+
+      '<div class="pm-hoje"><div class="pm-sub">Hoje</div><div class="pm-preco">'+fmt(it.price||0)+'</div><span class="pm-tag pm-tlaranja">sem promoção</span></div></div>'+ocultar(it.id)+'<div class="pm-vazio">'+(carregando?'⏳ opções carregando…':'Nenhuma promoção disponível no ML para este anúncio agora.')+'</div></div>';
+  }).join('')+(L.length>150?'<div class="loading">Mostrando 150 de '+L.length+' — use a busca.</div>':'');
+  if(k==='sem'){const d=window._dados?.[ci];if(d)html+=ignoradosHtml(d);}
+  b.innerHTML=html;
+}
+function renderSemPromoML(q){renderPromosML();}
 // ─── Cartão de promoções (ML) ───────────────────────────────────────────────
 // Promoção com preço aberto: % e R$ ligados (mexe em um, o outro acompanha) e lucro na hora
 const _pmPreco={},_pmSim={};let _pmSimT=null;
@@ -1439,7 +1472,7 @@ function exibirDados(idx){
   if(el('upd-atu'))el('upd-atu').textContent=upd;
   const badge=el('badge-'+idx);
   if(badge){badge.textContent=d.perguntas.length>0?d.perguntas.length:'';badge.style.display=d.perguntas.length>0?'inline':'none';}
-  renderPerdendo(0);renderGanhando(0);renderAtualizando();renderSemPromo(0);if(el('tab-promos').classList.contains('active')&&el('pm-f').value==='sem')renderPromosML();
+  renderPerdendo(0);renderGanhando(0);renderAtualizando();renderSemPromo(0);if(el('tab-promos').classList.contains('active'))renderPromosML();
   const bq=el('b-perguntas');
   if(!d.perguntas.length)bq.innerHTML='<div class="loading" style="color:green">✓ Nenhuma pergunta!</div>';
   else bq.innerHTML=d.perguntas.map(q=>'<div class="qrow"><div class="qbody"><div class="qtxt">'+q.text+'</div><div class="qmeta">'+new Date(q.date_created).toLocaleDateString("pt-BR")+' · '+q.item_id+' · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+q.item_id+'/modificar" target="_blank">Ver</a></div></div></div>').join('');
