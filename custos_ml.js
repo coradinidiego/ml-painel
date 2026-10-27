@@ -171,13 +171,15 @@ async function tarifaML(ml, idx, preco, tipo, categoria) {
   if (v) _tarifa.set(k, v);
   return v;
 }
-async function freteML(ml, idx, uid, itemId) {
-  const c = _frete.get(itemId);
+// frete do vendedor NO PREÇO SIMULADO: o ML muda a faixa (abaixo/acima de R$ 79) e o desconto conforme o preço
+async function freteML(ml, idx, uid, itemId, preco) {
+  const k = itemId + '|' + (preco ? Math.round(preco * 100) : '');
+  const c = _frete.get(k);
   if (c && Date.now() - c.ts < 6 * 3600e3) return c.v;
   try {
-    const r = await ml(idx, `/users/${uid}/shipping_options/free`, { item_id: itemId });
+    const r = await ml(idx, `/users/${uid}/shipping_options/free`, preco ? { item_id: itemId, item_price: Math.round(preco * 100) / 100, verbose: true } : { item_id: itemId });
     const v = { valor: num(r?.coverage?.all_country?.list_cost) ?? 0, pesoG: num(r?.coverage?.all_country?.billable_weight) };
-    _frete.set(itemId, { v, ts: Date.now() });
+    _frete.set(k, { v, ts: Date.now() });
     return v;
   } catch (e) { return null; }
 }
@@ -228,7 +230,7 @@ async function calcularMargens(ml, idx, uid, itens) {
         if (!(preco > 0)) return null;
         const t = await tarifaML(ml, idx, preco, it.listing_type_id, it.category_id);
         if (!t) return null;
-        const frete = freteBase?.valor || 0;   // custo de envio do vendedor (o ML cobra também abaixo de R$ 79, por peso/faixa de preço)
+        const frete = (await freteML(ml, idx, uid, it.id, preco))?.valor ?? freteBase?.valor ?? 0;   // custo de envio do vendedor nesse preço
         const imposto = preco * imp;
         // rebate só vale no preço da campanha
         const c = camp || campanhas.find(p => Math.abs(p.preco - preco) < 0.05) || null;
@@ -269,7 +271,7 @@ async function margemPreco(ml, idx, uid, it, preco, rebate = 0, erp) {
   if (!it.listing_type_id || !it.category_id) return { erro: 'sem dados do anúncio' };
   const t = await tarifaML(ml, idx, preco, it.listing_type_id, it.category_id);
   if (!t) return { erro: 'tarifa do ML indisponível' };
-  const fr = await freteML(ml, idx, uid, it.id);
+  const fr = await freteML(ml, idx, uid, it.id, preco);
   const r2 = x => Math.round(x * 100) / 100, imp = aliquota(idx), emb = embalagem(idx);
   const frete = fr?.valor || 0, imposto = preco * imp;
   const lucro = preco - cf.v - t.valor - frete - emb - imposto + (rebate || 0);
