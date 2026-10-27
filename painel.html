@@ -235,15 +235,18 @@ body{background:#f0f2f5;color:#111}
   <div id="am-auto" style="font-size:12px;color:#666;margin:-4px 0 10px"></div>
   <div id="am-alerta"></div>
   <div style="background:white;border-radius:10px;border:1px solid #eee;padding:14px 18px;margin-bottom:14px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
-    <div><label class="tl-lbl">Empresa</label><select id="am-emp" class="tl-in"><option value="todas">Todas</option><option value="zagodini">Zagodini</option><option value="mae">Com Amor de Mãe</option><option value="lufe">Lufe</option></select></div>
-    <div><label class="tl-lbl">Canal</label><select id="am-canal" class="tl-in" onchange="amRender()"><option value="">Todos</option><option>Mercado Livre</option><option>Shopee</option><option>Amazon</option><option>Shein</option><option>TikTok</option></select></div>
     <div><label class="tl-lbl">Mês</label><select id="am-mes" class="tl-in" onchange="amMes()"></select></div>
     <div><label class="tl-lbl">De</label><input type="date" id="am-ini" class="tl-in"></div>
     <div><label class="tl-lbl">Até</label><input type="date" id="am-fim" class="tl-in"></div>
     <button class="tl-btn" onclick="amVer()" style="background:white;color:#0d1b2a;border:1px solid #0d1b2a">📄 Ver apuração</button>
     <button class="tl-btn" onclick="amBuscar()" style="background:#0d1b2a;color:white">↻ Buscar dados</button>
     <button class="tl-btn" id="am-exp" onclick="amExportar()" style="display:none;background:#2e7d32;color:white">⬇ Excel</button>
+    <div style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="am-fl">Período</span><span id="am-f-per"></span></div>
+    <div style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="am-fl">Empresa</span><span id="am-f-emp"></span></div>
+    <div style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="am-fl">Marketplace</span><span id="am-f-canal"></span></div>
+    <div style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="am-fl">Produto</span><input class="tl-in" id="am-prod-in" list="am-prod-dl" placeholder="Digite SKU ou nome e tecle Enter..." style="min-width:260px;padding:5px 8px" onchange="amAddProd(this)"><datalist id="am-prod-dl"></datalist><span id="am-f-prod"></span></div>
   </div>
+  <style>.am-fl{font-size:12px;color:#888;width:86px;font-weight:600}.am-chip{border:1px solid #ccd;background:white;color:#334;border-radius:16px;padding:4px 12px;font-size:12px;cursor:pointer;margin:2px 0}.am-chip.on{background:#0d1b2a;color:white;border-color:#0d1b2a}.am-chip .x{margin-left:6px;opacity:.7}</style>
   <div id="am-prog" style="display:none;background:white;border-radius:10px;border:1px solid #eee;padding:12px 18px;margin-bottom:14px;font-size:13px"></div>
   <div id="am-out"><div style="text-align:center;color:#999;padding:3rem;font-size:14px">Escolha a empresa e o período. <b>Ver apuração</b> usa o que já foi baixado; <b>Buscar dados</b> baixa do Bling, Tiny e Amazon (pode levar alguns minutos).</div></div>
 </div></div>
@@ -3744,7 +3747,7 @@ function abrirApuracao(){
   if(!el('am-mes').options.length){
     const h=new Date();for(let i=0;i<12;i++){const d=new Date(h.getFullYear(),h.getMonth()-i,1);const v=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
       el('am-mes').insertAdjacentHTML('beforeend','<option value="'+v+'">'+d.toLocaleDateString('pt-BR',{month:'long',year:'numeric'})+'</option>');}
-    el('am-mes').selectedIndex=1;amMes();
+    el('am-mes').selectedIndex=1;amMes();amChips();
     amAuto();
   }
   if(typeof alertaCustos==='function'){el('am-alerta').innerHTML='';}
@@ -3756,13 +3759,13 @@ async function amAuto(){
   const p=(u&&u.fimExec)?u:(u&&u.ok?{...u.ok,fimExec:u.ok.em,erros:{}}:null);
   const ini=p?p.ini:a.proximo.ini,fim=p?p.fim:a.proximo.fim,mes=ini.slice(0,7);
   if([...el('am-mes').options].some(o=>o.value===mes))el('am-mes').value=mes;
-  el('am-ini').value=ini;el('am-fim').value=fim;
+  el('am-ini').value=ini;el('am-fim').value=fim;amChips();
   el('am-auto').innerHTML='🕛 Automático todo dia após a meia-noite (mês atual até ontem + reapuração do mês anterior, para pegar devoluções e cancelamentos). '+(a.rodando||(u&&!u.fimExec)?'<b>Atualizando agora</b> ('+br(u?u.ini:ini)+' a '+br(u?u.fim:fim)+')…'+(p&&!u.fimExec?' Mostrando a última pronta: '+br(p.ini)+' a '+br(p.fim)+'.':''):
     p?'Última: <b>'+br(p.ini)+' a '+br(p.fim)+'</b>, gerada em '+new Date(p.fimExec).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})+(Object.keys(p.erros||{}).length?' <span style="color:#c62828">· com erro: '+shpEsc(Object.entries(p.erros).map(([k,v])=>k+': '+v).join(' | '))+'</span>':''):'Ainda não rodou.');
   if(p)amVer();
 }
-function amMes(){const [a,m]=el('am-mes').value.split('-').map(Number);let fim=new Date(a,m,0);const ontem=new Date(Date.now()-864e5);if(fim>ontem)fim=ontem;const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');el('am-ini').value=el('am-mes').value+'-01';el('am-fim').value=iso(fim);}
-const amQ=()=>'emp='+el('am-emp').value+'&ini='+el('am-ini').value+'&fim='+el('am-fim').value;
+function amMes(){const [a,m]=el('am-mes').value.split('-').map(Number);let fim=new Date(a,m,0);const ontem=new Date(Date.now()-864e5);if(fim>ontem)fim=ontem;const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');el('am-ini').value=el('am-mes').value+'-01';el('am-fim').value=iso(fim);if(typeof amChips==='function')amChips();}
+const amQ=()=>'emp='+(_amF.emp.size===1?[..._amF.emp][0]:'todas')+'&ini='+el('am-ini').value+'&fim='+el('am-fim').value;
 async function amBuscar(){
   const r=await fetch('/apuracao-mkt/iniciar?'+amQ(),{method:'POST'}).then(r=>r.json()).catch(e=>({erro:String(e)}));
   if(!r.ok){alert(r.erro||'Erro ao iniciar');return;}
@@ -3775,17 +3778,52 @@ async function amBuscar(){
     if(L.length&&L.every(([,j])=>!j.rodando)){clearInterval(t);setTimeout(()=>{el('am-prog').style.display='none';},4000);amVer();}
   },2500);
 }
+// ── filtros da apuração (botões combináveis) ──
+const AM_KEY={'Zagodini':'zagodini','Com Amor de Mãe':'mae','Lufe':'lufe'};
+const AM_CANAIS=['Mercado Livre','Shopee','Amazon','Shein','TikTok'];
+const _amF={emp:new Set(),canal:new Set(),prod:new Set()};
+try{const s=JSON.parse(localStorage.getItem('amF')||'{}');['emp','canal'].forEach(k=>(s[k]||[]).forEach(v=>_amF[k].add(v)));}catch(e){}
+function amSalvarF(){try{localStorage.setItem('amF',JSON.stringify({emp:[..._amF.emp],canal:[..._amF.canal]}));}catch(e){}}
+function amPassa(emp,canal){return (!_amF.emp.size||_amF.emp.has(AM_KEY[emp]))&&(!_amF.canal.size||_amF.canal.has(canal));}
+function amFiltradas(){if(!_am)return[];return _am.linhas.filter(l=>amPassa(l.empresa,l.canal)&&(!_amF.prod.size||_amF.prod.has(l.sku)));}
+function amResumir(L){
+  const C=['receita','devolucao','cmv','comissao','taxa','frete','imposto','embalagem','lucro'],m={};
+  for(const l of L){const k=l.empresa+'|'+l.canal,g=m[k]||(m[k]={empresa:l.empresa,canal:l.canal,_p:new Set(),...Object.fromEntries(C.map(c=>[c,0]))});g._p.add(l.pedido);for(const c of C)g[c]+=l[c]||0;}
+  return Object.values(m).map(g=>{const rl=g.receita-g.devolucao;return {...g,pedidos:g._p.size,pct:rl?Math.round(g.lucro/rl*1000)/10:0};}).sort((a,b)=>b.receita-a.receita);
+}
+const amEscA=v=>String(v).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+function amChips(){
+  const chip=(grp,v,rot)=>'<button class="am-chip'+(_amF[grp].has(v)?' on':'')+'" onclick="amTog(\''+grp+'\',\''+amEscA(v)+'\')">'+rot+'</button>';
+  const todos=grp=>'<button class="am-chip'+(_amF[grp].size?'':' on')+'" onclick="amTog(\''+grp+'\',null)">Todas</button>';
+  el('am-f-emp').innerHTML=todos('emp')+' '+Object.entries(AM_NOMES).map(([k,n])=>chip('emp',k,n)).join(' ');
+  el('am-f-canal').innerHTML=todos('canal')+' '+AM_CANAIS.map(c=>chip('canal',c,c)).join(' ');
+  el('am-f-prod').innerHTML=[..._amF.prod].map(s=>'<button class="am-chip on" title="remover" onclick="amTog(\'prod\',\''+amEscA(s)+'\')">'+shpEsc(s)+'<span class="x">✕</span></button>').join(' ')+(_amF.prod.size>1?' <button class="am-chip" onclick="amTog(\'prod\',null)">limpar</button>':'');
+  const h=new Date(),iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),ontem=new Date(h-864e5);
+  const P=[['Ontem',iso(ontem),iso(ontem)],['Últimos 7 dias',iso(new Date(h-7*864e5)),iso(ontem)],['Últimos 30 dias',iso(new Date(h-30*864e5)),iso(ontem)],['Este mês',iso(new Date(h.getFullYear(),h.getMonth(),1)),iso(ontem)],['Mês passado',iso(new Date(h.getFullYear(),h.getMonth()-1,1)),iso(new Date(h.getFullYear(),h.getMonth(),0))],['Este ano',iso(new Date(h.getFullYear(),0,1)),iso(ontem)]];
+  const ini=el('am-ini').value,fim=el('am-fim').value;
+  el('am-f-per').innerHTML=P.map(([r,a,b])=>'<button class="am-chip'+(a===ini&&b===fim?' on':'')+'" onclick="amPer(\''+a+'\',\''+b+'\')">'+r+'</button>').join(' ');
+}
+function amTog(grp,v){if(v==null)_amF[grp].clear();else if(_amF[grp].has(v))_amF[grp].delete(v);else _amF[grp].add(v);amSalvarF();amChips();if(_am){if(grp!=='prod')amProdLista();amRender();}}
+function amPer(a,b){el('am-ini').value=a;el('am-fim').value=b;amChips();amVer();}
+function amProdLista(){
+  if(!_am)return;const m={};for(const l of _am.linhas)if(amPassa(l.empresa,l.canal))m[l.sku]=l.descricao;
+  el('am-prod-dl').innerHTML=Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0])).slice(0,3000).map(([s,d])=>'<option value="'+shpEsc(s)+'">'+shpEsc((d||'').slice(0,70))+'</option>').join('');
+}
+function amAddProd(inp){
+  const v=inp.value.trim();inp.value='';if(!v||!_am)return;
+  if(_am.linhas.some(l=>l.sku===v))_amF.prod.add(v);
+  else{const q=v.toLowerCase();_am.linhas.filter(l=>amPassa(l.empresa,l.canal)&&((l.descricao||'').toLowerCase().includes(q)||String(l.sku).toLowerCase().includes(q))).forEach(l=>_amF.prod.add(l.sku));}
+  amChips();amRender();
+}
 async function amVer(){
   el('am-out').innerHTML='<div class="loading">Calculando...</div>';
-  const r=await fetch('/apuracao-mkt/resultado?'+amQ()).then(r=>r.json()).catch(e=>({erro:String(e)}));
+  const r=await fetch('/apuracao-mkt/resultado?emp=todas&ini='+el('am-ini').value+'&fim='+el('am-fim').value).then(r=>r.json()).catch(e=>({erro:String(e)}));
   if(r.erro){el('am-out').innerHTML='<div class="loading" style="color:#c62828">'+shpEsc(r.erro)+'</div>';return;}
-  _am=r;amRender();
+  _am=r;amProdLista();amRender();
 }
 function amRender(){
   const r=_am;if(!r)return;
-  const canal=el('am-canal').value;
-  const L=canal?r.linhas.filter(l=>l.canal===canal):r.linhas;
-  const G=canal?r.grupos.filter(g=>g.canal===canal):r.grupos;
+  const L=amFiltradas(),G=amResumir(L);
   const T=G.reduce((t,g)=>{for(const k of ['receita','devolucao','cmv','comissao','taxa','frete','imposto','embalagem','lucro','pedidos'])t[k]=(t[k]||0)+g[k];return t;},{});
   const RL=(T.receita||0)-(T.devolucao||0);const pct=v=>(RL?(v/RL*100):0).toLocaleString('pt-BR',{maximumFractionDigits:1})+'%';
   const card=(l,v,s,c)=>'<div style="background:white;border:1px solid #eee;border-radius:10px;padding:12px 16px;min-width:150px;flex:1"><div style="font-size:12px;color:#888">'+l+'</div><div style="font-size:22px;font-weight:700;color:'+(c||'#0d1b2a')+'">'+v+'</div><div style="font-size:11px;color:#999">'+(s||'')+'</div></div>';
@@ -3793,9 +3831,10 @@ function amRender(){
   if(r.pendentes?.length) h+='<div style="background:#FFF3E0;color:#8a5a00;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px">Ainda sem dados baixados para <b>'+r.pendentes.join(', ')+'</b> neste período. Clique em <b>↻ Buscar dados</b>.</div>';
   const estim=L.filter(l=>l.canal==='Amazon'&&/estimada/.test(l.origemTaxa)).length;
   if(estim) h+='<div style="background:#E3F2FD;color:#0d47a1;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px">'+estim+' itens da Amazon ainda sem lançamento financeiro (pedido não enviado ou recente): tarifas <b>estimadas</b> pelo histórico. Busque de novo depois para ficar com o valor real.</div>';
-  const devT=G.reduce((s,g)=>s+(g.devolucao||0),0),F=(r.foraApuracao||[]);
+  const devT=G.reduce((s,g)=>s+(g.devolucao||0),0),F=(r.foraApuracao||[]).filter(f=>amPassa(f.empresa,f.canal));
   if(devT>0||F.length) h+='<div style="background:#F3E5F5;color:#4a148c;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px">↩ '+(devT>0?'<b>'+fmt(devT)+'</b> devolvidos na Amazon (descontado do faturamento; custo e imposto estornados). ':'')+(F.length?'<b>'+F.length+' pedidos</b> cancelados/devolvidos fora da apuração ('+fmt(F.reduce((s,f)=>s+f.valor,0))+'): '+F.slice(0,6).map(f=>shpEsc(f.pedidoCanal||f.pedido)+' · '+shpEsc(f.situacao)).join(', ')+(F.length>6?'…':''):'')+'</div>';
-  if(r.semCusto?.length) h+='<div style="background:#FFEBEE;color:#b71c1c;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px"><b>'+r.semCusto.length+' SKUs vendidos sem custo no Bling/Tiny</b> — cadastre o custo no sistema; até lá o lucro deles está superestimado: '+r.semCusto.slice(0,8).map(s=>shpEsc(s.sku)+' ('+s.empresa.replace('Com Amor de Mãe','Mãe')+')').join(', ')+(r.semCusto.length>8?'…':'')+'</div>';
+  const SC=(r.semCusto||[]).filter(s=>!_amF.emp.size||_amF.emp.has(AM_KEY[s.empresa]));
+  if(SC.length) h+='<div style="background:#FFEBEE;color:#b71c1c;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px"><b>'+SC.length+' SKUs vendidos sem custo no Bling/Tiny</b> — cadastre o custo no sistema; até lá o lucro deles está superestimado: '+SC.slice(0,8).map(s=>shpEsc(s.sku)+' ('+s.empresa.replace('Com Amor de Mãe','Mãe')+')').join(', ')+(SC.length>8?'…':'')+'</div>';
   h+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'+card('Faturamento',fmt((T.receita||0)-(T.devolucao||0)),(T.pedidos||0)+' pedidos'+(T.devolucao?' · '+fmt(T.devolucao)+' devolvido':''))+card('Custo dos produtos',fmt(T.cmv||0),pct(T.cmv||0))+card('Tarifas + frete',fmt((T.comissao||0)+(T.taxa||0)+(T.frete||0)),pct((T.comissao||0)+(T.taxa||0)+(T.frete||0)))+card('Imposto + embalagem',fmt((T.imposto||0)+(T.embalagem||0)),pct((T.imposto||0)+(T.embalagem||0)))+card('Lucro',fmt(T.lucro||0),'margem '+pct(T.lucro||0),(T.lucro||0)>=0?'#2e7d32':'#c62828')+'</div>';
   h+='<div class="section"><div class="sec-head"><span>Por empresa e canal</span></div><div style="overflow-x:auto"><table style="width:100%;font-size:13px;border-collapse:collapse"><tr style="color:#888;text-align:right"><th style="text-align:left;padding:8px">Empresa</th><th style="text-align:left">Canal</th><th>Pedidos</th><th>Faturamento</th><th>Devolução</th><th>Custo</th><th>Comissão</th><th>Tarifas</th><th>Frete</th><th>Imposto</th><th>Embalagem</th><th>Lucro</th><th style="padding-right:8px">Margem</th></tr>'+
     G.map(g=>'<tr style="border-top:1px solid #f0f0f0;text-align:right"><td style="text-align:left;padding:8px">'+g.empresa+'</td><td style="text-align:left">'+g.canal+'</td><td>'+g.pedidos+'</td><td>'+fmt(g.receita)+'</td><td>'+(g.devolucao?'<span style="color:#6a1b9a">−'+fmt(g.devolucao)+'</span>':'—')+'</td><td>'+fmt(g.cmv)+'</td><td>'+fmt(g.comissao)+'</td><td>'+fmt(g.taxa)+'</td><td>'+fmt(g.frete)+'</td><td>'+fmt(g.imposto)+'</td><td>'+fmt(g.embalagem)+'</td><td style="font-weight:700;color:'+(g.lucro>=0?'#2e7d32':'#c62828')+'">'+fmt(g.lucro)+'</td><td style="padding-right:8px">'+g.pct.toLocaleString('pt-BR')+'%</td></tr>').join('')+'</table></div></div>';
@@ -3836,19 +3875,19 @@ function amGraficos(L,G){
   barra('amc-emp','empresa',AM_COR_EMP);barra('amc-canal','canal',AM_COR_CANAL);
 }
 function amTabela(){
-  const canal=el('am-canal').value,q=(el('am-busca')?.value||'').toLowerCase();
-  let L=_am.linhas.filter(l=>(!canal||l.canal===canal)&&(!q||(l.sku+' '+l.descricao+' '+l.pedido+' '+l.pedidoCanal).toLowerCase().includes(q)));
+  const q=(el('am-busca')?.value||'').toLowerCase();
+  let L=amFiltradas().filter(l=>(!q||(l.sku+' '+l.descricao+' '+l.pedido+' '+l.pedidoCanal).toLowerCase().includes(q)));
   el('am-tab').innerHTML='<table style="width:100%;font-size:12px;border-collapse:collapse"><tr style="color:#888;text-align:right"><th style="text-align:left;padding:6px">Data</th><th style="text-align:left">Empresa</th><th style="text-align:left">Canal</th><th style="text-align:left">Pedido</th><th style="text-align:left">Produto</th><th>Qtd</th><th>Venda</th><th>Custo</th><th>Tarifas</th><th>Imp.+emb.</th><th>Lucro</th><th style="padding-right:6px">%</th></tr>'+
     L.slice(0,500).map(l=>'<tr style="border-top:1px solid #f4f4f4;text-align:right"><td style="text-align:left;padding:6px">'+l.data.split('-').reverse().join('/')+'</td><td style="text-align:left">'+l.empresa.replace('Com Amor de Mãe','Mãe')+'</td><td style="text-align:left">'+l.canal+'</td><td style="text-align:left">'+shpEsc(l.pedidoCanal||l.pedido)+'</td><td style="text-align:left;max-width:280px"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+shpEsc(l.descricao)+'</div><div style="color:#999">'+shpEsc(l.sku)+' · custo: '+shpEsc(l.origemCusto)+' · tarifas: '+shpEsc(l.origemTaxa)+'</div></td><td>'+l.qtd+'</td><td>'+fmt(l.receita)+(l.devolucao?'<div style="color:#6a1b9a">−'+fmt(l.devolucao)+' dev.</div>':'')+'</td><td'+(l.custoUn==null?' style="color:#c62828"':'')+'>'+(l.custoUn==null?'sem custo':fmt(l.cmv))+'</td><td>'+fmt(l.comissao+l.taxa+l.frete)+'</td><td>'+fmt(l.imposto+l.embalagem)+'</td><td style="font-weight:600;color:'+(l.lucro>=0?'#2e7d32':'#c62828')+'">'+fmt(l.lucro)+'</td><td style="padding-right:6px">'+l.pct.toLocaleString('pt-BR')+'%</td></tr>').join('')+'</table>'+(L.length>500?'<div class="loading">Mostrando 500 de '+L.length+' — use a busca ou exporte o Excel.</div>':'');
 }
 function amExportar(){
-  if(!_am)return;const canal=el('am-canal').value;
-  const L=_am.linhas.filter(l=>!canal||l.canal===canal).map(l=>({Data:l.data,Empresa:l.empresa,Canal:l.canal,Pedido:l.pedido,'Pedido no canal':l.pedidoCanal,Situação:l.situacao,Cliente:l.cliente,SKU:l.sku,Produto:l.descricao,Qtd:l.qtd,'Preço un.':l.precoUn,Faturamento:l.receita,Devolução:l.devolucao||0,'Custo un.':l.custoUn,'Origem custo':l.origemCusto,'Custo total':l.cmv,Comissão:l.comissao,Tarifas:l.taxa,Frete:l.frete,Imposto:l.imposto,Embalagem:l.embalagem,Lucro:l.lucro,'Margem %':l.pct,'Origem tarifas':l.origemTaxa}));
-  const G=_am.grupos.filter(g=>!canal||g.canal===canal).map(g=>({Empresa:g.empresa,Canal:g.canal,Pedidos:g.pedidos,Faturamento:g.receita,Devolução:g.devolucao||0,Custo:g.cmv,Comissão:g.comissao,Tarifas:g.taxa,Frete:g.frete,Imposto:g.imposto,Embalagem:g.embalagem,Lucro:g.lucro,'Margem %':g.pct}));
+  if(!_am)return;const LF=amFiltradas();
+  const L=LF.map(l=>({Data:l.data,Empresa:l.empresa,Canal:l.canal,Pedido:l.pedido,'Pedido no canal':l.pedidoCanal,Situação:l.situacao,Cliente:l.cliente,SKU:l.sku,Produto:l.descricao,Qtd:l.qtd,'Preço un.':l.precoUn,Faturamento:l.receita,Devolução:l.devolucao||0,'Custo un.':l.custoUn,'Origem custo':l.origemCusto,'Custo total':l.cmv,Comissão:l.comissao,Tarifas:l.taxa,Frete:l.frete,Imposto:l.imposto,Embalagem:l.embalagem,Lucro:l.lucro,'Margem %':l.pct,'Origem tarifas':l.origemTaxa}));
+  const G=amResumir(LF).map(g=>({Empresa:g.empresa,Canal:g.canal,Pedidos:g.pedidos,Faturamento:g.receita,Devolução:g.devolucao||0,Custo:g.cmv,Comissão:g.comissao,Tarifas:g.taxa,Frete:g.frete,Imposto:g.imposto,Embalagem:g.embalagem,Lucro:g.lucro,'Margem %':g.pct}));
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(G),'Resumo');XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(L),'Itens');
-  if(_am.foraApuracao?.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(_am.foraApuracao),'Cancelados-devolvidos');
+  const FA=(_am.foraApuracao||[]).filter(f=>amPassa(f.empresa,f.canal));if(FA.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(FA),'Cancelados-devolvidos');
   if(_am.semCusto?.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(_am.semCusto),'Sem custo');
-  XLSX.writeFile(wb,'Apuracao_'+(el('am-emp').value)+(canal?'_'+canal:'')+'_'+_am.ini+'_'+_am.fim+'.xlsx');
+  XLSX.writeFile(wb,'Apuracao_'+([..._amF.emp].join('-')||'todas')+(_amF.canal.size?'_'+[..._amF.canal].join('-'):'')+'_'+_am.ini+'_'+_am.fim+'.xlsx');
 }
 
 </script>
