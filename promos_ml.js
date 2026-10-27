@@ -60,6 +60,16 @@ async function opcoesItem(idx, uid, it, cat, erp) {
     if (cat) o.catalogo = cat.status === 'winning' ? (cat.s2price ? (preco < cat.s2price ? 'continua ganhando' : 'pode perder') : 'continua ganhando') : (cat.ptw ? (preco <= cat.ptw + 0.001 ? 'passa a ganhar' : 'continua perdendo') : null);
     opcoes.push(o);
   }
+  // desconto próprio (o vendedor escolhe o %): sempre disponível quando não há promoção ativa
+  if (!ativa && !opcoes.some(o => o.tipo === 'PRICE_DISCOUNT')) {
+    const cheio = +(it.regular_amount || it.original_price || it.price) || 0;
+    if (cheio > 0) {
+      const preco = r2(cheio * 0.95);
+      opcoes.push({ id: null, ref: null, tipo: 'PRICE_DISCOUNT', tipoNome: NOME_TIPO.PRICE_DISCOUNT, nome: 'Desconto próprio (escolha o %)', status: 'candidate', situacao: 'disponível',
+        preco, original: cheio, meliPct: 0, rebate: 0, faixa: [r2(cheio * 0.2), r2(cheio * 0.95)], fim: null, m: await cm.margemPreco(F.ml, idx, uid, it, preco, 0, erp), podeEntrar: true, livre: true });
+    }
+  }
+  for (const o of opcoes) if (o.faixa && o.status === 'candidate' && ENTRA[o.tipo] && 'deal_price' in ENTRA[o.tipo]({ ...o })) o.livre = true;   // preço aberto dentro da faixa
   opcoes.sort((a, b) => (b.m.lucro ?? -1e9) - (a.m.lucro ?? -1e9));
   const melhores = opcoes.filter(o => o.status === 'candidate' && o.rebate > 0 && o.m.lucro != null && atual.lucro != null && o.m.lucro > atual.lucro + 0.05);
   // quando a promoção ativa acabar: volta ao preço cheio (ou a outra promoção ativa que siga valendo)
@@ -113,10 +123,25 @@ async function carregar(idx) {
   } catch (e) { Object.assign(E, { status: 'erro', erro: e.message }); }
 }
 
-async function entrar(idx, itemId, i) {
-  const E = ST[idx], x = E?.itens?.find(y => y.id === itemId), o = x?.opcoes?.[i];
-  if (!o) throw new Error('opção não encontrada — atualize a lista');
-  if (!o.podeEntrar) throw new Error('esta promoção não dá para entrar pelo painel (' + o.tipoNome + ')');
+const acharItem = (idx, itemId) => { const d = F.dados()[idx]; return [...(d?.semPromo || []), ...(d?.comPromo || [])].find(y => y.id === itemId); };
+function precoEscolhido(o, preco) {
+  if (preco == null || preco === '' || !o.livre) return o.preco;
+  const p = r2(+preco);
+  if (!(p > 0)) throw new Error('preço inválido');
+  if (o.faixa && (p < o.faixa[0] - 0.001 || p > o.faixa[1] + 0.001)) throw new Error(`preço fora da faixa permitida (R$ ${o.faixa[0].toFixed(2)} a R$ ${o.faixa[1].toFixed(2)})`);
+  return p;
+}
+async function simular(idx, itemId, i, preco) {
+  const x = ST[idx]?.itens?.find(y => y.id === itemId), o = x?.opcoes?.[i], it = acharItem(idx, itemId);
+  if (!o || !it) throw new Error('opção não encontrada — atualize a lista');
+  const p = precoEscolhido(o, preco);
+  return { preco: p, m: await cm.margemPreco(F.ml, idx, await F.uid(idx), it, p, o.rebate || 0, await cm.custosErp(idx).catch(() => ({}))) };
+}
+async function entrar(idx, itemId, i, preco) {
+  const E = ST[idx], x = E?.itens?.find(y => y.id === itemId), o0 = x?.opcoes?.[i];
+  if (!o0) throw new Error('opção não encontrada — atualize a lista');
+  if (!o0.podeEntrar) throw new Error('esta promoção não dá para entrar pelo painel (' + o0.tipoNome + ')');
+  const o = { ...o0, preco: precoEscolhido(o0, preco) };
   const body = ENTRA[o.tipo](o);
   const r = await F.mlReq(idx, 'post', '/seller-promotions/items/' + itemId + '?app_version=v2', body);
   // recalcula só este item
@@ -143,8 +168,12 @@ function rotas(app, fontes) {
     if (ST[idx]?.status !== 'carregando') carregar(idx).catch(() => {});
     res.json({ ok: true });
   });
+  app.post('/ml/promos/:idx/simular', require('express').json(), async (req, res) => {
+    try { res.json(await simular(parseInt(req.params.idx), String(req.body?.item || ''), parseInt(req.body?.opcao), req.body?.preco)); }
+    catch (e) { res.status(400).json({ erro: e.message }); }
+  });
   app.post('/ml/promos/:idx/entrar', require('express').json(), async (req, res) => {
-    try { res.json(await entrar(parseInt(req.params.idx), String(req.body?.item || ''), parseInt(req.body?.opcao))); }
+    try { res.json(await entrar(parseInt(req.params.idx), String(req.body?.item || ''), parseInt(req.body?.opcao), req.body?.preco)); }
     catch (e) { const d = e.response?.data; res.status(400).json({ erro: d?.message || d?.error || e.message, detalhe: d?.cause || null }); }
   });
   // atualiza a cada 6h (quando os dados do ML da conta estiverem prontos)
