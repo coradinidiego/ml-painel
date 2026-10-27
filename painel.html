@@ -493,9 +493,8 @@ body{background:#f0f2f5;color:#111}
   <div id="tab-turbo" class="tab-content">
     <div class="sf">
       <input class="sinput" type="text" placeholder="Buscar SKU ou nome..." oninput="renderTurbo()" id="mt-q">
-      <select class="sselect" id="mt-f" onchange="renderTurbo()"><option value="">Todos</option><option value="div">ERP ≠ planilha</option><option value="sem">Sem custo</option><option value="dif">Turbo estava diferente</option><option value="nao">Ainda não enviados</option><option value="erro">Com erro</option></select>
-      <label style="font-size:12px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="mt-imp"> enviar imposto (<span id="mt-imp-v">-</span>%)</label>
-      <button class="btn" onclick="enviarTurbo()">⚡ Enviar custos ao Turbo</button>
+      <select class="sselect" id="mt-f" onchange="renderTurbo()"><option value="div">Com divergência</option><option value="">Todos</option><option value="erp">Turbo ≠ ERP</option><option value="plan">Turbo ≠ planilha</option><option value="ep">ERP ≠ planilha</option><option value="imp">Imposto diferente</option><option value="fora">Anúncio sem custo no Turbo</option><option value="zero">Turbo com custo 0</option></select>
+      <label class="btn" style="cursor:pointer">📥 Importar planilha do Turbo<input type="file" accept=".csv,.txt" style="display:none" onchange="importarTurbo(this)"></label>
       <button class="btn" onclick="carregarTurbo()">↺</button>
     </div>
     <div id="mt-info" style="font-size:12px;color:#666;margin:6px 0 10px"></div>
@@ -610,41 +609,31 @@ function atualizarBotaoAmz(){el('canal-sw-amz').style.display=AZ_LOJAS[SHP_LOJAS
 CONTAS.forEach((c,i)=>el('cb-'+i).querySelector('.ct-canal').textContent='Mercado Livre · Shopee');
 
 
-let _mt=null,_mtTimer=null;
+let _mt=null;
 async function carregarTurbo(){
-  clearTimeout(_mtTimer);
+  el('b-mt').innerHTML='<div class="loading">Carregando…</div>';
   const r=await fetch('/turbo/'+ci).then(r=>r.json()).catch(e=>({erro:e.message}));
-  if(r.carregando){el('b-mt').innerHTML='<div class="loading">Conta ainda carregando...</div>';_mtTimer=setTimeout(carregarTurbo,5000);return;}
   if(r.erro){el('b-mt').innerHTML='<div class="loading">'+r.erro+'</div>';return;}
-  _mt=r;el('mt-imp-v').textContent=String(r.imposto).replace('.',',');renderTurbo();
-  if(r.job?.rodando)_mtTimer=setTimeout(carregarTurbo,4000);
+  _mt=r;renderTurbo();
+}
+async function importarTurbo(inp){
+  const f=inp.files[0];if(!f)return;const csv=await f.text();inp.value='';
+  const r=await fetch('/turbo/'+ci+'/csv',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({csv,nome:f.name})}).then(r=>r.json()).catch(e=>({erro:e.message}));
+  if(r.erro){alert(r.erro);return;}carregarTurbo();
 }
 function renderTurbo(){
   if(!_mt)return;const r=_mt,q=(el('mt-q').value||'').toLowerCase(),f=el('mt-f').value;
   const fm=v=>v==null?'<span style="color:#bbb">—</span>':'R$ '+v.toFixed(2).replace('.',',');
-  const j=r.job;
-  el('mt-info').innerHTML=(r.token?'':'<b style="color:#c62828">Falta a variável '+r.variavel+' no Railway.</b> ')+
-    'Custo enviado = '+r.erp+' (planilha só quando o '+r.erp+' não tem). A API do Turbo não devolve o custo dele: ao enviar, "igual" = o Turbo já tinha esse valor, "diferente" = estava outro e foi atualizado.'+
-    (j?'<br><b>'+(j.rodando?'Enviando… ':'Último envio: ')+j.feitos+'/'+j.total+'</b> · iguais '+j.iguais+' · diferentes (atualizados) '+j.atualizados+' · criados '+j.criados+' · erros '+j.erros+(j.ultimoErro?' <span style="color:#c62828">('+j.ultimoErro+')</span>':''):'');
-  let it=r.itens.filter(x=>!q||x.sku.toLowerCase().includes(q)||(x.titulo||'').toLowerCase().includes(q));
-  if(f==='div')it=it.filter(x=>x.divergente);
-  if(f==='sem')it=it.filter(x=>x.enviar==null);
-  if(f==='dif')it=it.filter(x=>x.turbo&&(x.turbo.http===200||x.turbo.http===201));
-  if(f==='nao')it=it.filter(x=>!x.turbo&&x.enviar!=null);
-  if(f==='erro')it=it.filter(x=>x.turbo&&![200,201,304].includes(x.turbo.http));
-  it.sort((a,b)=>(b.divergente-a.divergente)||a.sku.localeCompare(b.sku));
-  el('c-mt').textContent=it.length+' de '+r.itens.length+' · '+r.itens.filter(x=>x.divergente).length+' com ERP ≠ planilha · '+r.itens.filter(x=>x.enviar==null).length+' sem custo';
-  const tb=t=>{if(!t)return'<span style="color:#bbb">não enviado</span>';const c=t.http===304?'#2e7d32':t.http===200?'#e65100':t.http===201?'#1565c0':'#c62828';const l=t.http===304?'igual':t.http===200?'era diferente → atualizado':t.http===201?'criado no Turbo':'erro '+t.http+' '+(t.status||'');return'<span style="color:'+c+'">'+l+'</span><br><small style="color:#999">'+fm(t.custo)+(t.imposto!=null?' · '+t.imposto+'%':'')+' · '+new Date(t.em).toLocaleString('pt-BR')+'</small>';};
-  el('b-mt').innerHTML=it.length?'<table class="tbl" style="width:100%;font-size:12px"><tr><th style="text-align:left">SKU</th><th style="text-align:left">Produto</th><th>'+r.erp+'</th><th>Planilha</th><th>Vai para o Turbo</th><th>Turbo</th><th></th></tr>'+
-    it.slice(0,800).map(x=>'<tr style="'+(x.divergente?'background:#fff8e1':'')+'"><td><b>'+x.sku+'</b></td><td>'+(x.titulo||'').slice(0,60)+'</td><td style="text-align:right">'+fm(x.erp)+'</td><td style="text-align:right">'+fm(x.planilha)+(x.divergente?' <b style="color:#e65100">≠</b>':'')+'</td><td style="text-align:right"><b>'+fm(x.enviar)+'</b>'+(x.fonte?'<br><small style="color:#999">'+x.fonte+'</small>':'')+'</td><td style="text-align:center">'+tb(x.turbo)+'</td><td>'+(x.enviar!=null?'<button class="btn" style="padding:2px 8px;font-size:11px" onclick="enviarTurbo([\''+x.sku.replace(/'/g,"\\'")+'\'])">enviar</button>':'')+'</td></tr>').join('')+'</table>'+(it.length>800?'<div class="loading">Mostrando 800 — use a busca.</div>':''):'<div class="loading">Nada aqui.</div>';
-}
-async function enviarTurbo(skus){
-  if(!_mt)return;const imp=el('mt-imp').checked;
-  const n=skus?skus.length:_mt.itens.filter(x=>x.enviar!=null).length;
-  if(!confirm('Gravar o custo'+(imp?' e o imposto ('+_mt.imposto+'%)':'')+' de '+n+' SKU(s) no Mercado Turbo da conta '+_mt.conta+'?\nO valor atual no Turbo será substituído.'))return;
-  const r=await fetch('/turbo/'+ci+'/enviar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({skus:skus||[],imposto:imp})}).then(r=>r.json()).catch(e=>({erro:e.message}));
-  if(r.erro){alert(r.erro);return;}
-  setTimeout(carregarTurbo,1500);
+  const I=r.itens,cnt=fn=>I.filter(fn).length;
+  el('mt-info').innerHTML=r.importado?('Planilha do Turbo: <b>'+r.importado.skus+' SKUs</b> · importada em '+new Date(r.importado.em).toLocaleString('pt-BR')+' · '+cnt(x=>x.difErp)+' Turbo ≠ '+r.erp+' · '+cnt(x=>x.difPlan)+' Turbo ≠ planilha · '+cnt(x=>x.difImp)+' com imposto ≠ '+String(r.imposto).replace('.',',')+'% do painel · '+cnt(x=>x.anuncio&&!x.turbo)+' anúncios sem custo no Turbo'):'<b>Importe a planilha exportada do Turbo (CSV CUSTO;IMPOSTO;SKU).</b>';
+  let it=I.filter(x=>!q||x.sku.toLowerCase().includes(q)||(x.titulo||'').toLowerCase().includes(q));
+  const F={div:x=>x.difErp||x.difPlan||x.difImp||x.difErpPlan,erp:x=>x.difErp,plan:x=>x.difPlan,ep:x=>x.difErpPlan,imp:x=>x.difImp,fora:x=>x.anuncio&&!x.turbo,zero:x=>x.noTurbo&&!x.turbo};
+  if(F[f])it=it.filter(F[f]);
+  it.sort((a,b)=>Math.abs(b.delta||0)-Math.abs(a.delta||0)||a.sku.localeCompare(b.sku));
+  el('c-mt').textContent=it.length+' de '+I.length;
+  const c=(v,d)=>'<td style="text-align:right;'+(d?'background:#fff3e0;color:#e65100;font-weight:700':'')+'">'+fm(v)+'</td>';
+  el('b-mt').innerHTML=it.length?'<table class="tbl" style="width:100%;font-size:12px"><tr><th style="text-align:left">SKU</th><th style="text-align:left">Produto</th><th>Turbo</th><th>'+r.erp+'</th><th>Planilha</th><th>Turbo − ERP</th><th>Imposto Turbo</th></tr>'+
+    it.slice(0,1000).map(x=>'<tr><td><b>'+x.sku+'</b>'+(x.anuncio?'':'<br><small style="color:#999">sem anúncio ativo</small>')+'</td><td>'+(x.titulo||'').slice(0,55)+'</td>'+c(x.turbo,x.difErp||x.difPlan)+c(x.erp,x.difErp||x.difErpPlan)+c(x.planilha,x.difPlan||x.difErpPlan)+'<td style="text-align:right">'+(x.delta==null?'':(x.delta>0?'+':'')+x.delta.toFixed(2).replace('.',','))+'</td><td style="text-align:center;'+(x.difImp?'color:#e65100;font-weight:700':'')+'">'+(x.turboImp==null?'—':x.turboImp+'%')+'</td></tr>').join('')+'</table>':'<div class="loading">Nada aqui.</div>';
 }
 function showTab(name,btn){
   if(name==='sempromo'){_pmAberto.sem=true;name='promos';btn=[...document.querySelectorAll('#ml-content .tab')].find(x=>(x.getAttribute('onclick')||'').includes("'promos'"));setTimeout(()=>carregarPromosML(),0);}
