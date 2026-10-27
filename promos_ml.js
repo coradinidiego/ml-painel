@@ -74,6 +74,9 @@ async function opcoesItem(idx, uid, it, cat, erp) {
   return { precoAtual: r2(precoAtual), atual, ativa: ativa ? { nome: ativa.name || NOME_TIPO[ativa.type] || ativa.type, tipo: ativa.type, rebate: rebAtual, fim: ativa.finish_date || null } : null, saida, opcoes, rebateMelhor: melhores.length };
 }
 
+const fs = require('fs'), path = require('path');
+const arq = idx => path.join(require('./dados'), 'apuracao_cache', `promos_ml_${idx}.json`);
+const salvar = idx => { try { const E = ST[idx]; fs.mkdirSync(path.dirname(arq(idx)), { recursive: true }); fs.writeFileSync(arq(idx), JSON.stringify({ em: E.em, itens: E.itens })); } catch (e) {} };
 async function carregar(idx) {
   const d = F.dados()[idx];
   if (!d) throw new Error('ML desta conta ainda carregando');
@@ -84,19 +87,29 @@ async function carregar(idx) {
     for (const it of d.perdendo || []) cat[it.id] = { status: 'competing', ptw: it.price_to_win };
     for (const it of d.ganhando || []) cat[it.id] = { status: 'winning', s2price: it.s2price };
     const semPromo = new Set((d.semPromo || []).map(x => x.id));
-    const todos = [...(d.semPromo || []), ...(d.comPromo || [])];
+    const todos = [...(d.semPromo || []), ...(d.comPromo || [])];   // sem promoção primeiro: são os que aparecem na tela
     E.total = todos.length;
-    const itens = [];
-    for (const it of todos) {
-      try {
-        const r = await opcoesItem(idx, uid, it, cat[it.id], erp);
-        if (r.opcoes.length || semPromo.has(it.id)) itens.push({ id: it.id, titulo: it.title, sku: it._sku || '', thumb: it.thumbnail, link: it.permalink || ('https://produto.mercadolivre.com.br/' + it.id.replace(/^MLB/, 'MLB-')),
-          semPromo: semPromo.has(it.id), catalogo: cat[it.id] ? { status: cat[it.id].status, ptw: cat[it.id].ptw || null, s2: cat[it.id].s2price || null } : null, ...r });
-      } catch (e) {}
-      E.feito++;
-      await delay(120);
-    }
-    Object.assign(E, { status: 'pronto', em: new Date().toISOString(), itens });
+    // o que já estava calculado continua aparecendo; cada anúncio novo substitui o antigo assim que fica pronto
+    const mapa = new Map((E.itens || []).map(x => [x.id, x]));
+    let i = 0;
+    const trabalhador = async () => {
+      while (i < todos.length) {
+        const it = todos[i++];
+        try {
+          const r = await opcoesItem(idx, uid, it, cat[it.id], erp);
+          if (r.opcoes.length || semPromo.has(it.id)) mapa.set(it.id, { id: it.id, titulo: it.title, sku: it._sku || '', thumb: it.thumbnail, link: it.permalink || ('https://produto.mercadolivre.com.br/' + it.id.replace(/^MLB/, 'MLB-')),
+            semPromo: semPromo.has(it.id), catalogo: cat[it.id] ? { status: cat[it.id].status, ptw: cat[it.id].ptw || null, s2: cat[it.id].s2price || null } : null, ...r });
+          else mapa.delete(it.id);
+        } catch (e) {}
+        E.feito++;
+        if (E.feito % 25 === 0) E.itens = [...mapa.values()];
+        await delay(60);
+      }
+    };
+    await Promise.all([trabalhador(), trabalhador(), trabalhador(), trabalhador()]);   // 4 em paralelo
+    const ids = new Set(todos.map(x => x.id));
+    Object.assign(E, { status: 'pronto', em: new Date().toISOString(), itens: [...mapa.values()].filter(x => ids.has(x.id)) });
+    salvar(idx);
   } catch (e) { Object.assign(E, { status: 'erro', erro: e.message }); }
 }
 
@@ -118,9 +131,10 @@ async function entrar(idx, itemId, i) {
 
 function rotas(app, fontes) {
   F = fontes;
+  for (const idx of [0, 1, 2]) try { const j = JSON.parse(fs.readFileSync(arq(idx))); ST[idx] = { status: 'pronto', em: j.em, itens: j.itens || [], feito: 0, total: 0, doDisco: true }; } catch (e) {}
   app.get('/ml/promos/:idx', (req, res) => {
     const idx = parseInt(req.params.idx), E = ST[idx];
-    if (!E || (!E.itens && E.status !== 'carregando')) carregar(idx).catch(() => {});
+    if (!E || (!E.itens && E.status !== 'carregando') || (E.doDisco && E.status === 'pronto' && F.dados()[idx])) { if (E) E.doDisco = false; carregar(idx).catch(() => {}); }
     const e = ST[idx] || { status: 'carregando' };
     res.json({ status: e.status, feito: e.feito || 0, total: e.total || 0, em: e.em || null, erro: e.erro || null, itens: e.itens || [] });
   });

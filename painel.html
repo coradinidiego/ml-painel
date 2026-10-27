@@ -635,21 +635,21 @@ async function carregarPromosML(forcar){
   _pmEmp=ci;
   try{
     const d=await (await fetch('/ml/promos/'+ci)).json(); _pm=d;
-    if(d.status!=='pronto'){
-      if(el('pm-f').value==='sem'&&d.status!=='erro'){renderSemPromoML((el('pm-q').value||'').toLowerCase());const emp=ci;_pmTimer=setTimeout(()=>{if(ci===emp&&el('tab-promos').classList.contains('active'))carregarPromosML();},8000);return;}
+    if(d.status==='carregando'){const emp=ci;_pmTimer=setTimeout(()=>{if(ci===emp&&el('tab-promos').classList.contains('active'))carregarPromosML();},8000);}
+    if(d.status!=='pronto'&&!(d.itens||[]).length){
+      if(el('pm-f').value==='sem'&&d.status!=='erro'){renderSemPromoML((el('pm-q').value||'').toLowerCase());return;}
       el('b-promos').innerHTML='<div class="loading">'+(d.status==='erro'?'<span style="color:#c0392b">'+shpEsc(d.erro||'erro')+'</span>':'Consultando as promoções de cada anúncio no ML… '+(d.total?d.feito+' de '+d.total:'')+'<br><small>Na primeira vez leva alguns minutos; depois atualiza sozinho a cada 6h.</small>')+'</div>';
-      if(d.status!=='erro'){const emp=ci;_pmTimer=setTimeout(()=>{if(ci===emp&&el('tab-promos').classList.contains('active'))carregarPromosML();},5000);}
       return;
     }
     const nr=d.itens.filter(x=>x.rebateMelhor).length, b=el('tc-promos-alerta'); b.style.display=nr?'inline-block':'none'; b.textContent=nr?'💰'+nr:'';
-    el('pm-info').innerHTML='Atualizado '+new Date(d.em).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})+' · '+d.itens.filter(x=>x.semPromo).length+' sem promoção · <b style="color:#2e7d32">'+nr+' com rebate que dá mais lucro que o preço atual</b>. Lucro = preço − custo (Bling/Tiny) − tarifa e frete do ML − imposto − embalagem + rebate do ML. Opções ordenadas da maior para a menor margem.';
+    el('pm-info').innerHTML=(d.em?'Atualizado '+new Date(d.em).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}):'Calculando')+(d.status==='carregando'?' (atualizando agora: '+d.feito+' de '+d.total+')':'')+' · '+d.itens.filter(x=>x.semPromo).length+' sem promoção · <b style="color:#2e7d32">'+nr+' com rebate que dá mais lucro que o preço atual</b>. Lucro = preço − custo (Bling/Tiny) − tarifa e frete do ML − imposto − embalagem + rebate do ML. Opções ordenadas da maior para a menor margem.';
     renderPromosML();
   }catch(e){el('b-promos').innerHTML='<div class="loading" style="color:#c0392b">Erro ao carregar.</div>';}
 }
 function renderPromosML(){
   const f=el('pm-f').value,q=(el('pm-q').value||'').toLowerCase();
   if(f==='sem')return renderSemPromoML(q);
-  if(!_pm||_pm.status!=='pronto')return;
+  if(!_pm||!(_pm.itens||[]).length)return;
   const brl=v=>v==null?'—':'R$ '+Number(v).toFixed(2).replace('.',',');
   const luc=m=>!m||m.erro?'<span style="color:#888;font-size:11px">'+shpEsc(m?.erro||'—')+'</span>':'<b style="color:'+(m.lucro<0?'#c62828':'#2e7d32')+'">'+brl(m.lucro)+'</b> <small>('+String(m.pct).replace('.',',')+'%)</small>';
   let L=_pm.itens.filter(x=>f==='sem'?x.semPromo:f==='rebate'?x.rebateMelhor>0:f==='perdendo'?(x.catalogo?.status==='competing'&&x.opcoes.some(o=>o.catalogo==='passa a ganhar')):x.opcoes.length);
@@ -664,7 +664,7 @@ function renderPromosML(){
 function renderSemPromoML(q){
   const d=window._dados?.[ci];const b=el('b-promos');
   if(!d){b.innerHTML='<div class="loading">Aguarde...</div>';return;}
-  const pm=_pm&&_pm.status==='pronto'&&_pm.itens?Object.fromEntries(_pm.itens.map(x=>[x.id,x])):{};
+  const pm=_pm&&_pm.itens?Object.fromEntries(_pm.itens.map(x=>[x.id,x])):{};
   let L=d.semPromo.filter(it=>!q||((it._sku||it.seller_sku||'')+' '+(it.title||'')+' '+it.id).toLowerCase().includes(q));
   const ord=el('pm-ord')?.value||'margem';
   const lucroMelhor=it=>{const x=pm[it.id];return x?.opcoes?.length?Math.max(...x.opcoes.map(o=>o.m?.lucro??-1e9)):-1e9;};
@@ -672,7 +672,7 @@ function renderSemPromoML(q){
   set('c-promos',L.length);
   const ocultar=id=>'<div style="font-size:11px;margin-top:4px"><a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="#" onclick="ignorarPromo(\''+id+'\',true);return false" title="Tirar da lista (produto que não pode ter promoção)">Ocultar</a></div>';
   const carregando=!_pm||_pm.status!=='pronto';
-  b.innerHTML=(carregando?'<div class="loading" style="font-size:12px">⏳ Carregando as opções de promoção de cada anúncio…</div>':'')+
+  b.innerHTML=(carregando?'<div style="font-size:12px;color:#888;padding:6px 0">⏳ Atualizando as opções de promoção'+(_pm?.total?' ('+_pm.feito+' de '+_pm.total+')':'')+'… o que já foi calculado aparece abaixo.</div>':'')+
     (L.length?L.slice(0,300).map(it=>{const x=pm[it.id];
       if(x)return cardPromoML({...x,semPromo:true},ocultar(it.id));
       const thumb=it.thumbnail?'<img src="'+it.thumbnail+'" style="width:44px;height:44px;object-fit:cover;border-radius:6px">':'';
@@ -699,7 +699,7 @@ function cardPromoML(x,extra){
   }
 }
 function renderSaidaML(){
-  if(!_pm||_pm.status!=='pronto')return;
+  if(!_pm||!(_pm.itens||[]).length)return;
   const dias=+el('pm-dias').value||7, lim=Date.now()+dias*864e5, q=(el('pm-q').value||'').toLowerCase();
   const brl=v=>v==null?'—':'R$ '+Number(v).toFixed(2).replace('.',',');
   let L=_pm.itens.filter(x=>x.saida?.fim&&Date.parse(x.saida.fim)<=lim&&Date.parse(x.saida.fim)>=Date.now()-36e5);
