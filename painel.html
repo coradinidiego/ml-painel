@@ -1375,7 +1375,7 @@ function exibirDados(idx){
   if(el('upd-atu'))el('upd-atu').textContent=upd;
   const badge=el('badge-'+idx);
   if(badge){badge.textContent=d.perguntas.length>0?d.perguntas.length:'';badge.style.display=d.perguntas.length>0?'inline':'none';}
-  renderPerdendo(0);renderGanhando(0);renderAtualizando();renderSemPromo(0);
+  renderPerdendo(0);renderGanhando(0);renderAtualizando();renderSemPromo(0);if(el('tab-promos').classList.contains('active')&&el('pm-f').value==='sem')renderPromosML();
   const bq=el('b-perguntas');
   if(!d.perguntas.length)bq.innerHTML='<div class="loading" style="color:green">✓ Nenhuma pergunta!</div>';
   else bq.innerHTML=d.perguntas.map(q=>'<div class="qrow"><div class="qbody"><div class="qtxt">'+q.text+'</div><div class="qmeta">'+new Date(q.date_created).toLocaleDateString("pt-BR")+' · '+q.item_id+' · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+q.item_id+'/modificar" target="_blank">Ver</a></div></div></div>').join('');
