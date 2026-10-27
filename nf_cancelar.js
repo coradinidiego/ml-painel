@@ -37,6 +37,9 @@ let DEV_NOVOS = [], NAO_CONF = [], ANALISAR = [];
 const ENTRADAS = new Set();           // "emp|pedido" com NF de entrada (devolução) já emitida
 const DEVOLVIDAS = new Set();         // chave da nota de venda que já tem NF de devolução (entrada do mesmo cliente e valor)
 const soDig = v => String(v || '').replace(/\D/g, '');
+// prazo de cancelamento da NF-e pela UF do emitente (2 primeiros dígitos da chave): PR (41) = 168 h; demais = 24 h
+const PRAZO_UF = { '41': 168 };
+const prazoH = chave => PRAZO_UF[soDig(chave).slice(0, 2)] || 24;
 
 let ML = null;
 // SHEIN: se o pedido saiu (enviado/coletado) a nota vale — o "cancelado" do ERP não reflete a SHEIN
@@ -180,7 +183,7 @@ async function coletarTiny() {
       continue; }   // só quando Tiny, site e nota concordam
     if (sit?.enviado) { DEV_NOVOS.push({ chave: 'tiny|' + n.id, emp: 'lufe', nf: n.numero, serie: n.serie, nfId: n.id, emissao: deBr(n.data_emissao), pedido: String(n.numero_ecommerce), pedidoErp: p.numero,
       cliente: n.nome, valor: +n.valor || null, link: 'https://erp.tiny.com.br/notas_fiscais#edit/' + n.id, devolucao: sit.devolucao, chegouEm: sit.chegouEm, entregue: sit.entregue }); continue; }
-    out.push({ chave: 'tiny|' + n.id, nf: n.numero, serie: n.serie, nfId: n.id, emissao: deBr(n.data_emissao), pedido: String(n.numero_ecommerce), pedidoErp: p.numero,
+    out.push({ chave: 'tiny|' + n.id, prazoH: prazoH(n.chave_acesso), nf: n.numero, serie: n.serie, nfId: n.id, emissao: deBr(n.data_emissao), pedido: String(n.numero_ecommerce), pedidoErp: p.numero,
       cliente: n.nome, valor: +n.valor || null, canal: p.nome_ecommerce || null, link: 'https://erp.tiny.com.br/notas_fiscais#edit/' + n.id });
   }
   // B) cancelado no site, ativo no Tiny, com nota autorizada
@@ -265,7 +268,7 @@ async function coletarBling(e, cache) {
     if (sit?.enviado) { DEV_NOVOS.push({ chave: 'bling' + e.idx + '|' + nfId, emp: e.id, nf: nf.numero, serie: nf.serie, nfId, emissao: nf.dataEmissao ? new Date(nf.dataEmissao.replace(' ', 'T') + '-03:00').toISOString() : null,
       pedido: String(p.numeroLoja || p.numero), pedidoErp: p.numero, cliente: p.contato?.nome || '', valor: +p.total || null, link: 'https://www.bling.com.br/notas.fiscais.php#edit/' + nfId,
       devolucao: sit.devolucao, chegouEm: sit.chegouEm, entregue: sit.entregue }); continue; }
-    out.push({ chave: 'bling' + e.idx + '|' + nfId, nf: nf.numero, serie: nf.serie, nfId, emissao: nf.dataEmissao ? new Date(nf.dataEmissao.replace(' ', 'T') + '-03:00').toISOString() : null,
+    out.push({ chave: 'bling' + e.idx + '|' + nfId, prazoH: prazoH(nf.chaveAcesso), nf: nf.numero, serie: nf.serie, nfId, emissao: nf.dataEmissao ? new Date(nf.dataEmissao.replace(' ', 'T') + '-03:00').toISOString() : null,
       pedido: String(p.numeroLoja || p.numero), pedidoErp: p.numero, cliente: p.contato?.nome || nf.contato?.nome || '', valor: +p.total || null,
       link: 'https://www.bling.com.br/notas.fiscais.php#edit/' + nfId });
   }
@@ -322,9 +325,9 @@ async function sincronizarTrello() {
       const card = await trello('post', '/cards', { idList: process.env.TRELLO_LISTA_NF || '6adf69b10e63fa14064aa3da', name: `${x.emp.nome} - Analisar NF ${x.nf} (venda ${x.pedido})`, desc, pos: 'top' });
       TR[chave] = { card: card.id, url: card.shortUrl, em: new Date().toISOString(), emp: x.emp.id, analise: true }; gravar(ARQ_TR, TR); continue;
     }
-    const venc = x.emissao ? new Date(Date.parse(x.emissao) + 24 * 3600e3) : null;
+    const venc = x.emissao ? new Date(Date.parse(x.emissao) + (x.prazoH || 24) * 3600e3) : null;
     const desc = [`Pedido cancelado com NF-e ainda autorizada no ${x.emp.erp}. Cancelar a nota.`, `NF-e: ${x.nf}${x.serie ? ' série ' + x.serie : ''}`,
-      x.emissao ? `Emitida: ${new Date(x.emissao).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' })} (prazo normal da SEFAZ: 24 h)` : null,
+      x.emissao ? `Emitida: ${new Date(x.emissao).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' })} (prazo de cancelamento na SEFAZ: ${x.prazoH || 24} h)` : null,
       `Venda: ${x.pedido}${x.pedidoErp ? ' (pedido ' + x.pedidoErp + ' no ' + x.emp.erp + ')' : ''}`, x.cliente ? `Cliente: ${x.cliente}` : null, x.valor ? `Valor: R$ ${x.valor.toFixed(2).replace('.', ',')}` : null,
       `Abrir no ${x.emp.erp}: ${x.link}`, '', '(criado automaticamente pelo painel)'].filter(v => v !== null).join('\n');
     const card = await trello('post', '/cards', { idList: process.env.TRELLO_LISTA_NF || '6adf69b10e63fa14064aa3da',   // lista "Notas a cancelar"
