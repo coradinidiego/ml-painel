@@ -179,6 +179,31 @@ body{background:#f0f2f5;color:#111}
 @media(max-width:600px){.ini-tot{grid-template-columns:1fr}}
 .gwrap{overflow-x:auto}
 @media(max-width:700px){.conta-tab{min-width:180px}.hd .top-bar,.contas{padding-left:16px;padding-right:16px}}
+.pm-card{background:#fff;border:1px solid #e6e8ec;border-radius:14px;margin:12px 0;box-shadow:0 1px 3px #0000000d;overflow:hidden}
+.pm-head{display:flex;gap:12px;align-items:center;padding:12px 14px;background:linear-gradient(180deg,#fafbfc,#fff);border-bottom:1px solid #f0f1f3;flex-wrap:wrap}
+.pm-head img,.pm-noimg{width:54px;height:54px;object-fit:cover;border-radius:10px;border:1px solid #eee;display:flex;align-items:center;justify-content:center;font-size:24px}
+.pm-tit{flex:1;min-width:220px}.pm-tit a{color:#1a1a1a;font-weight:700;font-size:14px;text-decoration:none}.pm-tit a:hover{text-decoration:underline}
+.pm-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px;align-items:center}
+.pm-chip{background:#f1f3f5;color:#555;border-radius:6px;padding:1px 7px;font-size:11px}
+.pm-hoje{text-align:right;min-width:130px}.pm-preco{font-size:17px;font-weight:800;color:#1a1a1a}
+.pm-sub{font-size:11px;color:#888;margin-top:2px}
+.pm-tag{display:inline-block;border-radius:20px;padding:1px 8px;font-size:11px;font-weight:600;margin-left:4px}
+.pm-tverde{background:#e8f5e9;color:#2e7d32}.pm-tverm{background:#ffebee;color:#c62828}.pm-tazul{background:#e3f2fd;color:#1565c0}.pm-tlaranja{background:#fff3e0;color:#e65100}
+.pm-pill{display:inline-block;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:700;white-space:nowrap}
+.pm-verde{background:#e8f5e9;color:#2e7d32}.pm-amar{background:#fff8e1;color:#b26a00}.pm-verm{background:#ffebee;color:#c62828}.pm-cinza{background:#f1f3f5;color:#777;font-weight:500}
+.pm-ops{padding:6px 10px 10px}
+.pm-op{display:grid;grid-template-columns:minmax(180px,2.2fr) minmax(150px,1.6fr) minmax(110px,1fr) minmax(120px,1fr) 90px;gap:10px;align-items:center;padding:9px 10px;border-left:4px solid #90a4ae;border-radius:8px;margin-top:6px;background:#fafbfc}
+.pm-op:hover{background:#f4f6f8}.pm-op-rebate{background:#f1f8e9}
+.pm-op-acao{text-align:right}
+.pm-btn{background:#3483fa;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-weight:600;font-size:12px;cursor:pointer}.pm-btn:hover{background:#2968c8}.pm-btn:disabled{opacity:.6}
+.pm-link{font-size:12px;color:#3483fa}
+.pm-campo{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.pm-campo label{display:flex;align-items:center;gap:3px;background:#fff;border:1px solid #d6dae0;border-radius:8px;padding:2px 6px;font-size:12px;color:#666}
+.pm-campo input{width:62px;border:none;outline:none;font-size:13px;font-weight:700;color:#1a1a1a;background:transparent}
+.pm-campo label:focus-within{border-color:#3483fa;box-shadow:0 0 0 2px #3483fa22}
+.pm-faixa{font-size:10.5px;color:#999;margin-top:3px}
+.pm-vazio{padding:10px 14px;font-size:12px;color:#888}
+@media(max-width:800px){.pm-op{grid-template-columns:1fr 1fr}.pm-op-nome{grid-column:1/-1}.pm-op-acao{text-align:left}}
 </style>
 </head><body>
 <header class="hd">
@@ -647,6 +672,7 @@ async function carregarPromosML(forcar){
   }catch(e){el('b-promos').innerHTML='<div class="loading" style="color:#c0392b">Erro ao carregar.</div>';}
 }
 function renderPromosML(){
+  const ae=document.activeElement;if(ae&&ae.tagName==='INPUT'&&ae.closest&&ae.closest('#b-promos'))return;   // não atrapalha quem está digitando
   const f=el('pm-f').value,q=(el('pm-q').value||'').toLowerCase();
   if(f==='sem')return renderSemPromoML(q);
   if(!_pm||!(_pm.itens||[]).length)return;
@@ -674,52 +700,66 @@ function renderSemPromoML(q){
   const carregando=!_pm||_pm.status!=='pronto';
   b.innerHTML=(carregando?'<div style="font-size:12px;color:#888;padding:6px 0">⏳ Atualizando as opções de promoção'+(_pm?.total?' ('+_pm.feito+' de '+_pm.total+')':'')+'… o que já foi calculado aparece abaixo.</div>':'')+
     (L.length?L.slice(0,300).map(it=>{const x=pm[it.id];
-      if(x)return cardPromoML({...x,semPromo:true},ocultar(it.id));
-      const thumb=it.thumbnail?'<img src="'+it.thumbnail+'" style="width:44px;height:44px;object-fit:cover;border-radius:6px">':'';
-      return '<div style="border:1px solid #eee;border-radius:10px;padding:10px 12px;margin:8px 0"><div style="display:flex;gap:10px;align-items:center">'+thumb+'<div style="flex:1"><b>'+shpEsc(it.title||'-')+'</b><div style="font-size:11px;color:#888">SKU '+shpEsc(it._sku||it.seller_sku||'—')+' · '+it.id+'</div></div><div style="font-size:12px">Hoje: <b>'+fmt(it.price||0)+'</b> <small style="color:#E65100">sem promoção</small></div></div>'+ocultar(it.id)+
-        '<div style="font-size:12px;color:#888;margin-top:6px">'+(carregando?'opções carregando…':'Nenhuma promoção disponível no ML para este anúncio agora.')+'</div></div>';}).join(''):'<div class="loading" style="color:green">✓ Todos os anúncios têm promoção!</div>')+ignoradosHtml(d);
+      if(x)return cardPromoML({...x,semPromo:true},'<div style="padding:0 14px">'+ocultar(it.id)+'</div>');
+      return '<div class="pm-card"><div class="pm-head">'+(it.thumbnail?'<img src="'+it.thumbnail+'">':'<div class="pm-noimg">📦</div>')+'<div class="pm-tit"><b>'+shpEsc(it.title||'-')+'</b><div class="pm-meta"><span class="pm-chip">SKU '+shpEsc(it._sku||it.seller_sku||'—')+'</span><span class="pm-chip">'+it.id+'</span></div>'+ocultar(it.id)+'</div>'+
+        '<div class="pm-hoje"><div class="pm-sub">Hoje</div><div class="pm-preco">'+fmt(it.price||0)+'</div><span class="pm-tag pm-tlaranja">sem promoção</span></div></div><div class="pm-vazio">'+(carregando?'⏳ opções carregando…':'Nenhuma promoção disponível no ML para este anúncio agora.')+'</div></div>';}).join(''):'<div class="loading" style="color:green">✓ Todos os anúncios têm promoção!</div>')+ignoradosHtml(d);
   renderSaidaML();
 }
-// Promoção com preço aberto: escolher o % de desconto (dentro da faixa do ML) e ver o lucro na hora
-const _pmPreco={};let _pmSimT=null;
-function pmBase(x,o){return +(o.original||x.atual?.preco||x.precoAtual)||0;}
+// ─── Cartão de promoções (ML) ───────────────────────────────────────────────
+// Promoção com preço aberto: % e R$ ligados (mexe em um, o outro acompanha) e lucro na hora
+const _pmPreco={},_pmSim={};let _pmSimT=null;
+const pmBRL=v=>v==null?'—':'R$ '+Number(v).toFixed(2).replace('.',',');
+function pmBase(x,o){return +(o.original||x.precoAtual)||0;}
+function pmLucroHtml(m){
+  if(!m||m.erro||m.lucro==null)return '<span class="pm-pill pm-cinza">'+shpEsc(m?.erro||'sem custo')+'</span>';
+  const c=m.lucro<0?'pm-verm':m.pct<8?'pm-amar':'pm-verde';
+  return '<span class="pm-pill '+c+'">'+pmBRL(m.lucro)+' · '+String(m.pct).replace('.',',')+'%</span>';
+}
 function pmCampoPreco(x,o,i){
   const base=pmBase(x,o),k=x.id+'|'+i,preco=_pmPreco[k]??o.preco,pct=base?Math.round((1-preco/base)*1000)/10:0;
-  const pmin=base?Math.ceil((1-o.faixa[1]/base)*1000)/10:0,pmax=base?Math.floor((1-o.faixa[0]/base)*1000)/10:90;
-  return '<input type="number" step="0.5" min="'+pmin+'" max="'+pmax+'" value="'+pct+'" style="width:62px;padding:3px 4px;border:1px solid #ccc;border-radius:5px" oninput="pmSimular(\''+x.id+'\','+i+',this.value)"> % off'+
-    '<br><b id="pmp-'+x.id+'-'+i+'">R$ '+Number(preco).toFixed(2).replace('.',',')+'</b><br><small style="color:#888">de '+String(pmin).replace('.',',')+'% a '+String(pmax).replace('.',',')+'%</small>';
+  const pmin=base?Math.max(0,Math.ceil((1-o.faixa[1]/base)*1000)/10):0,pmax=base?Math.floor((1-o.faixa[0]/base)*1000)/10:90;
+  return '<div class="pm-campo"><label><input type="number" step="0.5" min="'+pmin+'" max="'+pmax+'" value="'+pct+'" id="pmpct-'+x.id+'-'+i+'" oninput="pmMudou(\''+x.id+'\','+i+',\'pct\',this.value)"><span>% off</span></label>'+
+    '<label><span>R$</span><input type="number" step="0.01" min="'+o.faixa[0]+'" max="'+o.faixa[1]+'" value="'+Number(preco).toFixed(2)+'" id="pmval-'+x.id+'-'+i+'" oninput="pmMudou(\''+x.id+'\','+i+',\'val\',this.value)"></label></div>'+
+    '<div class="pm-faixa">ML aceita '+pmBRL(o.faixa[0])+' a '+pmBRL(o.faixa[1])+'</div>';
 }
-function pmSimular(id,i,pct){
+function pmMudou(id,i,campo,v){
   const x=_pm.itens.find(y=>y.id===id),o=x.opcoes[i],base=pmBase(x,o);
-  let preco=Math.round(base*(1-(+pct||0)/100)*100)/100;
-  const cel=el('pml-'+id+'-'+i),pe=el('pmp-'+id+'-'+i);
-  if(pe)pe.textContent='R$ '+preco.toFixed(2).replace('.',',');
-  if(o.faixa&&(preco<o.faixa[0]-0.001||preco>o.faixa[1]+0.001)){if(cel)cel.innerHTML='<small style="color:#c62828">fora da faixa do ML</small>';delete _pmPreco[id+'|'+i];return;}
+  let preco;
+  if(campo==='pct'){preco=Math.round(base*(1-(+v||0)/100)*100)/100;const e=el('pmval-'+id+'-'+i);if(e)e.value=preco.toFixed(2);}
+  else{preco=Math.round((+String(v).replace(',','.')||0)*100)/100;const e=el('pmpct-'+id+'-'+i);if(e&&base)e.value=Math.round((1-preco/base)*1000)/10;}
+  const cel=el('pml-'+id+'-'+i);
+  if(!(preco>0)||(o.faixa&&(preco<o.faixa[0]-0.001||preco>o.faixa[1]+0.001))){if(cel)cel.innerHTML='<span class="pm-pill pm-verm">fora da faixa do ML</span>';delete _pmPreco[id+'|'+i];return;}
   _pmPreco[id+'|'+i]=preco;
+  if(cel)cel.innerHTML='<span class="pm-pill pm-cinza">calculando…</span>';
   clearTimeout(_pmSimT);_pmSimT=setTimeout(async()=>{
     try{const r=await (await fetch('/ml/promos/'+ci+'/simular',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item:id,opcao:i,preco})})).json();
       if(r.erro)throw new Error(r.erro);
-      const m=r.m;if(cel)cel.innerHTML=!m||m.erro?'<span style="color:#888;font-size:11px">'+shpEsc(m?.erro||'—')+'</span>':'<b style="color:'+(m.lucro<0?'#c62828':'#2e7d32')+'">R$ '+m.lucro.toFixed(2).replace('.',',')+'</b> <small>('+String(m.pct).replace('.',',')+'%)</small>';
-    }catch(e){if(cel)cel.innerHTML='<small style="color:#c62828">'+shpEsc(e.message)+'</small>';}
-  },400);
+      _pmSim[id+'|'+i]=r.m; if(cel)cel.innerHTML=pmLucroHtml(r.m);
+    }catch(e){if(cel)cel.innerHTML='<span class="pm-pill pm-verm">'+shpEsc(e.message)+'</span>';}
+  },350);
 }
+const PM_COR={SMART:'#7b1fa2',PRICE_MATCHING:'#1565c0',PRICE_MATCHING_MELI_ALL:'#1565c0',MARKETPLACE_CAMPAIGN:'#ef6c00',DEAL:'#ef6c00',SELLER_CAMPAIGN:'#00897b',PRICE_DISCOUNT:'#546e7a',LIGHTNING:'#d81b60',DOD:'#d81b60',UNHEALTHY_STOCK:'#6d4c41',PRE_NEGOTIATED:'#3949ab'};
 function cardPromoML(x,extra){
-  const brl=v=>v==null?'—':'R$ '+Number(v).toFixed(2).replace('.',',');
-  const luc=m=>!m||m.erro?'<span style="color:#888;font-size:11px">'+shpEsc(m?.erro||'—')+'</span>':'<b style="color:'+(m.lucro<0?'#c62828':'#2e7d32')+'">'+brl(m.lucro)+'</b> <small>('+String(m.pct).replace('.',',')+'%)</small>';
-  {
-    const cat=x.catalogo?(x.catalogo.status==='winning'?'<span style="background:#e8f5e9;color:#2e7d32;border-radius:8px;padding:1px 7px;font-size:11px">🟢 Ganhando catálogo'+(x.catalogo.s2?' · 2º em '+brl(x.catalogo.s2):'')+'</span>':'<span style="background:#ffebee;color:#c62828;border-radius:8px;padding:1px 7px;font-size:11px">🔴 Perdendo catálogo'+(x.catalogo.ptw?' · ganha com '+brl(x.catalogo.ptw):'')+'</span>'):'';
-    const ops=x.opcoes.map((o,i)=>{const melhor=o.status==='candidate'&&o.rebate>0&&o.m?.lucro!=null&&x.atual?.lucro!=null&&o.m.lucro>x.atual.lucro+0.05;
-      return '<tr style="'+(melhor?'background:#f1f8e9':'')+'"><td class="l">'+shpEsc(o.nome)+'<br><small style="color:#888">'+shpEsc(o.tipoNome)+' · '+o.situacao+(o.fim?' · até '+new Date(o.fim).toLocaleDateString('pt-BR'):'')+'</small></td>'+
-      '<td>'+(o.livre?pmCampoPreco(x,o,i):'<b>'+brl(o.preco)+'</b>'+(o.faixa?'<br><small style="color:#888">permitido até '+brl(o.faixa[1])+'</small>':''))+'</td>'+
-      '<td>'+(o.rebate?'<b style="color:#2e7d32">+'+brl(o.rebate)+'</b><br><small>'+String(o.meliPct).replace('.',',')+'% ML</small>':'—')+'</td>'+
-      '<td id="pml-'+x.id+'-'+i+'">'+luc(o.m)+(melhor?'<br><small style="color:#2e7d32;font-weight:600">💰 mais que o atual</small>':'')+'</td>'+
-      '<td>'+(o.catalogo?'<small style="color:'+(/ganha/.test(o.catalogo)?'#2e7d32':'#c62828')+'">'+o.catalogo+'</small>':'')+'</td>'+
-      '<td>'+(o.podeEntrar?'<button class="btn" style="padding:4px 10px;font-size:12px" onclick="entrarPromoML(\''+x.id+'\','+i+',this)">Entrar</button>':o.status==='candidate'?'<a href="https://www.mercadolivre.com.br/anuncios/lista/promos?search='+x.id+'" target="_blank" style="font-size:12px">pelo ML ↗</a>':'<small style="color:#888">'+o.situacao+'</small>')+'</td></tr>';}).join('');
-    return '<div style="border:1px solid #eee;border-radius:10px;padding:10px 12px;margin:8px 0"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+(x.thumb?'<img src="'+shpEsc(x.thumb)+'" style="width:44px;height:44px;object-fit:cover;border-radius:6px">':'')+
-      '<div style="flex:1;min-width:240px"><a href="'+shpEsc(x.link)+'" target="_blank" style="color:inherit;font-weight:600">'+shpEsc(x.titulo)+'</a><div style="font-size:11px;color:#888">SKU '+shpEsc(x.sku||'—')+' · '+x.id+' '+cat+'</div></div>'+
-      '<div style="font-size:12px;text-align:right">Hoje: <b>'+brl(x.precoAtual)+'</b>'+(x.ativa?' <small>('+shpEsc(x.ativa.nome)+')</small>':x.semPromo?' <small style="color:#E65100">sem promoção</small>':'')+'<br>Lucro atual: '+luc(x.atual)+'</div></div>'+
-      (extra||'')+(x.opcoes.length?'<div class="gwrap" style="margin-top:6px"><table class="gtab" style="border:none;border-radius:0;font-size:12px"><tr><th class="l">Promoção</th><th>Preço</th><th>Rebate ML</th><th>Lucro</th><th>Catálogo</th><th></th></tr>'+ops+'</table></div>':'<div style="font-size:12px;color:#888;margin-top:6px">Nenhuma promoção disponível no ML para este anúncio agora.</div>')+'</div>';
-  }
+  const cat=x.catalogo?(x.catalogo.status==='winning'?'<span class="pm-tag pm-tverde">🟢 Ganhando catálogo'+(x.catalogo.s2?' · 2º '+pmBRL(x.catalogo.s2):'')+'</span>':'<span class="pm-tag pm-tverm">🔴 Perdendo catálogo'+(x.catalogo.ptw?' · ganha com '+pmBRL(x.catalogo.ptw):'')+'</span>'):'';
+  const melhorLucro=Math.max(...x.opcoes.filter(o=>o.status==='candidate').map(o=>o.m?.lucro??-1e9));
+  const ops=x.opcoes.map((o,i)=>{
+    const sobeRebate=o.status==='candidate'&&o.rebate>0&&o.m?.lucro!=null&&x.atual?.lucro!=null&&o.m.lucro>x.atual.lucro+0.05;
+    const top=o.status==='candidate'&&o.m?.lucro!=null&&o.m.lucro===melhorLucro&&melhorLucro>-1e9;
+    const cor=PM_COR[o.tipo]||'#90a4ae';
+    const st=o.status==='started'?'<span class="pm-tag pm-tverde">ativa</span>':o.status==='pending'?'<span class="pm-tag pm-tazul">programada</span>':'';
+    const botao=o.podeEntrar?'<button class="pm-btn" onclick="entrarPromoML(\''+x.id+'\','+i+',this)">Entrar</button>':o.status==='candidate'?'<a class="pm-link" href="https://www.mercadolivre.com.br/anuncios/lista/promos?search='+x.id+'" target="_blank">pelo ML ↗</a>':'';
+    return '<div class="pm-op'+(sobeRebate?' pm-op-rebate':'')+'" style="border-left-color:'+cor+'">'+
+      '<div class="pm-op-nome"><b>'+shpEsc(o.nome)+'</b> '+st+(top?'<span class="pm-tag pm-tverde">★ melhor margem</span>':'')+(sobeRebate?'<span class="pm-tag pm-tverde">💰 lucra mais que hoje</span>':'')+
+        '<div class="pm-sub"><span style="color:'+cor+'">●</span> '+shpEsc(o.tipoNome)+(o.fim?' · até '+new Date(o.fim).toLocaleDateString('pt-BR'):'')+'</div></div>'+
+      '<div class="pm-op-preco">'+(o.livre&&o.status==='candidate'?pmCampoPreco(x,o,i):'<div class="pm-preco">'+pmBRL(o.preco)+'</div>'+(o.original&&o.original>o.preco?'<div class="pm-sub">'+Math.round((1-o.preco/o.original)*100)+'% off de '+pmBRL(o.original)+'</div>':''))+'</div>'+
+      '<div class="pm-op-reb">'+(o.rebate?'<span class="pm-tag pm-tverde">+'+pmBRL(o.rebate)+' rebate ML</span><div class="pm-sub">'+String(o.meliPct).replace('.',',')+'% bancado pelo ML</div>':'<span class="pm-sub">sem rebate</span>')+'</div>'+
+      '<div class="pm-op-luc" id="pml-'+x.id+'-'+i+'">'+pmLucroHtml((_pmPreco[x.id+'|'+i]!=null&&_pmSim[x.id+'|'+i])||o.m)+(o.catalogo?'<div class="pm-sub" style="color:'+(/ganha/.test(o.catalogo)?'#2e7d32':'#c62828')+'">catálogo: '+o.catalogo+'</div>':'')+'</div>'+
+      '<div class="pm-op-acao">'+botao+'</div></div>';
+  }).join('');
+  return '<div class="pm-card"><div class="pm-head">'+(x.thumb?'<img src="'+shpEsc(x.thumb)+'">':'<div class="pm-noimg">📦</div>')+
+    '<div class="pm-tit"><a href="'+shpEsc(x.link)+'" target="_blank">'+shpEsc(x.titulo)+'</a><div class="pm-meta"><span class="pm-chip">SKU '+shpEsc(x.sku||'—')+'</span><span class="pm-chip">'+x.id+'</span>'+cat+'</div></div>'+
+    '<div class="pm-hoje"><div class="pm-sub">Hoje</div><div class="pm-preco">'+pmBRL(x.precoAtual)+'</div>'+(x.ativa?'<div class="pm-sub">'+shpEsc(x.ativa.nome)+'</div>':x.semPromo?'<span class="pm-tag pm-tlaranja">sem promoção</span>':'')+'<div style="margin-top:4px">'+pmLucroHtml(x.atual)+'</div></div></div>'+
+    (extra||'')+(x.opcoes.length?'<div class="pm-ops">'+ops+'</div>':'<div class="pm-vazio">Nenhuma promoção disponível no ML para este anúncio agora.</div>')+'</div>';
 }
 function renderSaidaML(){
   if(!_pm||!(_pm.itens||[]).length)return;
@@ -737,7 +777,7 @@ function renderSaidaML(){
 }
 async function entrarPromoML(item,i,btn){
   const x=_pm.itens.find(y=>y.id===item),o0=x.opcoes[i],preco=o0.livre?(_pmPreco[item+'|'+i]??o0.preco):o0.preco,o={...o0,preco};
-  if(o0.livre&&_pmPreco[item+'|'+i]!=null){const cel=el('pml-'+item+'-'+i);const t=(cel?.innerText||'');const mm=t.match(/R\$ ([\d.,-]+) \(([\d.,-]+)%\)/);if(mm)o.m={lucro:+mm[1].replace('.','').replace(',','.'),pct:mm[2]};}
+  if(o0.livre&&_pmPreco[item+'|'+i]!=null&&_pmSim[item+'|'+i])o.m=_pmSim[item+'|'+i];
   if(!confirm('Entrar na promoção "'+o.nome+'" com o anúncio\n'+x.titulo+'\n\nPreço: R$ '+o.preco.toFixed(2).replace('.',',')+(o.rebate?' (+ rebate ML R$ '+o.rebate.toFixed(2).replace('.',',')+')':'')+'\nLucro estimado: '+(o.m?.lucro!=null?'R$ '+o.m.lucro.toFixed(2).replace('.',',')+' ('+o.m.pct+'%)':'sem custo no ERP')+'?'))return;
   btn.disabled=true;btn.textContent='Entrando…';
   try{const r=await (await fetch('/ml/promos/'+ci+'/entrar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item,opcao:i,preco:o0.livre?preco:undefined})})).json();
