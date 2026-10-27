@@ -36,7 +36,9 @@ function lerCsv(txt) {
 
 function skusDaConta(d) {
   const set = new Map();
-  for (const it of [...(d?.ativos || []), ...(d?.pausados || [])]) {
+  const arr = k => Array.isArray(d?.[k]) ? d[k] : [];
+  for (const it of ['semPromo', 'comPromo', 'perdendo', 'ganhando', 'atualizando'].flatMap(arr)) {
+    if (!it || typeof it !== 'object') continue;
     const add = s => { s = String(s || '').trim(); if (s && !set.has(s)) set.set(s, { titulo: it.title, mlb: it.id }); };
     add(it._sku || it.seller_sku || it.seller_custom_field);
     for (const v of it.variations || []) { add(v.seller_custom_field); add((v.attributes || []).find(a => a.id === 'SELLER_SKU')?.value_name); }
@@ -51,7 +53,7 @@ module.exports = function (app, { dadosCache }) {
     catch (e) { res.status(400).json({ erro: e.message }); }
   });
 
-  app.get('/turbo/:idx', async (req, res) => {
+  app.get('/turbo/:idx', async (req, res) => { try {
     const idx = +req.params.idx; if (![0, 1, 2].includes(idx)) return res.status(400).json({ erro: 'conta inválida' });
     const d = dadosCache[idx];
     const tb = lerJson(arqCsv(idx), null);
@@ -76,5 +78,5 @@ module.exports = function (app, { dadosCache }) {
       });
     }
     res.json({ conta: d?.nickname || '', erp: idx === 2 ? 'Tiny' : 'Bling', imposto: imp, importado: tb ? { em: tb.em, arquivo: tb.arquivo, skus: Object.keys(tb.mapa).length } : null, itens });
-  });
+  } catch (e) { res.status(500).json({ erro: e.message }); } });
 };
