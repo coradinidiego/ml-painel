@@ -35,6 +35,9 @@ const ARQ_DEV = path.join(DATA, 'apuracao_cache', 'nf_devolucao.json');
 const DEV = lerJson(ARQ_DEV, {});     // chave -> nota de venda enviada e cancelada: esperar o produto voltar e emitir NF de devolução
 let DEV_NOVOS = [], NAO_CONF = [], ANALISAR = [];
 const ENTRADAS = new Set();           // "emp|pedido" com NF de entrada (devolução) já emitida
+const DEVOLVIDAS = new Set();         // chave da nota de venda que já tem NF de devolução (entrada do mesmo cliente e valor)
+const soDig = v => String(v || '').replace(/\D/g, '');
+
 let ML = null;
 // SHEIN: se o pedido saiu (enviado/coletado) a nota vale — o "cancelado" do ERP não reflete a SHEIN
 async function sheinEnviado(empId, pedido) {
@@ -158,14 +161,16 @@ async function coletarTiny() {
   const desde = br(new Date(Date.now() - DIAS * 864e5));
   const canc = (await tinyTodas('pedidos.pesquisa.php', 'pedidos', { situacao: 'cancelado', dataInicial: desde })).map(x => x.pedido);
   const porLoja = new Map(canc.filter(p => p.numero_ecommerce).map(p => [String(p.numero_ecommerce), p]));
+  const ENT_TINY = new Set();   // cliente|valor das notas de entrada (devolução) dos últimos 60 dias
   const nfs = (await tinyTodas('notas.fiscais.pesquisa.php', 'notas_fiscais', { dataInicial: desde, tipoNota: 'S' })).map(x => x.nota_fiscal);
   try { const ent = (await tinyTodas('notas.fiscais.pesquisa.php', 'notas_fiscais', { dataInicial: br(new Date(Date.now() - 60 * 864e5)), tipoNota: 'E' })).map(x => x.nota_fiscal);
-    for (const n of ent) if (n.numero_ecommerce && ['6', '7'].includes(String(n.situacao))) ENTRADAS.add('lufe|' + n.numero_ecommerce); } catch (er) {}
+    for (const n of ent) if (['6', '7'].includes(String(n.situacao))) { if (n.numero_ecommerce) ENTRADAS.add('lufe|' + n.numero_ecommerce); ENT_TINY.add(soDig(n.cliente?.cpf_cnpj) + '|' + (+n.valor).toFixed(2)); } } catch (er) {}
   const out = [];
   for (const n of nfs) {
     if (!['6', '7'].includes(String(n.situacao)) || n.tipo === 'E') continue;   // 6 autorizada, 7 emitida DANFE
     const p = porLoja.get(String(n.numero_ecommerce || ''));
     if (!p) continue;
+    if (ENT_TINY.has(soDig(n.cliente?.cpf_cnpj) + '|' + (+n.valor).toFixed(2))) { DEVOLVIDAS.add('tiny|' + n.id); continue; }   // já tem NF de devolução: resolvido
     const sit = await conferirSite('lufe', 2, n.numero_ecommerce);
     if (sit.full) { EXCLUIDOS.add('tiny|' + n.id); continue; }   // Full: nota não se cancela pelo ERP
     if (sit.cancelado !== true) { EXCLUIDOS.add('tiny|' + n.id);
@@ -185,6 +190,7 @@ async function coletarTiny() {
   const noSite = await siteCancelados('lufe', 2);
   for (const k of noSite) {
     const n = autorizadas.get(k); if (!n || porLoja.has(k)) continue;
+    if (ENT_TINY.has(soDig(n.cliente?.cpf_cnpj) + '|' + (+n.valor).toFixed(2))) continue;
     const sit = await conferirSite('lufe', 2, k); if (sit.full || sit.cancelado !== true) continue;
     ANALISAR.push({ chave: 'an|tiny|' + n.id, emp: 'lufe', nf: n.numero, serie: n.serie, situacaoNf: 'autorizada', pedido: k, cliente: n.nome, valor: +n.valor || null,
       motivo: motivo('Tiny', sit.canal, sit, false), link: 'https://erp.tiny.com.br/notas_fiscais#edit/' + n.id });
@@ -210,6 +216,24 @@ const NF_AUTORIZADA = new Set([5, 6, 7]);   // 5 autorizada, 6 emitida DANFE, 7 
 async function coletarBling(e, cache) {
   const c = require('./bling').client(e.idx);
   const desde = iso(new Date(Date.now() - DIAS * 864e5));
+  // notas de entrada (devolução) dos últimos 60 dias, por documento do cliente
+  const entradas = new Map();
+  try { const d60 = iso(new Date(Date.now() - 60 * 864e5));
+    for (let pagina = 1; pagina <= 20; pagina++) {
+      const d = await blingGet(c, `/nfe?limite=100&pagina=${pagina}&tipo=0&dataEmissaoInicial=${d60}%2000:00:00`); await delay(340);
+      for (const n of d?.data || []) if (NF_AUTORIZADA.has(Number(n.situacao))) { const k = soDig(n.contato?.numeroDocumento); if (k) (entradas.get(k) || entradas.set(k, []).get(k)).push(n); }
+      if ((d?.data || []).length < 100) break;
+    } } catch (er) {}
+  const temDevolucao = async nf => {   // entrada do mesmo cliente, depois da venda, com o mesmo valor
+    const L = entradas.get(soDig(nf?.contato?.numeroDocumento)) || [];
+    for (const n of L) {
+      if (nf.dataEmissao && n.dataEmissao < nf.dataEmissao) continue;
+      let v = cache['e' + n.id];
+      if (v === undefined) { const d = (await blingGet(c, '/nfe/' + n.id))?.data; await delay(340); v = cache['e' + n.id] = +d?.valorNota || 0; }
+      if (Math.abs(v - (+nf.valorNota || 0)) < 0.05) return true;
+    }
+    return false;
+  };
   const peds = [];
   for (let pagina = 1; pagina <= 30; pagina++) {
     const d = await blingGet(c, `/pedidos/vendas?limite=100&pagina=${pagina}&idsSituacoes[]=12&dataInicial=${desde}`);
@@ -230,6 +254,7 @@ async function coletarBling(e, cache) {
     try { nf = (await blingGet(c, '/nfe/' + nfId))?.data; await delay(340); }
     catch (er) { if (er.response?.status === 403) throw Object.assign(new Error('o app do Bling não tem permissão de Notas Fiscais'), { semEscopo: true }); throw er; }
     if (!nf || !NF_AUTORIZADA.has(Number(nf.situacao))) continue;
+    if (await temDevolucao(nf)) { DEVOLVIDAS.add('bling' + e.idx + '|' + nfId); continue; }   // já tem NF de devolução: resolvido
     const sit = await conferirSite(e.id, e.idx, p.numeroLoja);
     if (sit.full) { EXCLUIDOS.add('bling' + e.idx + '|' + nfId); continue; }   // Full: nota não se cancela pelo Bling
     if (sit.cancelado !== true) { EXCLUIDOS.add('bling' + e.idx + '|' + nfId);
@@ -254,6 +279,7 @@ async function coletarBling(e, cache) {
     const p = await pedidoBling(k); if (!p || Number(p.situacao?.id) === 12) continue;
     const nfId = await nfDoPedido(p.id); if (!nfId) continue;
     const nf = await nfSit(nfId); if (!nf || !NF_AUTORIZADA.has(Number(nf.situacao))) continue;
+    if (await temDevolucao(nf)) continue;
     const sit = await conferirSite(e.id, e.idx, k); if (sit.full || sit.cancelado !== true) continue;
     ANALISAR.push({ chave: 'an|bling' + e.idx + '|' + nfId, emp: e.id, nf: nf.numero, serie: nf.serie, situacaoNf: 'autorizada', pedido: k, pedidoErp: p.numero, cliente: p.contato?.nome || '', valor: +p.total || null,
       motivo: motivo('Bling', sit.canal, sit, false), link: 'https://www.bling.com.br/notas.fiscais.php#edit/' + nfId });
@@ -318,7 +344,7 @@ async function sincronizarTrello() {
       try { await trello('put', '/cards/' + t.card, { closed: true }); } catch (er) { if (er.response?.status !== 404) throw er; }
       t.resolvido = new Date().toISOString(); t.full = true; gravar(ARQ_TR, TR); continue;
     }
-    try { await trello('put', '/cards/' + t.card, { dueComplete: true }); await trello('post', '/cards/' + t.card + '/actions/comments', { text: t.analise ? '✅ Bling/Tiny, site e nota agora batem (conferido pelo painel).' : '✅ Nota cancelada (conferido pelo painel).' }); }
+    try { await trello('put', '/cards/' + t.card, { dueComplete: true }); await trello('post', '/cards/' + t.card + '/actions/comments', { text: DEVOLVIDAS.has(chave) ? '✅ NF de devolução emitida (conferido pelo painel).' : t.analise ? '✅ Bling/Tiny, site e nota agora batem (conferido pelo painel).' : '✅ Nota cancelada (conferido pelo painel).' }); }
     catch (er) { if (er.response?.status !== 404) throw er; }
     t.resolvido = new Date().toISOString(); gravar(ARQ_TR, TR);
   }
@@ -350,7 +376,7 @@ module.exports = function montar(app, ctx = {}) {
   async function atualizar() {
     if (rodando) return; rodando = true;
     try {
-      DEV_NOVOS = []; NAO_CONF = []; ANALISAR = [];
+      DEV_NOVOS = []; NAO_CONF = []; ANALISAR = []; DEVOLVIDAS.clear();
       for (const e of EMP) {
         const R = ST[e.id] ||= {};
         try {
@@ -363,7 +389,7 @@ module.exports = function montar(app, ctx = {}) {
       }
       for (const e of EMP) if (!ST[e.id]?.erro) { ST[e.id].analisar = ANALISAR.filter(x => x.emp === e.id); } gravar(ARQ, ST);
       for (const d of DEV_NOVOS) DEV[d.chave] = { ...(DEV[d.chave] || {}), ...d, visto: new Date().toISOString() };
-      for (const d of Object.values(DEV)) if (!d.feito && ENTRADAS.has(d.emp + '|' + d.pedido)) { d.feito = new Date().toISOString(); d.feitoPor = 'NF de entrada encontrada no ERP'; }
+      for (const d of Object.values(DEV)) if (!d.feito && (ENTRADAS.has(d.emp + '|' + d.pedido) || DEVOLVIDAS.has(d.chave))) { d.feito = new Date().toISOString(); d.feitoPor = 'NF de entrada encontrada no ERP'; }
       for (const [k, d] of Object.entries(DEV)) if (d.feito && Date.now() - Date.parse(d.feito) > 90 * 864e5) delete DEV[k];
       gravar(ARQ_DEV, DEV);
       try { await sincronizarTrello(); trErro = null; } catch (er) { trErro = er.message; console.warn('[nf_cancelar/trello]', er.message); }
