@@ -1,5 +1,6 @@
 /**
- * Apuração de lucro — Amazon, Shein e TikTok das três empresas (ML e Shopee ficam no Mercado Turbo).
+ * Apuração de lucro — Mercado Livre, Shopee, Amazon, Shein e TikTok das três empresas.
+ *  Mercado Livre e Shopee vêm direto das APIs (pedidos, tarifas, frete e repasse reais).
  * Montado em server.js:  app.use('/apuracao-mkt', require('./apuracao_mkt').router)
  *
  *  Pedidos:   Zagodini / Com Amor de Mãe → Bling (todas as situações, menos cancelado)
@@ -35,7 +36,7 @@ const EMP = {
   mae:      { nome: 'Com Amor de Mãe', idx: 1, erp: 'bling', amazon: 'mae',      conta: 'camae' },
   lufe:     { nome: 'Lufe',            idx: 2, erp: 'tiny',  amazon: 'lufe' },
 };
-const CANAIS = ['Amazon', 'Shein', 'TikTok'];
+const CANAIS = ['Mercado Livre', 'Shopee', 'Amazon', 'Shein', 'TikTok'];
 
 function canalDe(nome, numLoja) {
   const s = String(nome || '').toLowerCase(), n = String(numLoja || '').trim();
@@ -115,6 +116,95 @@ async function financeiroAmazon(empKey, ini, fim, job) {
   return ped;
 }
 
+
+// ─── Mercado Livre e Shopee: direto das APIs ────────────────────────────────
+let FONTES = {};
+function setFontes(f) { FONTES = f || {}; }
+const arqML = emp => path.join(DIR, `apmkt_ml_${emp}.json`);     // { ped: {id: pedido}, envio: {id: {custo, em}}, desc: {id: rebate} }
+const arqShp = emp => path.join(DIR, `apmkt_shp_${emp}.json`);   // { sn: pedido + escrow }
+const arqCanal = (emp, canal, ini, fim) => path.join(DIR, `apmkt_${canal}_${emp}_${ini}_${fim}.json`);
+const diaSP = iso => new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+const diasEntre = (ini, fim) => { const out = []; for (let d = new Date(ini + 'T12:00:00Z'); d <= new Date(fim + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 1)) out.push(d.toISOString().slice(0, 10)); return out; };
+async function paralelo(lista, n, fn) { let i = 0; await Promise.all(Array.from({ length: n }, async () => { while (i < lista.length) { const x = lista[i++]; await fn(x); } })); }
+
+async function buscarML(empKey, ini, fim, job) {
+  const ml = FONTES.ml, idx = EMP[empKey].idx;
+  if (!ml) return;
+  const C = lerJson(arqML(empKey), { ped: {}, envio: {}, desc: {} });
+  const uid = (await ml(idx, '/users/me')).id, ids = [], dias = diasEntre(ini, fim);
+  for (let i = 0; i < dias.length; i++) {
+    for (let off = 0; off < 5000; off += 50) {
+      if (job.cancelar) throw new Error('Cancelado');
+      const r = await ml(idx, '/orders/search', { seller: uid, 'order.date_created.from': dias[i] + 'T00:00:00.000-03:00', 'order.date_created.to': dias[i] + 'T23:59:59.999-03:00', limit: 50, offset: off, sort: 'date_asc' });
+      for (const o of r.results || []) {
+        C.ped[o.id] = { id: o.id, pack: o.pack_id || null, data: diaSP(o.date_created), status: o.status, ship: o.shipping?.id || null, cliente: o.buyer?.nickname || '',
+          total: +o.total_amount || 0, refund: (o.payments || []).reduce((a, p) => a + (+p.transaction_amount_refunded || 0), 0), desconto: (o.tags || []).includes('order_has_discount'),
+          itens: (o.order_items || []).map(x => ({ sku: x.item?.seller_sku || x.item?.seller_custom_field || '', titulo: x.item?.title || '', q: +x.quantity || 1, pu: +x.unit_price || 0, fee: +x.sale_fee || 0 })) };
+        ids.push(o.id);
+      }
+      if ((r.results || []).length < 50) break;
+    }
+    job.fase = `Mercado Livre ${EMP[empKey].nome}: pedidos ${dias[i]} (${ids.length})`; job.pct = Math.max(job.pct, 80);
+  }
+  // frete pago pelo vendedor (por envio) e rebate do ML (desconto bancado pelo ML fora da tarifa)
+  const recente = d => Date.now() - Date.parse(d + 'T12:00:00Z') < 10 * 864e5;
+  const envios = [...new Set(ids.map(id => C.ped[id].ship).filter(Boolean))].filter(sid => !C.envio[sid] || recente(C.envio[sid].data || '2000-01-01'));
+  let k = 0;
+  await paralelo(envios, 4, async sid => {
+    if (job.cancelar) return;
+    try { const c = await ml(idx, '/shipments/' + sid + '/costs'); C.envio[sid] = { custo: +(c.senders || []).reduce((a, x) => a + (+x.cost || 0), 0), data: diaSP(new Date().toISOString()) }; } catch (e) {}
+    if (++k % 50 === 0) { job.fase = `Mercado Livre ${EMP[empKey].nome}: frete dos envios ${k}/${envios.length}`; gravarJson(arqML(empKey), C); }
+  });
+  const comDesc = ids.filter(id => C.ped[id].desconto && C.desc[id] === undefined);
+  await paralelo(comDesc, 4, async id => {
+    try { const d = await ml(idx, '/orders/' + id + '/discounts');
+      C.desc[id] = (d.details || []).filter(x => x.supplier?.funding_mode && x.supplier.funding_mode !== 'sale_fee').reduce((a, x) => a + (x.items || []).reduce((b, it) => b + Math.max(0, (+it.amounts?.total || 0) - (+it.amounts?.seller || 0)), 0), 0);
+    } catch (e) { C.desc[id] = 0; }
+  });
+  gravarJson(arqML(empKey), C);
+  gravarJson(arqCanal(empKey, 'ml', ini, fim), { ini, fim, geradoEm: new Date().toISOString(), ids });
+}
+
+async function buscarShopee(empKey, ini, fim, job) {
+  const sp = require('./shopee').loja(empKey);
+  if (!sp.getTokens().access_token) return;
+  const C = lerJson(arqShp(empKey), {}), sns = [];
+  const t0 = Math.floor(Date.parse(ini + 'T00:00:00-03:00') / 1000), t1 = Math.floor(Date.parse(fim + 'T23:59:59-03:00') / 1000);
+  for (let a = t0; a <= t1; a += 15 * 86400) {
+    const b = Math.min(t1, a + 15 * 86400 - 1);
+    for (let cur = '', pg = 0; pg < 100; pg++) {
+      if (job.cancelar) throw new Error('Cancelado');
+      const d = await sp.shopeeGet('/api/v2/order/get_order_list', { time_range_field: 'create_time', time_from: a, time_to: b, page_size: 100, ...(cur ? { cursor: cur } : {}) });
+      if (d.error) throw new Error('Shopee pedidos: ' + (d.message || d.error));
+      sns.push(...(d.response?.order_list || []).map(o => o.order_sn));
+      if (!d.response?.more) break; cur = d.response.next_cursor;
+    }
+  }
+  job.fase = `Shopee ${EMP[empKey].nome}: ${sns.length} pedidos`;
+  for (let i = 0; i < sns.length; i += 50) {
+    if (job.cancelar) throw new Error('Cancelado');
+    const d = await sp.shopeeGet('/api/v2/order/get_order_detail', { order_sn_list: sns.slice(i, i + 50).join(','), response_optional_fields: 'item_list,order_status,create_time,buyer_username,total_amount' });
+    for (const o of d.response?.order_list || []) C[o.order_sn] = { ...(C[o.order_sn] || {}), sn: o.order_sn, data: diaSP(o.create_time * 1000), status: o.order_status, cliente: o.buyer_username || '', total: +o.total_amount || 0,
+      itens: (o.item_list || []).map(x => ({ sku: x.model_sku || x.item_sku || '', titulo: x.item_name || '', q: +x.model_quantity_purchased || 1, pu: +x.model_discounted_price || +x.model_original_price || 0 })) };
+  }
+  // repasse (escrow): definitivo quando o pedido está concluído; antes disso é estimado e é buscado de novo
+  const faltam = sns.filter(sn => C[sn] && !['CANCELLED', 'UNPAID'].includes(C[sn].status) && (!C[sn].esc || C[sn].escStatus !== 'COMPLETED'));
+  let k = 0;
+  await paralelo(faltam, 3, async sn => {
+    if (job.cancelar) return;
+    try {
+      const d = await sp.shopeeGet('/api/v2/payment/get_escrow_detail', { order_sn: sn }); const e = d.response?.order_income;
+      if (e) { C[sn].esc = { escrow: +e.escrow_amount || 0, comissao: +e.commission_fee || 0, servico: +e.service_fee || 0, transacao: +e.seller_transaction_fee || 0, freteReal: +e.actual_shipping_fee || 0,
+        fretePago: +e.buyer_paid_shipping_fee || 0, freteRebate: +e.shopee_shipping_rebate || 0, voucher: +e.voucher_from_seller || 0, cogs: +e.cost_of_goods_sold || 0,
+        itens: (e.items || []).map(x => ({ sku: x.model_sku || x.item_sku || '', q: +x.quantity_purchased || 1, preco: +x.discounted_price || 0, voucher: +x.discount_from_voucher_seller || 0, titulo: x.item_name || '' })) };
+        C[sn].escStatus = C[sn].status; }
+    } catch (e) {}
+    if (++k % 40 === 0) { job.fase = `Shopee ${EMP[empKey].nome}: repasse ${k}/${faltam.length}`; gravarJson(arqShp(empKey), C); }
+  });
+  gravarJson(arqShp(empKey), C);
+  gravarJson(arqCanal(empKey, 'shp', ini, fim), { ini, fim, geradoEm: new Date().toISOString(), sns });
+}
+
 // ─── Busca (em segundo plano) ──────────────────────────────────────────────
 const jobs = {};
 const arqSit = idx => path.join(DATA, 'apuracao_cache', `apmkt_sit_${idx}.json`);
@@ -190,6 +280,10 @@ async function buscar(empKey, ini, fim) {
     job.pct = 78; job.fase = 'Financeiro da Amazon...';
     try { const f = await financeiroAmazon(empKey, ini, fim, job); if (f) gravarJson(arqAmz(empKey, ini, fim), { geradoEm: new Date().toISOString(), pedidos: f }); }
     catch (e) { if (e.message === 'Cancelado') throw e; console.warn('[apuracao-mkt] financeiro Amazon', empKey, e.message); job.avisoAmazon = e.message; }
+    job.pct = 80; job.fase = 'Mercado Livre...';
+    try { await buscarML(empKey, ini, fim, job); } catch (e) { if (e.message === 'Cancelado') throw e; console.warn('[apuracao-mkt] ML', empKey, e.message); job.avisoML = e.message; }
+    job.pct = 88; job.fase = 'Shopee...';
+    try { await buscarShopee(empKey, ini, fim, job); } catch (e) { if (e.message === 'Cancelado') throw e; console.warn('[apuracao-mkt] Shopee', empKey, e.message); job.avisoShopee = e.message; }
     job.fase = 'Custos do ERP...'; job.pct = 95;
     cm.recarregarErp(E.idx);   // custos sempre atualizados do ERP a cada busca
     await cm.custosErp(E.idx).catch(() => {});
@@ -242,6 +336,8 @@ async function calcular(empKey, ini, fim) {
         o.origemTaxa += fr >= 0.999 ? ' · devolvido' : ' · devolução parcial';
       }
     }
+    if (o._devolucao) { const fr = Math.min(1, o._devolucao / (o.receita || 1)); o.devolucao = o._devolucao; o.cmv *= 1 - fr; o.imposto *= 1 - fr; o.origemTaxa += ' · devolução parcial'; }
+    delete o._devolucao;
     delete o._valPed;
     const lucro = o.receita - o.devolucao - o.cmv - o.comissao - o.taxa - o.frete - o.imposto - o.embalagem;
     linhas.push({ ...o, devolucao: r2(o.devolucao), cmv: r2(o.cmv), comissao: r2(o.comissao), taxa: r2(o.taxa), frete: r2(o.frete), imposto: r2(o.imposto), embalagem: r2(o.embalagem),
@@ -322,6 +418,53 @@ async function calcular(empKey, ini, fim) {
         add({ empresa: E.nome, canal, data: (p.data_pedido || '').split('/').reverse().join('-'), pedido: p.numero, pedidoCanal: p.numero_ecommerce || '', situacao: p.situacao,
           cliente: p.cliente?.nome || '', sku, descricao: it.descricao || '', qtd: q, precoUn: r2(pu), receita, custoUn: cu, origemCusto,
           cmv: (cu || 0) * q, comissao: t.comissao, taxa: t.taxa, frete: t.frete, imposto: receita * aliq, embalagem: i === 0 ? emb : 0, origemTaxa: t.origem, _valPed: valPed });
+      });
+    }
+  }
+  // ── Mercado Livre (API): preço − tarifa do ML (já com o desconto bancado pelo ML) − frete do vendedor + rebate ──
+  const perML = lerJson(arqCanal(empKey, 'ml', ini, fim), null);
+  if (perML) {
+    const C = lerJson(arqML(empKey), { ped: {}, envio: {}, desc: {} });
+    const porEnvio = {};
+    for (const id of perML.ids) { const o = C.ped[id]; if (o?.ship && o.status !== 'cancelled') porEnvio[o.ship] = (porEnvio[o.ship] || 0) + o.total; }
+    for (const id of perML.ids) {
+      const o = C.ped[id]; if (!o) continue;
+      const pedido = String(o.pack || o.id);
+      if (o.status === 'cancelled' || (o.refund > 0 && o.refund >= o.total - 0.01)) { fora.push({ empresa: E.nome, canal: 'Mercado Livre', data: o.data, pedido, pedidoCanal: String(o.id), situacao: o.status === 'cancelled' ? 'cancelado' : 'devolvido', valor: o.total }); continue; }
+      const freteOrd = o.ship && C.envio[o.ship] ? C.envio[o.ship].custo * (porEnvio[o.ship] ? o.total / porEnvio[o.ship] : 1) : 0;
+      const rebate = C.desc[id] || 0, valPed = o.itens.reduce((a, x) => a + x.pu * x.q, 0) || o.total;
+      o.itens.forEach((x, i) => {
+        const receita = r2(x.pu * x.q), prop = valPed > 0 ? receita / valPed : 1;
+        const [cu, origemCusto] = custoDe(x.sku, 'Mercado Livre');
+        add({ empresa: E.nome, canal: 'Mercado Livre', data: o.data, pedido, pedidoCanal: String(o.id), situacao: o.status, cliente: o.cliente, sku: x.sku, descricao: x.titulo, qtd: x.q, precoUn: r2(x.pu), receita,
+          custoUn: cu, origemCusto, cmv: (cu || 0) * x.q, comissao: x.fee * x.q - rebate * prop, taxa: 0, frete: freteOrd * prop, imposto: receita * aliq, embalagem: i === 0 ? emb : 0,
+          origemTaxa: 'ML (real)' + (rebate ? ' · rebate ML' : '') + (C.envio[o.ship] ? '' : ' · frete pendente'), _valPed: valPed, _devolucao: o.refund > 0 ? o.refund * prop : 0 });
+      });
+    }
+  }
+  // ── Shopee (API): repasse real (escrow) = preço − comissão − taxas − frete ──
+  const perShp = lerJson(arqCanal(empKey, 'shp', ini, fim), null);
+  if (perShp) {
+    const C = lerJson(arqShp(empKey), {});
+    for (const sn of perShp.sns) {
+      const o = C[sn]; if (!o || o.status === 'UNPAID') continue;
+      if (['CANCELLED', 'IN_CANCEL'].includes(o.status)) { fora.push({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: o.status === 'IN_CANCEL' ? 'cancelando' : 'cancelado', valor: o.total }); continue; }
+      const e = o.esc;
+      // discounted_price pode vir por unidade ou pela linha: confere com o total de produtos (cost_of_goods_sold)
+      const porLinha = e?.itens?.length && e.cogs ? Math.abs(e.itens.reduce((a, x) => a + x.preco, 0) - e.cogs) < Math.abs(e.itens.reduce((a, x) => a + x.preco * x.q, 0) - e.cogs) : true;
+      const itens = e?.itens?.length ? e.itens.map(x => ({ sku: x.sku, q: x.q, receita: r2((porLinha ? x.preco : x.preco * x.q) - x.voucher), titulo: x.titulo })) : o.itens.map(x => ({ sku: x.sku, q: x.q, receita: r2(x.pu * x.q), titulo: x.titulo }));
+      const recTot = itens.reduce((a, x) => a + x.receita, 0);
+      let com = 0, frete = 0, taxa = 0, origem = 'Shopee (sem repasse ainda)';
+      if (e) {
+        frete = Math.max(0, e.freteReal - e.fretePago - e.freteRebate); com = e.comissao;
+        taxa = Math.max(0, recTot - e.escrow - com - frete);
+        origem = o.status === 'COMPLETED' ? 'Shopee (repasse real)' : 'Shopee (repasse estimado)';
+      }
+      itens.forEach((x, i) => {
+        const prop = recTot > 0 ? x.receita / recTot : 1 / itens.length;
+        const [cu, origemCusto] = custoDe(x.sku, 'Shopee');
+        add({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: o.status, cliente: o.cliente, sku: x.sku, descricao: x.titulo, qtd: x.q, precoUn: r2(x.receita / (x.q || 1)), receita: x.receita,
+          custoUn: cu, origemCusto, cmv: (cu || 0) * x.q, comissao: com * prop, taxa: taxa * prop, frete: frete * prop, imposto: x.receita * aliq, embalagem: i === 0 ? emb : 0, origemTaxa: origem, _valPed: recTot });
       });
     }
   }
@@ -440,4 +583,4 @@ router.get('/auto', (req, res) => {
 });
 router.post('/auto/rodar', (req, res) => { rodarAuto('manual'); res.json({ ok: true }); });
 
-module.exports = { router };
+module.exports = { router, setFontes };

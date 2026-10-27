@@ -221,12 +221,12 @@ body{background:#f0f2f5;color:#111}
 
 <!-- Apuração Amazon / Shein / TikTok — todas as empresas (ML e Shopee: Mercado Turbo) -->
 <div id="apmkt-content" style="display:none"><div class="content">
-  <div class="sec-head" style="background:none;border:none;padding:0 0 10px"><span style="font-size:16px;font-weight:700">📊 Apuração · Amazon, Shein e TikTok</span><span style="font-size:12px;color:#888">Mercado Livre e Shopee: Mercado Turbo</span></div>
+  <div class="sec-head" style="background:none;border:none;padding:0 0 10px"><span style="font-size:16px;font-weight:700">📊 Apuração · todos os canais</span><span style="font-size:12px;color:#888">Mercado Livre e Shopee direto das APIs (tarifa, frete e repasse reais)</span></div>
   <div id="am-auto" style="font-size:12px;color:#666;margin:-4px 0 10px"></div>
   <div id="am-alerta"></div>
   <div style="background:white;border-radius:10px;border:1px solid #eee;padding:14px 18px;margin-bottom:14px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
     <div><label class="tl-lbl">Empresa</label><select id="am-emp" class="tl-in"><option value="todas">Todas</option><option value="zagodini">Zagodini</option><option value="mae">Com Amor de Mãe</option><option value="lufe">Lufe</option></select></div>
-    <div><label class="tl-lbl">Canal</label><select id="am-canal" class="tl-in" onchange="amRender()"><option value="">Todos</option><option>Amazon</option><option>Shein</option><option>TikTok</option></select></div>
+    <div><label class="tl-lbl">Canal</label><select id="am-canal" class="tl-in" onchange="amRender()"><option value="">Todos</option><option>Mercado Livre</option><option>Shopee</option><option>Amazon</option><option>Shein</option><option>TikTok</option></select></div>
     <div><label class="tl-lbl">Mês</label><select id="am-mes" class="tl-in" onchange="amMes()"></select></div>
     <div><label class="tl-lbl">De</label><input type="date" id="am-ini" class="tl-in"></div>
     <div><label class="tl-lbl">Até</label><input type="date" id="am-fim" class="tl-in"></div>
@@ -572,7 +572,7 @@ CONTAS.forEach((c,i)=>{
   bar.appendChild(btn);
 });
 {const a=document.createElement('button');a.className='conta-tab geral';a.id='cb-apuracao';
- a.innerHTML='<span class="ct-logo" style="font-size:24px">📊</span><span class="ct-txt"><b>Apuração</b><small>Amazon · Shein · TikTok</small></span>';
+ a.innerHTML='<span class="ct-logo" style="font-size:24px">📊</span><span class="ct-txt"><b>Apuração</b><small>ML · Shopee · Amazon · Shein · TikTok</small></span>';
  a.onclick=()=>abrirApuracao();bar.appendChild(a);}
 // Shopee fica dentro da Zagodini: chave Mercado Livre | Shopee
 // Cada conta tem a chave Mercado Livre | Shopee
@@ -3733,7 +3733,7 @@ function amRender(){
   el('am-out').innerHTML=h;el('am-exp').style.display='inline-block';amTabela();amGraficos(L,G);
 }
 // ── gráficos e margens por item ──
-const AM_COR_EMP={'Zagodini':'#1565C0','Com Amor de Mãe':'#D81B60','Lufe':'#2E7D32'},AM_COR_CANAL={Amazon:'#FF9900',Shein:'#222222',TikTok:'#00A6A6'};
+const AM_COR_EMP={'Zagodini':'#1565C0','Com Amor de Mãe':'#D81B60','Lufe':'#2E7D32'},AM_COR_CANAL={'Mercado Livre':'#E0B400',Shopee:'#EE4D2D',Amazon:'#FF9900',Shein:'#222222',TikTok:'#00A6A6'};
 let amCharts={};
 function amItens(L){
   const m={};for(const l of L){if(l.custoUn==null)continue;const k=l.empresa+'|'+l.sku;const o=m[k]||(m[k]={empresa:l.empresa,canais:new Set(),sku:l.sku,descricao:l.descricao,qtd:0,receita:0,lucro:0});o.canais.add(l.canal);o.qtd+=l.qtd;o.receita+=l.receita-(l.devolucao||0);o.lucro+=l.lucro;}
