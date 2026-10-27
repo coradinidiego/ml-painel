@@ -1424,7 +1424,7 @@ app.get('/debug/bling-raw/:idx', async (req, res) => {
 app.get('/debug/tiny-raw', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   const { metodo, ...q } = req.query;
-  if (!/^(notas?\.fiscais?\.(pesquisa|obter)|nota\.fiscal\.obter|pedidos\.pesquisa|pedido\.obter)\.php$/.test(String(metodo || ''))) return res.status(400).json({ erro: 'método não permitido' });
+  if (!/^(notas?\.fiscais?\.(pesquisa|obter)|nota\.fiscal\.obter|pedidos\.pesquisa|pedido\.obter|produtos?\.(pesquisa|obter)[\w.]*|produto\.[\w.]*custo[\w.]*)\.php$/.test(String(metodo || ''))) return res.status(400).json({ erro: 'método não permitido' });
   try { res.json(await require('./tiny').chamar(String(metodo), q)); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
 app.get('/debug/bling/:idx', async (req, res) => {
