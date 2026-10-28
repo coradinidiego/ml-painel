@@ -256,6 +256,7 @@ body{background:#f0f2f5;color:#111}
   <div class="sec-head" style="background:none;border:none;padding:0 0 10px"><span style="font-size:16px;font-weight:700">🏠 Início · todas as empresas</span><span style="font-size:12px;color:#888" id="geral-upd"></span></div>
   <div id="ini-cards"><div class="loading">Carregando...</div></div>
   <div id="ini-pv" class="rbox" style="display:none;margin-top:14px"></div>
+  <div id="ini-full" style="margin-top:10px"></div>
   <p style="font-size:12px;color:#888;margin:8px 0 18px">Clique em um número para abrir a lista. Perguntas e chats são conferidos a cada 5 min; o estoque, a cada 30 min. </p>
 
   <div class="section" id="ini-est">
@@ -400,6 +401,7 @@ body{background:#f0f2f5;color:#111}
     <button class="tab" onclick="showTab('adsml',this);carregarAdsML()">📣 ADS</button>
     <button class="tab" onclick="showTab('precos',this);carregarPrecos()">💲 Preços × planilha</button>
     <button class="tab" onclick="showTab('turbo',this);carregarTurbo()">⚡ Custos × Turbo</button>
+    <button class="tab" id="tab-btn-full" onclick="showTab('fullest',this);carregarFullEst()">🏬 Full · estoque antigo <span class="badge" id="tc-full" style="display:none;background:#c62828"></span></button>
   </div>
   <div id="tab-inicio" class="tab-content active">
     <div class="cards">
@@ -492,6 +494,15 @@ body{background:#f0f2f5;color:#111}
     </div>
     <div id="ad-resumo"></div>
     <div class="section"><div class="sec-head">📣 Anúncios <span class="cnt" id="c-adsml">-</span></div><div id="b-adsml"><div class="loading">Clique na aba para carregar...</div></div></div>
+  </div>
+  <div id="tab-fullest" class="tab-content">
+    <div id="fe-topo"></div>
+    <div class="sf">
+      <input class="sinput" type="text" placeholder="Buscar SKU ou nome..." oninput="renderFullEst()" id="fe-q">
+      <select class="sselect" id="fe-f" onchange="renderFullEst()"><option value="custo">Com custo na próxima cobrança</option><option value="risco">Vão entrar em cobrança (4 meses+ em 60 dias)</option><option value="">Todos com estoque no Full</option></select>
+      <button class="btn" onclick="atualizarFullEst()">↻ Recalcular agora</button>
+    </div>
+    <div class="section"><div class="sec-head">🏬 Produtos no Full <span class="cnt" id="c-fe">-</span></div><div id="b-fe"><div class="loading">Clique na aba para carregar...</div></div></div>
   </div>
   <div id="tab-turbo" class="tab-content">
     <div class="sf">
@@ -637,6 +648,48 @@ function renderTurbo(){
   const c=(v,d)=>'<td style="text-align:right;'+(d?'background:#fff3e0;color:#e65100;font-weight:700':'')+'">'+fm(v)+'</td>';
   el('b-mt').innerHTML=it.length?'<table class="tbl" style="width:100%;font-size:12px"><tr><th style="text-align:left">SKU</th><th style="text-align:left">Produto</th><th>Turbo</th><th>'+r.erp+'</th><th>Planilha</th><th>Turbo − ERP</th><th>Imposto Turbo</th></tr>'+
     it.slice(0,1000).map(x=>'<tr><td><b>'+x.sku+'</b>'+(x.anuncio?'':'<br><small style="color:#999">sem anúncio ativo</small>')+'</td><td>'+(x.titulo||'').slice(0,55)+'</td>'+c(x.turbo,x.difErp||x.difPlan)+c(x.erp,x.difErp||x.difErpPlan)+c(x.planilha,x.difPlan||x.difErpPlan)+'<td style="text-align:right">'+(x.delta==null?'':(x.delta>0?'+':'')+x.delta.toFixed(2).replace('.',','))+'</td><td style="text-align:center;'+(x.difImp?'color:#e65100;font-weight:700':'')+'">'+(x.turboImp==null?'—':x.turboImp+'%')+'</td></tr>').join('')+'</table>':'<div class="loading">Nada aqui.</div>';
+}
+
+let _fe=null,_feT=null;
+async function carregarFullEst(){
+  clearTimeout(_feT);
+  const r=await fetch('/full/estoque/'+ci).then(r=>r.json()).catch(e=>({erro:e.message}));
+  if(r.semFull){el('b-fe').innerHTML='<div class="loading">Esta conta não tem Full.</div>';el('fe-topo').innerHTML='';return;}
+  _fe=r;renderFullEst();
+  if(r.status?.rodando)_feT=setTimeout(carregarFullEst,8000);
+}
+async function atualizarFullEst(){await fetch('/full/estoque/'+ci+'/atualizar',{method:'POST'});setTimeout(carregarFullEst,1500);}
+async function feTam(inv,t){await fetch('/full/estoque/'+ci+'/tamanho',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({inv,tamanho:t})});carregarFullEst();}
+function renderFullEst(){
+  const r=_fe;if(!r)return;const s=r.status,br=d=>d?d.split('-').reverse().join('/'):'';
+  const fm=v=>'R$ '+(+v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  el('fe-topo').innerHTML='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'+
+    '<div style="background:white;border:1px solid #eee;border-radius:10px;padding:14px 18px;flex:1;min-width:240px"><div style="font-size:12px;color:#888">Previsto na cobrança de '+br(r.cobranca)+'</div><div style="font-size:26px;font-weight:700;color:'+(r.total>0?'#c62828':'#2e7d32')+'">'+fm(r.total)+'</div><div style="font-size:12px;color:#888">'+(r.produtos||0)+' produtos · já descontando o que deve vender até lá</div></div>'+
+    '<div style="background:white;border:1px solid #eee;border-radius:10px;padding:14px 18px;flex:2;min-width:300px;font-size:12px;color:#666">Idade calculada pelas movimentações do Full (as unidades em estoque são as entradas mais recentes). Tarifa por unidade/mês: 4–6 meses P R$1 · M R$2 · G R$6; 6–12 meses P R$12 · M R$15,90 · G R$40; +12 meses P R$28 · M R$35 · G R$92. O tamanho é estimado pelas medidas — confira com a tela do ML e corrija na coluna Tamanho.<br>'+
+    (s?.rodando?'<b>Calculando: '+s.feitos+'/'+(s.total||'?')+'</b> '+(s.fase||''):'Atualizado em '+(r.em?new Date(r.em).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}):'— (clique em Recalcular)')+(r.parcial?' (parcial)':'')+' · roda sozinho toda madrugada')+(s?.erro?' <span style="color:#c62828">'+s.erro+'</span>':'')+'</div></div>';
+  const q=(el('fe-q').value||'').toLowerCase(),f=el('fe-f').value;
+  let L=r.itens.filter(x=>!q||(x.sku+' '+x.titulo).toLowerCase().includes(q));
+  if(f==='custo')L=L.filter(x=>x.custoCob>0);
+  if(f==='risco')L=L.filter(x=>x.custoCob>0||x.hoje[0]>0&&x.maisAntiga&&(Date.now()-Date.parse(x.maisAntiga))/864e5>60);
+  el('c-fe').textContent=L.length;
+  const SUG={'baixar para ganhar':['#c62828','Baixar para o preço de ganhar'],'retirar ou liquidar':['#6a1b9a','Sem vendas: liquidar ou retirar'],'promover':['#e65100','Promover / baixar preço'],'vende a tempo':['#2e7d32','Vende antes da cobrança'],'ok':['#2e7d32','Sem custo']};
+  const fx=a=>a.map((q,i)=>q?'<span style="display:inline-block;min-width:22px;padding:1px 5px;border-radius:4px;margin:1px;font-size:11px;background:'+['#e8f5e9','#fff8e1','#ffe0b2','#ffcdd2'][i]+'">'+q+'</span>':'<span style="display:inline-block;min-width:22px;color:#ccc;font-size:11px;margin:1px">·</span>').join('');
+  el('b-fe').innerHTML=L.length?'<div style="font-size:11px;color:#888;margin-bottom:6px">Unidades por idade: <span style="background:#e8f5e9;padding:1px 5px">até 4m</span> <span style="background:#fff8e1;padding:1px 5px">4–6m</span> <span style="background:#ffe0b2;padding:1px 5px">6–12m</span> <span style="background:#ffcdd2;padding:1px 5px">+12m</span></div><div style="overflow-x:auto"><table class="tbl" style="width:100%;font-size:12px"><tr><th style="text-align:left">Produto</th><th>Tamanho</th><th>Estoque</th><th>Idade hoje</th><th>Na cobrança</th><th>Custo previsto</th><th>Vende/dia</th><th>Cobertura</th><th>Preço</th><th>Catálogo</th><th style="text-align:left">Sugestão</th></tr>'+
+    L.slice(0,400).map(x=>{const c=x.catalogo,sg=SUG[x.sugestao]||['#666',x.sugestao];
+      return '<tr><td style="max-width:300px"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><a href="https://produto.mercadolivre.com.br/'+x.item.replace('MLB','MLB-')+'" target="_blank">'+shpEsc(x.titulo)+'</a></div><small style="color:#999">'+shpEsc(x.sku||'')+(x.variacao?' · '+shpEsc(x.variacao):'')+' · '+x.inv+(x.maisAntiga?' · entrada mais antiga '+br(x.maisAntiga)+(x.semData?' ou antes':''):'')+'</small></td>'+
+      '<td><select class="sselect" style="padding:2px;font-size:11px;'+(x.tamanhoAjustado?'':'color:#999')+'" onchange="feTam(\''+x.inv+'\',this.value)">'+['P','M','G','XG'].map(t=>'<option'+(t===x.tamanho?' selected':'')+'>'+t+'</option>').join('')+'</select></td>'+
+      '<td style="text-align:center">'+x.total+'</td><td>'+fx(x.hoje)+'</td><td>'+fx(x.naCob)+'</td>'+
+      '<td style="text-align:right;font-weight:700;color:'+(x.custoCob>0?'#c62828':'#2e7d32')+'">'+fm(x.custoCob)+'</td>'+
+      '<td style="text-align:center">'+(x.porDia||0).toLocaleString('pt-BR')+'</td><td style="text-align:center">'+(x.cobertura==null?'sem vendas':x.cobertura+' dias')+'</td>'+
+      '<td style="text-align:right">'+fm(x.preco)+'</td>'+
+      '<td style="font-size:11px">'+(!c?(x.catalogo===false?'':'—'):c.st==='ganhando'?'<span style="color:#2e7d32">ganhando</span>':'<span style="color:#c62828">perdendo</span>'+(c.ptw?'<br>ganha a '+fm(c.ptw)+(c.lucroPtw!=null?' ('+String(c.lucroPtw).replace('.',',')+'%)':''):''))+'</td>'+
+      '<td style="color:'+sg[0]+';font-weight:600;font-size:11px">'+sg[1]+'</td></tr>';}).join('')+'</table></div>':'<div class="loading">'+(r.em?'Nenhum produto com custo previsto. 🎉':'Clique em ↻ Recalcular agora (leva alguns minutos: a API do Full é lenta).')+'</div>';
+  const b=el('tc-full');if(r.total>0){b.style.display='inline-block';b.textContent='R$ '+Math.round(r.total);}else b.style.display='none';
+}
+async function iniFull(){
+  const f=await fetch('/full/resumo').then(r=>r.json()).catch(()=>null);if(!f)return;
+  const nomes={0:'Zagodini',1:'Com Amor de Mãe'},L=Object.entries(f).filter(([,v])=>v&&v.total>0);
+  el('ini-full').innerHTML=L.length?'<div style="background:#FFEBEE;border:1px solid #ffcdd2;border-radius:10px;padding:10px 16px;font-size:13px;color:#b71c1c">🏬 <b>Full · estoque antigo</b> — previsto na próxima cobrança: '+L.map(([i,v])=>'<a href="#" style="color:#b71c1c" onclick="trocarConta('+i+',el(\'cb-'+i+'\'));setTimeout(()=>showTab(\'fullest\',el(\'tab-btn-full\')),300);setTimeout(carregarFullEst,400);return false"><b>'+nomes[i]+' R$ '+v.total.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</b> ('+v.produtos+' produtos, '+v.cobranca.split('-').reverse().join('/')+')</a>').join(' · ')+'</div>':'';
 }
 function showTab(name,btn){
   if(name==='sempromo'){_pmAberto.sem=true;name='promos';btn=[...document.querySelectorAll('#ml-content .tab')].find(x=>(x.getAttribute('onclick')||'').includes("'promos'"));setTimeout(()=>carregarPromosML(),0);}
@@ -997,7 +1050,7 @@ const IDX_EMP={zagodini:0,mae:1,lufe:2};
 const CANAL_NOME={ml:'🟡 Mercado Livre',shopee:'🟠 Shopee',amazon:'📦 Amazon',shein:'⚫ Shein'};
 async function carregarInicio(){
   try{
-    const [r,pv,nfc]=await Promise.all([fetch('/inicio').then(r=>r.json()),fetch('/posvenda').then(r=>r.json()).catch(()=>null),fetch('/nfcancelar').then(r=>r.json()).catch(()=>null)]);_iniEmp=r.empresas;_pv=pv;_nfc=nfc;
+    const [r,pv,nfc]=await Promise.all([fetch('/inicio').then(r=>r.json()),fetch('/posvenda').then(r=>r.json()).catch(()=>null),fetch('/nfcancelar').then(r=>r.json()).catch(()=>null)]);_iniEmp=r.empresas;_pv=pv;_nfc=nfc;iniFull();
     const A=t=>String(t||'').replace(/"/g,'&quot;').replace(/'/g,"\\'");
     // um quadrado: valor, rótulo, cor quando > 0, ação ao clicar
     const Q=(v,lab,cls,acao,tit)=>{
