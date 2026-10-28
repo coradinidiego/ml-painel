@@ -527,6 +527,8 @@ router.get('/resultado', async (req, res) => {
     }
     const canal = CANAIS.includes(req.query.canal) ? req.query.canal : null;
     const L = (canal ? linhas.filter(l => l.canal === canal) : linhas).sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : 0);
+    const FO = require('./fornecedores'), IDXE = Object.fromEntries(Object.values(EMP).map(E => [E.nome, E.idx]));
+    for (const l of L) l.fornecedor = FO.fornecedor(IDXE[l.empresa], l.sku) || 'Sem fornecedor';
     const semCusto = {};
     for (const l of L) if (l.custoUn == null) { const s = semCusto[l.empresa + '|' + l.sku] ||= { empresa: l.empresa, canal: l.canal, sku: l.sku, descricao: l.descricao, qtd: 0, receita: 0 }; s.qtd += l.qtd; s.receita = r2(s.receita + l.receita); }
     res.json({ ini, fim, pendentes, amazonFinanceiro: amz, ...resumir(L), semCusto: Object.values(semCusto).sort((a, b) => b.receita - a.receita), foraApuracao: canal ? fora.filter(f => f.canal === canal) : fora, linhas: L });

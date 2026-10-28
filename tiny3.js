@@ -84,10 +84,12 @@ async function importar() {
     }
     ST.total = prods.length;
     const cm = require('./custos_ml'), H = cm.historico(IDX);
-    let comHist = 0;
+    let comHist = 0; const fornMapa = {};
     for (const p of prods) {
       try {
         const d = await get('/produtos/' + p.id);
+        const fn = (d?.fornecedores || []).find(f => f.padrao)?.nome || d?.fornecedores?.[0]?.nome || d?.fornecedor?.nome || d?.marca?.nome || (typeof d?.marca === 'string' ? d.marca : '') || '';
+        if (fn) for (const k of [K(p.codigo), K(p.gtin)].filter(Boolean)) fornMapa[k] = String(fn).trim();
         const L = historicoProduto(d);
         if (L.length) {
           comHist++;
@@ -103,6 +105,7 @@ async function importar() {
       await delay(700);
     }
     cm.salvarHistorico(IDX);
+    if (Object.keys(fornMapa).length) require('./fornecedores').gravarTiny(fornMapa);
     Object.assign(ST, { comHistorico: comHist, fim: new Date().toISOString(), ok: new Date().toISOString() });
   } catch (e) { ST.erro = e.message; }
   ST.rodando = false; rodando = false; gravar(ARQ_ST, ST);
@@ -136,7 +139,7 @@ module.exports = function (app) {
       const p = (r.produtos || []).map(x => x.produto).find(x => K(x.codigo) === K(req.query.sku)) || r.produtos?.[0]?.produto;
       if (!p) return res.status(404).json({ erro: 'produto não encontrado' });
       const d = await get('/produtos/' + p.id);
-      res.json({ id: p.id, codigo: p.codigo, custosTiny: d.custos || [], historico: historicoProduto(d), noPainel: require('./custos_ml').historico(IDX)[K(p.codigo)] || null });
+      res.json({ id: p.id, codigo: p.codigo, fornecedores: d.fornecedores, marca: d.marca, custosTiny: d.custos || [], historico: historicoProduto(d), noPainel: require('./custos_ml').historico(IDX)[K(p.codigo)] || null });
     } catch (e) { res.status(500).json({ erro: e.message }); }
   });
   // mantém o token vivo (refresh vale 1 dia) e importa 1x por dia de madrugada

@@ -2010,6 +2010,7 @@ require('./apuracao_mkt').setFontes({ ml }); // apuração: ML direto da API
 require('./nf_cancelar')(app, { ml });
 require('./turbo')(app, { dadosCache });
 require('./tiny3')(app);
+require('./fornecedores').iniciar(); // fornecedor por SKU (apuração por fornecedor)
 require('./nfe_shein')(app); // NF-e automática dos pedidos SHEIN no Bling
 require('./full_estoque')(app, { ml, dadosCache, getUid: async i => dadosCache[i]?.uid || (await ml(i, '/users/me')).id }); // Full: custos por estoque antigo // Tiny API v3 (OAuth): histórico de custos com data (Lufe) // Mercado Turbo: envio/conferência de custo por SKU // NF-e autorizada de pedido cancelado (Bling/Tiny não cancelam a nota sozinhos) // Pós-venda: devoluções/reclamações ML, Shopee e SHEIN
 
