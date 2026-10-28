@@ -188,14 +188,15 @@ async function buscarShopee(empKey, ini, fim, job) {
       itens: (o.item_list || []).map(x => ({ sku: x.model_sku || x.item_sku || '', titulo: x.item_name || '', q: +x.model_quantity_purchased || 1, pu: +x.model_discounted_price || +x.model_original_price || 0 })) };
   }
   // repasse (escrow): definitivo quando o pedido está concluído; antes disso é estimado e é buscado de novo
-  const faltam = sns.filter(sn => C[sn] && !['CANCELLED', 'UNPAID'].includes(C[sn].status) && (!C[sn].esc || C[sn].escStatus !== 'COMPLETED'));
+  const faltam = sns.filter(sn => C[sn] && !['CANCELLED', 'UNPAID'].includes(C[sn].status) && (!C[sn].esc || C[sn].esc.v !== 2 || C[sn].escStatus !== 'COMPLETED'));
   let k = 0;
   await paralelo(faltam, 3, async sn => {
     if (job.cancelar) return;
     try {
       const d = await sp.shopeeGet('/api/v2/payment/get_escrow_detail', { order_sn: sn }); const e = d.response?.order_income;
       if (e) { C[sn].esc = { escrow: +e.escrow_amount || 0, comissao: +e.commission_fee || 0, servico: +e.service_fee || 0, transacao: +e.seller_transaction_fee || 0, freteReal: +e.actual_shipping_fee || 0,
-        fretePago: +e.buyer_paid_shipping_fee || 0, freteRebate: +e.shopee_shipping_rebate || 0, voucher: +e.voucher_from_seller || 0, cogs: +e.cost_of_goods_sold || 0,
+        fretePago: +e.buyer_paid_shipping_fee || 0, freteRebate: +e.shopee_shipping_rebate || 0, voucher: +e.voucher_from_seller || 0, cogs: +e.cost_of_goods_sold || 0, v: 2,
+        reembolso: Math.abs(+e.seller_return_refund || 0), cogsOrig: +e.original_cost_of_goods_sold || 0,
         itens: (e.items || []).map(x => ({ sku: x.model_sku || x.item_sku || '', q: +x.quantity_purchased || 1, preco: +x.discounted_price || 0, voucher: +x.discount_from_voucher_seller || 0, titulo: x.item_name || '' })) };
         C[sn].escStatus = C[sn].status; }
     } catch (e) {}
@@ -336,6 +337,7 @@ async function calcular(empKey, ini, fim) {
         o.origemTaxa += fr >= 0.999 ? ' · devolvido' : ' · devolução parcial';
       }
     }
+    if (o._reembolso) { const fr = Math.min(1, o._reembolso / (o.receita || 1)); o.devolucao = o._reembolso; o.imposto *= 1 - fr; o.origemTaxa += ' · reembolso parcial'; }   // produto fica com o cliente: custo continua
     if (o._devolucao) { const fr = Math.min(1, o._devolucao / (o.receita || 1)); o.devolucao = o._devolucao; o.cmv *= 1 - fr; o.imposto *= 1 - fr; o.origemTaxa += ' · devolução parcial'; }
     delete o._devolucao;
     delete o._valPed;
@@ -450,6 +452,13 @@ async function calcular(empKey, ini, fim) {
       const o = C[sn]; if (!o || o.status === 'UNPAID') continue;
       if (['CANCELLED', 'IN_CANCEL'].includes(o.status)) { fora.push({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: o.status === 'IN_CANCEL' ? 'cancelando' : 'cancelado', valor: o.total }); continue; }
       const e = o.esc;
+      // reembolso total ao comprador (devolução / falha na entrega): sai da apuração; se a Shopee cobrou algo do vendedor, fica como custo
+      if (e && e.reembolso > 0 && e.cogs <= 0.01 && e.reembolso >= (e.cogsOrig || o.total) - 0.05) {
+        fora.push({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: 'reembolsado (devolução)', valor: o.total });
+        if (e.escrow < -0.01) add({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: 'reembolsado', cliente: o.cliente, sku: o.itens[0]?.sku || '', descricao: 'Custo da devolução · ' + (o.itens[0]?.titulo || ''), qtd: 0, precoUn: 0, receita: 0,
+          custoUn: 0, origemCusto: '-', cmv: 0, comissao: 0, taxa: 0, frete: -e.escrow, imposto: 0, embalagem: 0, origemTaxa: 'Shopee (repasse real)', _valPed: 0 });
+        continue;
+      }
       // discounted_price pode vir por unidade ou pela linha: confere com o total de produtos (cost_of_goods_sold)
       const porLinha = e?.itens?.length && e.cogs ? Math.abs(e.itens.reduce((a, x) => a + x.preco, 0) - e.cogs) < Math.abs(e.itens.reduce((a, x) => a + x.preco * x.q, 0) - e.cogs) : true;
       const itens = e?.itens?.length ? e.itens.map(x => ({ sku: x.sku, q: x.q, receita: r2((porLinha ? x.preco : x.preco * x.q) - x.voucher), titulo: x.titulo })) : o.itens.map(x => ({ sku: x.sku, q: x.q, receita: r2(x.pu * x.q), titulo: x.titulo }));
@@ -457,14 +466,14 @@ async function calcular(empKey, ini, fim) {
       let com = 0, frete = 0, taxa = 0, origem = 'Shopee (sem repasse ainda)';
       if (e) {
         frete = Math.max(0, e.freteReal - e.fretePago - e.freteRebate); com = e.comissao;
-        taxa = Math.max(0, recTot - e.escrow - com - frete);
+        taxa = Math.max(0, recTot - e.escrow - com - frete - (e.reembolso || 0));
         origem = o.status === 'COMPLETED' ? 'Shopee (repasse real)' : 'Shopee (repasse estimado)';
       }
       itens.forEach((x, i) => {
         const prop = recTot > 0 ? x.receita / recTot : 1 / itens.length;
         const [cu, origemCusto] = custoDe(x.sku, 'Shopee', null, o.data);
         add({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: o.status, cliente: o.cliente, sku: x.sku, descricao: x.titulo, qtd: x.q, precoUn: r2(x.receita / (x.q || 1)), receita: x.receita,
-          custoUn: cu, origemCusto, cmv: (cu || 0) * x.q, comissao: com * prop, taxa: taxa * prop, frete: frete * prop, imposto: x.receita * aliq, embalagem: i === 0 ? emb : 0, origemTaxa: origem, _valPed: recTot });
+          custoUn: cu, origemCusto, cmv: (cu || 0) * x.q, comissao: com * prop, taxa: taxa * prop, frete: frete * prop, imposto: x.receita * aliq, embalagem: i === 0 ? emb : 0, origemTaxa: origem, _valPed: recTot, _reembolso: e?.reembolso ? r2(e.reembolso * prop) : 0 });
       });
     }
   }
