@@ -257,6 +257,7 @@ body{background:#f0f2f5;color:#111}
   <div id="ini-cards"><div class="loading">Carregando...</div></div>
   <div id="ini-pv" class="rbox" style="display:none;margin-top:14px"></div>
   <div id="ini-full" style="margin-top:10px"></div>
+  <div id="ini-nfe" style="margin-top:10px"></div>
   <p style="font-size:12px;color:#888;margin:8px 0 18px">Clique em um número para abrir a lista. Perguntas e chats são conferidos a cada 5 min; o estoque, a cada 30 min. </p>
 
   <div class="section" id="ini-est">
@@ -686,6 +687,24 @@ function renderFullEst(){
       '<td style="color:'+sg[0]+';font-weight:600;font-size:11px">'+sg[1]+'</td></tr>';}).join('')+'</table></div>':'<div class="loading">'+(r.em?'Nenhum produto com custo previsto. 🎉':'Clique em ↻ Recalcular agora (leva alguns minutos: a API do Full é lenta).')+'</div>';
   const b=el('tc-full');if(r.total>0){b.style.display='inline-block';b.textContent='R$ '+Math.round(r.total);}else b.style.display='none';
 }
+let _nfe=null,_nfeAberto=false;
+async function iniNfe(){_nfe=await fetch('/nfe-shein').then(r=>r.json()).catch(()=>null);renderNfe();}
+function renderNfe(){
+  const r=_nfe;if(!r)return;const P=r.pendentes||[],ok=P.filter(x=>x.id),er=P.filter(x=>x.erro),H=r.hist||[];
+  const fm=v=>'R$ '+(+v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}),br=d=>d?String(d).slice(0,10).split('-').reverse().join('/'):'';
+  const hRuim=H.filter(h=>!h.ok&&Date.now()-Date.parse(h.em)<3*864e5&&!/cancelado na SHEIN/.test(h.situacao));
+  let h='<div style="background:white;border:1px solid #eee;border-radius:10px;padding:10px 16px;font-size:13px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;cursor:pointer" onclick="_nfeAberto=!_nfeAberto;renderNfe()">🧾 <b>NF-e SHEIN (Bling)</b> <span style="color:'+(ok.length?'#e65100':'#2e7d32')+'">'+ok.length+' pedido(s) em aberto sem nota</span>'+(hRuim.length?' <span style="color:#c62828">· '+hRuim.length+' com erro</span>':'')+'<span style="margin-left:auto;font-size:12px;color:#888">Modo: <b>'+(r.modo==='auto'?'automático (a cada 15 min)':'manual')+'</b> '+(_nfeAberto?'▲':'▼')+'</span></div>';
+  if(_nfeAberto){
+    h+='<div style="margin:8px 0;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="nfeModo(\''+(r.modo==='auto'?'manual':'auto')+'\')">'+(r.modo==='auto'?'⏸ Voltar para manual':'▶ Ligar emissão automática')+'</button><button class="btn" onclick="nfeAtualizar()">↺ Atualizar lista</button><span style="font-size:11px;color:#888;align-self:center">Lista: '+(r.listadoEm?new Date(r.listadoEm).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}):'—')+'. Só emite se o pedido não estiver cancelado na SHEIN.</span></div>';
+    if(er.length)h+='<div style="color:#c62828;font-size:12px">'+er.map(x=>x.empresa+': '+shpEsc(x.erro)).join('<br>')+'</div>';
+    h+=ok.length?'<table class="tbl" style="width:100%;font-size:12px"><tr><th style="text-align:left">Empresa</th><th style="text-align:left">Pedido Bling</th><th style="text-align:left">SHEIN</th><th>Data</th><th style="text-align:left">Cliente</th><th>Total</th><th></th></tr>'+ok.map(x=>'<tr><td>'+x.empresa+'</td><td>'+x.numero+'</td><td>'+shpEsc(x.numeroLoja||'')+'</td><td>'+br(x.data)+'</td><td>'+shpEsc(x.cliente)+'</td><td style="text-align:right">'+fm(x.total)+'</td><td><button class="btn" style="padding:2px 10px;font-size:11px" onclick="nfeEmitir(this,\''+x.emp+'\',\''+x.id+'\')">Emitir NF-e</button></td></tr>').join('')+'</table>':'<div style="color:#2e7d32;font-size:12px">Nenhum pedido SHEIN em aberto sem nota.</div>';
+    if(H.length)h+='<div style="margin-top:10px;font-size:12px;font-weight:600">Últimas emissões</div><table class="tbl" style="width:100%;font-size:11px">'+H.slice(0,15).map(x=>'<tr><td>'+new Date(x.em).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})+'</td><td>'+x.empresa+'</td><td>'+x.pedido+' · '+shpEsc(x.numeroLoja||'')+'</td><td style="color:'+(x.ok?'#2e7d32':'#c62828')+'">'+(x.ok?'✅ NF '+(x.numeroNota||'')+' autorizada':shpEsc(x.situacao)+(x.erro?': '+shpEsc(x.erro):''))+'</td><td style="color:#999">'+shpEsc(x.por||'')+'</td></tr>').join('')+'</table>';
+  }
+  el('ini-nfe').innerHTML=h+'</div>';
+}
+async function nfeEmitir(b,emp,id){if(!confirm('Gerar e transmitir a NF-e deste pedido para a SEFAZ?'))return;b.disabled=true;b.textContent='Emitindo...';const r=await fetch('/nfe-shein/emitir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emp,id})}).then(r=>r.json()).catch(e=>({erro:e.message}));alert(r.ok?'NF-e '+(r.numeroNota||'')+' autorizada ✅':'Resultado: '+(r.situacao||'')+(r.erro?' — '+r.erro:''));iniNfe();}
+async function nfeModo(m){if(m==='auto'&&!confirm('Ligar a emissão automática? A cada 15 min o painel gera e transmite a NF-e de todo pedido SHEIN em aberto sem nota (que não esteja cancelado na SHEIN).'))return;await fetch('/nfe-shein/modo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modo:m})});iniNfe();}
+async function nfeAtualizar(){el('ini-nfe').style.opacity=.5;await fetch('/nfe-shein/atualizar',{method:'POST'});el('ini-nfe').style.opacity=1;iniNfe();}
 async function iniFull(){
   const f=await fetch('/full/resumo').then(r=>r.json()).catch(()=>null);if(!f)return;
   const nomes={0:'Zagodini',1:'Com Amor de Mãe'},L=Object.entries(f).filter(([,v])=>v&&v.total>0);
@@ -1050,7 +1069,7 @@ const IDX_EMP={zagodini:0,mae:1,lufe:2};
 const CANAL_NOME={ml:'🟡 Mercado Livre',shopee:'🟠 Shopee',amazon:'📦 Amazon',shein:'⚫ Shein'};
 async function carregarInicio(){
   try{
-    const [r,pv,nfc]=await Promise.all([fetch('/inicio').then(r=>r.json()),fetch('/posvenda').then(r=>r.json()).catch(()=>null),fetch('/nfcancelar').then(r=>r.json()).catch(()=>null)]);_iniEmp=r.empresas;_pv=pv;_nfc=nfc;iniFull();
+    const [r,pv,nfc]=await Promise.all([fetch('/inicio').then(r=>r.json()),fetch('/posvenda').then(r=>r.json()).catch(()=>null),fetch('/nfcancelar').then(r=>r.json()).catch(()=>null)]);_iniEmp=r.empresas;_pv=pv;_nfc=nfc;iniFull();iniNfe();
     const A=t=>String(t||'').replace(/"/g,'&quot;').replace(/'/g,"\\'");
     // um quadrado: valor, rótulo, cor quando > 0, ação ao clicar
     const Q=(v,lab,cls,acao,tit)=>{
