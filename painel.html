@@ -244,6 +244,18 @@ body{background:#f0f2f5;color:#111}
 #apmkt-content [style*="background:#F3E5F5"]{background:rgba(190,120,255,.12)!important;color:#d6b4ff!important;border:1px solid rgba(190,120,255,.3)}
 #apmkt-content [style*="background:#FFEBEE"]{background:rgba(255,107,120,.12)!important;color:#ffb3ba!important;border:1px solid rgba(255,107,120,.3)}
 #apmkt-content [style*="background:#eee"]{background:var(--ln)!important}
+#apmkt-content [style*="background:#fafafa"]{background:var(--pn2)!important}
+.am-hb{flex:1;min-width:300px;background:var(--pn);border:1px solid var(--ln);border-radius:6px;padding:14px 16px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.am-hb-t{font-size:12.5px;font-weight:700;margin-bottom:10px}
+.am-hb-r{padding:8px 0;border-top:1px solid var(--ln)}
+.am-hb-r:first-of-type{border-top:0}
+.am-hb-n{display:flex;justify-content:space-between;align-items:baseline;font-weight:700;font-size:13px}
+.am-hb-n i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:7px}
+.am-hb-n b{font-size:16px;font-weight:800}
+.am-hb-tr{height:14px;margin:6px 0 4px}
+.am-hb-tr>div{height:100%;border-radius:3px;overflow:hidden}
+.am-hb-tr>div>div{height:100%}
+.am-hb-v{font-size:11.5px;color:var(--mu)}
 #apmkt-content .tl-lbl{color:var(--mu);font-size:11px}
 #apmkt-content .tl-in,#apmkt-content .sinput,#apmkt-content select{background:var(--ws)!important;color:var(--tx)!important;border:1px solid var(--ln)!important;border-radius:5px;color-scheme:dark}
 #apmkt-content .tl-in:focus,#apmkt-content .sinput:focus{outline:none;border-color:var(--ac)!important;box-shadow:0 0 0 2px rgba(49,168,255,.25)}
@@ -3960,7 +3972,7 @@ function amItens(L){
 function amGraficosHtml(L){
   const box=(id,t,hh)=>'<div style="background:white;border:1px solid #eee;border-radius:10px;padding:12px 14px;flex:1;min-width:300px"><div style="font-size:13px;font-weight:700;margin-bottom:8px">'+t+'</div><div style="position:relative;height:'+(hh||240)+'px"><canvas id="'+id+'"></canvas></div></div>';
   let h='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'+box('amc-dia','Lucro por dia',260)+'</div>';
-  h+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+box('amc-emp','Por empresa — faturamento × lucro')+box('amc-canal','Por canal — faturamento × lucro')+'</div>';
+  h+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px"><div class="am-hb" id="amc-emp"></div><div class="am-hb" id="amc-canal"></div></div>';
   h+=amPartHtml(L);
   const I=amItens(L),kk=_amMg==='lucro'?'lucro':'pct',best=[...I].sort((a,b)=>b[kk]-a[kk]).slice(0,15),worst=[...I].sort((a,b)=>a[kk]-b[kk]).slice(0,15);
   const tab=(t,arr,cor)=>'<div style="background:white;border:1px solid #eee;border-radius:10px;padding:12px 14px;flex:1;min-width:340px;overflow-x:auto"><div style="font-size:13px;font-weight:700;margin-bottom:6px;color:'+cor+'">'+t+'</div><table style="width:100%;font-size:12px;border-collapse:collapse"><tr style="color:#888;text-align:right"><th style="text-align:left;padding:4px 0">Produto</th><th>Qtd</th><th>Fat.</th><th>Lucro</th><th>Margem</th></tr>'+
@@ -3983,7 +3995,10 @@ function amGraficos(L,G){
   const agg=(key,ord)=>{const m={};G.forEach(g=>{const k=g[key];const o=m[k]||(m[k]={r:0,l:0});o.r+=g.receita-(g.devolucao||0);o.l+=g.lucro;});const ks=Object.keys(m).sort((a,b)=>m[b].r-m[a].r);return {ks,m};};
   const barra=(id,key,cores)=>{const {ks,m}=agg(key);const totR=ks.reduce((s,k)=>s+m[k].r,0);amCharts[id]=new Chart(el(id),{type:'bar',data:{labels:ks.map(k=>[k+' · '+(totR?(m[k].r/totR*100).toFixed(1).replace('.',','):'0')+'% do fat.','margem '+(m[k].r?(m[k].l/m[k].r*100).toFixed(1).replace('.',','):'0')+'%']),datasets:[{label:'Faturamento',data:ks.map(k=>m[k].r),backgroundColor:ks.map(k=>(cores[k]||'#888')+'40'),borderColor:ks.map(k=>cores[k]||'#888'),borderWidth:1,borderRadius:4},{label:'Lucro',data:ks.map(k=>m[k].l),backgroundColor:ks.map(k=>cores[k]||'#888'),borderRadius:4}]},
     options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:12}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+brl(c.raw)+(c.datasetIndex===1&&m[ks[c.dataIndex]].r?' ('+(m[ks[c.dataIndex]].l/m[ks[c.dataIndex]].r*100).toFixed(1).replace('.',',')+'%)':'')}}},scales:{x:{grid:{display:false}},y:{ticks:{callback:brl}}}}});};
-  barra('amc-emp','empresa',AM_COR_EMP);barra('amc-canal','canal',AM_COR_CANAL);
+  const hb=(id,key,cores,tit)=>{const {ks,m}=agg(key);const tot=ks.reduce((s,k)=>s+m[k].r,0),mx=Math.max(...ks.map(k=>m[k].r),1);
+    el(id).innerHTML='<div class="am-hb-t">'+tit+'</div>'+ks.map(k=>{const r=m[k].r,l=m[k].l,c=cores[k]||'#888',sh=tot?r/tot*100:0,mg=r?l/r*100:0;
+      return '<div class="am-hb-r"><div class="am-hb-n"><span><i style="background:'+c+'"></i>'+k+'</span><b>'+sh.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%</b></div><div class="am-hb-tr"><div style="width:'+(r/mx*100)+'%;background:'+c+'33;border:1px solid '+c+'88"><div style="width:'+Math.max(0,r?l/r*100:0)+'%;background:'+c+'"></div></div></div><div class="am-hb-v">'+brl(r)+' faturados · <span style="color:'+(l>=0?'var(--po)':'var(--ne)')+'">'+brl(l)+' de lucro</span> · margem '+mg.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%</div></div>';}).join('');};
+  hb('amc-emp','empresa',AM_COR_EMP,'Por empresa');hb('amc-canal','canal',AM_COR_CANAL,'Por canal');
   Object.values(amCharts).forEach(amTema);
 }
 function amTema(ch){
