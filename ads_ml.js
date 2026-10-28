@@ -113,6 +113,41 @@ async function carregar(idx, dias) {
   return E;
 }
 
+// ── Custo do ADS por anúncio num período (para a apuração) ──
+// { em, itens: [{ id, custo, vendas }], skus: { MLB: [SKUs do anúncio e das variações] } }  — cache em disco
+const fs = require('fs'), path = require('path');
+async function custoPeriodo(idx, ini, fim) {
+  if (!F) throw new Error('ADS: painel ainda iniciando');
+  const DATA = require('./dados'), arq = path.join(DATA, 'apuracao_cache', `ads_${idx}_${ini}_${fim}.json`);
+  let C = null; try { C = JSON.parse(fs.readFileSync(arq)); } catch (e) {}
+  const recente = Date.parse(fim + 'T23:59:59-03:00') > Date.now() - 3 * 864e5;
+  if (C && (!recente || Date.now() - Date.parse(C.em) < 6 * 3600e3)) return C;
+  const adv = await anunciante(idx);
+  const L = [], params = { limit: 50, date_from: ini, date_to: fim, metrics: 'cost,total_amount,units_quantity' };
+  for (let offset = 0; offset < 10000; offset += 50) {
+    const d = await getCand(idx, adv, 'ads', { ...params, offset });
+    const R = d.results || d.items || [];
+    for (const a of R) { const c = +a.metrics?.cost || 0; if (c > 0) L.push({ id: a.item_id, custo: r2(c), vendas: r2(a.metrics?.total_amount) }); }
+    if (R.length < 50 || (d.paging?.total != null && offset + 50 >= d.paging.total)) break;
+    await delay(250);
+  }
+  const skus = { ...(C?.skus || {}) }, faltam = L.map(x => x.id).filter(id => !skus[id]);
+  for (let i = 0; i < faltam.length; i += 20) {
+    try {
+      const R = await F.ml(idx, '/items', { ids: faltam.slice(i, i + 20).join(','), attributes: 'id,seller_custom_field,attributes,variations' });
+      for (const w of Array.isArray(R) ? R : [R]) {
+        const it = w.body || w; if (!it?.id) continue;
+        const set = new Set([it.seller_custom_field, (it.attributes || []).find(a => a.id === 'SELLER_SKU')?.value_name]);
+        for (const v of it.variations || []) { set.add(v.seller_custom_field); set.add((v.attributes || []).find(a => a.id === 'SELLER_SKU')?.value_name); }
+        skus[it.id] = [...set].filter(Boolean).map(x => String(x).trim());
+      }
+    } catch (e) {}
+  }
+  C = { em: new Date().toISOString(), ini, fim, itens: L, skus };
+  try { fs.mkdirSync(path.dirname(arq), { recursive: true }); fs.writeFileSync(arq, JSON.stringify(C)); } catch (e) {}
+  return C;
+}
+
 function rotas(app, fontes) {
   F = fontes;
   const admin = req => req.usuario?.admin || !require('./auth').ativo();
@@ -155,4 +190,4 @@ function rotas(app, fontes) {
     } catch (e) { const d = e.response?.data; res.status(400).json({ erro: d?.message || d?.error || e.message, detalhe: d?.cause || null }); }
   });
 }
-module.exports = { rotas };
+module.exports = { rotas, custoPeriodo };

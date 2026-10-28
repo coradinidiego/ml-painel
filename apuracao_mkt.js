@@ -481,12 +481,12 @@ async function calcular(empKey, ini, fim) {
 }
 
 function resumir(linhas) {
-  const campos = ['receita', 'devolucao', 'cmv', 'comissao', 'taxa', 'frete', 'imposto', 'embalagem', 'lucro'];
+  const campos = ['receita', 'devolucao', 'cmv', 'comissao', 'taxa', 'frete', 'imposto', 'embalagem', 'ads', 'lucro'];
   const grupo = () => ({ pedidos: new Set(), itens: 0, ...Object.fromEntries(campos.map(c => [c, 0])) });
   const por = {}, tot = grupo();
   for (const l of linhas) {
     const k = l.empresa + '|' + l.canal, g = por[k] ||= { empresa: l.empresa, canal: l.canal, ...grupo() };
-    for (const o of [g, tot]) { o.pedidos.add(l.empresa + l.pedido); o.itens += l.qtd; for (const c of campos) o[c] += l[c]; }
+    for (const o of [g, tot]) { if (l.pedido !== 'ADS') o.pedidos.add(l.empresa + l.pedido); o.itens += l.qtd; for (const c of campos) o[c] += l[c]; }
   }
   const fecha = o => ({ ...o, pedidos: o.pedidos.size, ...Object.fromEntries(campos.map(c => [c, r2(o[c])])), pct: (o.receita - o.devolucao) ? r2(o.lucro / (o.receita - o.devolucao) * 100) : 0 });
   return { grupos: Object.values(por).map(fecha).sort((a, b) => b.receita - a.receita), total: fecha(tot) };
@@ -528,10 +528,35 @@ router.get('/resultado', async (req, res) => {
     const canal = CANAIS.includes(req.query.canal) ? req.query.canal : null;
     const L = (canal ? linhas.filter(l => l.canal === canal) : linhas).sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : 0);
     const FO = require('./fornecedores'), IDXE = Object.fromEntries(Object.values(EMP).map(E => [E.nome, E.idx]));
+    // ADS do Mercado Livre: custo de cada anúncio no período rateado nas vendas ML do mesmo SKU (pela receita)
+    const adsInfo = {};
+    for (const e of emps) {
+      const E = EMP[e]; if (canal && canal !== 'Mercado Livre') break;
+      try {
+        const A = await require('./ads_ml').custoPeriodo(E.idx, ini, fim);
+        const mlL = L.filter(l => l.empresa === E.nome && l.canal === 'Mercado Livre');
+        const porSku = {}; for (const l of mlL) (porSku[String(l.sku).trim().toUpperCase()] ||= []).push(l);
+        let total = 0, semVenda = 0;
+        for (const it of A.itens) {
+          total += it.custo;
+          const alvo = [...new Set((A.skus[it.id] || []).flatMap(s => porSku[s.toUpperCase()] || []))];
+          const rec = alvo.reduce((s, l) => s + l.receita, 0);
+          if (alvo.length && rec > 0) for (const l of alvo) l.ads = (l.ads || 0) + it.custo * l.receita / rec;
+          else {
+            semVenda += it.custo;
+            L.push({ empresa: E.nome, canal: 'Mercado Livre', data: fim, pedido: 'ADS', pedidoCanal: it.id, situacao: 'ADS sem venda', cliente: '', sku: (A.skus[it.id] || [])[0] || it.id,
+              descricao: 'ADS sem venda no período · ' + it.id, qtd: 0, precoUn: 0, receita: 0, devolucao: 0, custoUn: 0, origemCusto: '-', cmv: 0, comissao: 0, taxa: 0, frete: 0, imposto: 0, embalagem: 0,
+              origemTaxa: 'ADS', ads: it.custo, lucro: 0, pct: 0, fornecedor: null });
+          }
+        }
+        adsInfo[E.nome] = { total: r2(total), semVenda: r2(semVenda), em: A.em };
+      } catch (er) { adsInfo[E.nome] = { erro: er.message }; }
+    }
+    for (const l of L) { l.ads = r2(l.ads || 0); if (l.ads) { l.lucro = l.pedido === 'ADS' ? -l.ads : r2(l.lucro - l.ads); const rl = l.receita - (l.devolucao || 0); l.pct = rl ? r2(l.lucro / rl * 100) : 0; } }
     for (const l of L) l.fornecedor = FO.fornecedor(IDXE[l.empresa], l.sku) || 'Sem fornecedor';
     const semCusto = {};
     for (const l of L) if (l.custoUn == null) { const s = semCusto[l.empresa + '|' + l.sku] ||= { empresa: l.empresa, canal: l.canal, sku: l.sku, descricao: l.descricao, qtd: 0, receita: 0 }; s.qtd += l.qtd; s.receita = r2(s.receita + l.receita); }
-    res.json({ ini, fim, pendentes, amazonFinanceiro: amz, ...resumir(L), semCusto: Object.values(semCusto).sort((a, b) => b.receita - a.receita), foraApuracao: canal ? fora.filter(f => f.canal === canal) : fora, linhas: L });
+    res.json({ ini, fim, pendentes, ads: adsInfo, amazonFinanceiro: amz, ...resumir(L), semCusto: Object.values(semCusto).sort((a, b) => b.receita - a.receita), foraApuracao: canal ? fora.filter(f => f.canal === canal) : fora, linhas: L });
   } catch (e) { res.status(400).json({ erro: e.message }); }
 });
 // diagnóstico (admin): um pedido do Bling por canal, para conferir as taxas que vêm
