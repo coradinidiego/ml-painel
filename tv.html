@@ -196,11 +196,11 @@ function alertasDe(e){
   return (e.canais||[]).filter(c => c.corte > 0 && e.alertas?.[c.canal]).map(c => `${CURTO[c.canal]||c.canal} ${fmt(c.corte)}`);
 }
 function geral(emps){
-  // Total do dia: "a coletar" + o que já foi coletado/enviado hoje (não zera depois da coleta)
+  // Soma das empresas: mesmos totalizadores das faixas de cima (pendente de coleta = empacotado aguardando coleta)
   const canais = {}, total = {emitirNF:0,aEmpacotar:0,empacotado:0,atrasados:0};
   for (const e of emps) for (const c of e.canais||[]) {
     const g = canais[c.canal] ||= {canal:c.canal,emitirNF:0,aEmpacotar:0,empacotado:0,atrasados:0};
-    const v = {emitirNF:c.emitirNF||0, aEmpacotar:c.aEmpacotar||0, empacotado:(c.empacotado||0)+(c.enviado||0), atrasados:c.atrasados||0};
+    const v = {emitirNF:c.emitirNF||0, aEmpacotar:c.aEmpacotar||0, empacotado:c.empacotado||0, atrasados:c.atrasados||0};
     for (const k in total) { g[k] += v[k]; total[k] += v[k]; }
   }
   const e = { canais:Object.values(canais), total };
@@ -208,7 +208,7 @@ function geral(emps){
     <div class="marca"><b>Todas as empresas</b></div>
     ${estacao(e,'emitirNF','nf','Emitir NF')}
     ${estacao(e,'aEmpacotar','em','A empacotar')}
-    ${coletar(e).replace('Total a coletar','Feitos hoje')}
+    ${coletar(e)}
   </section>`;
 }
 function atrasosDe(e){
