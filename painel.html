@@ -3912,7 +3912,7 @@ function amAddProd(inp){
   else{const q=v.toLowerCase();_am.linhas.filter(l=>amPassa(l.empresa,l.canal)&&((l.descricao||'').toLowerCase().includes(q)||String(l.sku).toLowerCase().includes(q))).forEach(l=>_amF.prod.add(l.sku));}
   amChips();amRender();
 }
-let _amItem=null,_amMg='pct',_amSort={k:'data',d:1},_amFs={k:'partF',d:-1};
+var _amMgB='pct',_amMgW='pct';let _amItem=null,_amMg='pct',_amSort={k:'data',d:1},_amFs={k:'partF',d:-1};
 function amPartHtml(L){
   const C=['Mercado Livre','Shopee','Amazon','Shein','TikTok'],E=[...new Set(L.map(l=>l.empresa))],v={},lu={};
   for(const l of L){const r=l.receita-(l.devolucao||0);for(const e of [l.empresa,'Total']){v[e+'|'+l.canal]=(v[e+'|'+l.canal]||0)+r;v[e]=(v[e]||0)+r;lu[e+'|'+l.canal]=(lu[e+'|'+l.canal]||0)+l.lucro;}}
@@ -3974,12 +3974,11 @@ function amGraficosHtml(L){
   let h='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'+box('amc-dia','Lucro por dia',260)+'</div>';
   h+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px"><div class="am-hb" id="amc-emp"></div><div class="am-hb" id="amc-canal"></div></div>';
   h+=amPartHtml(L);
-  const I=amItens(L),kk=_amMg==='lucro'?'lucro':'pct',best=[...I].sort((a,b)=>b[kk]-a[kk]).slice(0,15),worst=[...I].sort((a,b)=>a[kk]-b[kk]).slice(0,15);
-  const tab=(t,arr,cor)=>'<div style="background:white;border:1px solid #eee;border-radius:10px;padding:12px 14px;flex:1;min-width:340px;overflow-x:auto"><div style="font-size:13px;font-weight:700;margin-bottom:6px;color:'+cor+'">'+t+'</div><table style="width:100%;font-size:12px;border-collapse:collapse"><tr style="color:#888;text-align:right"><th style="text-align:left;padding:4px 0">Produto</th><th>Qtd</th><th>Fat.</th><th>Lucro</th><th>Margem</th></tr>'+
+  const I=amItens(L),kb=_amMgB==='lucro'?'lucro':'pct',kw=_amMgW==='lucro'?'lucro':'pct',best=[...I].sort((a,b)=>b[kb]-a[kb]).slice(0,15),worst=[...I].sort((a,b)=>a[kw]-b[kw]).slice(0,15);
+  const tab=(t,arr,cor,v)=>'<div style="background:white;border:1px solid #eee;border-radius:10px;padding:12px 14px;flex:1;min-width:340px;overflow-x:auto"><div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><div style="font-size:13px;font-weight:700;color:'+cor+'">'+t+'</div><span style="margin-left:auto"></span>'+['pct','lucro'].map(o=>'<button class="am-chip'+(window[v]===o?' on':'')+'" style="padding:3px 9px;font-size:11px" onclick="'+v+'=\''+o+'\';amRender()">'+(o==='pct'?'Margem %':'Lucro R$')+'</button>').join('')+'</div><table style="width:100%;font-size:12px;border-collapse:collapse"><tr style="color:#888;text-align:right"><th style="text-align:left;padding:4px 0">Produto</th><th>Qtd</th><th>Fat.</th><th>Lucro</th><th>Margem</th></tr>'+
     arr.map(o=>'<tr style="border-top:1px solid #f4f4f4;text-align:right;cursor:pointer" title="Ver as vendas deste item" onclick="amVerItem(\''+amEscA(o.empresa)+'\',\''+amEscA(o.sku)+'\')" onmouseover="this.style.background=\'#f5f8ff\'" onmouseout="this.style.background=\'\'"><td style="text-align:left;padding:5px 0;max-width:230px"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+shpEsc(o.descricao)+'">'+shpEsc(o.descricao)+'</div><div style="color:#999">'+shpEsc(o.sku)+' · '+o.empresa.replace('Com Amor de Mãe','Mãe')+' · '+o.canais+'</div></td><td>'+o.qtd+'</td><td>'+fmt(o.receita)+'</td><td style="color:'+(o.lucro>=0?'#2e7d32':'#c62828')+'">'+fmt(o.lucro)+'</td><td style="font-weight:700;color:'+(o.pct>=0?'#2e7d32':'#c62828')+'">'+o.pct.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%</td></tr>').join('')+'</table></div>';
   h+='<div style="font-size:11px;color:#999;margin:-4px 0 6px">Margens por item: SKUs com 3+ unidades ou R$ 150+ no período, já com devoluções; itens sem custo ficam de fora.</div>';
-  h+='<div style="display:flex;gap:6px;align-items:center;margin:0 0 6px"><span style="font-size:12px;color:#888">Ordenar por</span><button class="am-chip'+(_amMg!=='lucro'?' on':'')+'" onclick="_amMg=\'pct\';amRender()">Margem %</button><button class="am-chip'+(_amMg==='lucro'?' on':'')+'" onclick="_amMg=\'lucro\';amRender()">Lucro total R$</button></div>';
-  h+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+tab(_amMg==='lucro'?'▲ Mais lucro (R$)':'▲ Maiores margens',best,'#2e7d32')+tab(_amMg==='lucro'?'▼ Menos lucro / prejuízo (R$)':'▼ Piores margens',worst,'#c62828')+'</div>';
+  h+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+tab(_amMgB==='lucro'?'▲ Mais lucro (R$)':'▲ Maiores margens',best,'#2e7d32','_amMgB')+tab(_amMgW==='lucro'?'▼ Menos lucro / prejuízo (R$)':'▼ Piores margens',worst,'#c62828','_amMgW')+'</div>';
   h+=amFornHtml(L);
   return h;
 }
