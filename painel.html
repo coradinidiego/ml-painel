@@ -215,6 +215,66 @@ body{background:#f0f2f5;color:#111}
 .pm-sec-seta{color:#999;transition:transform .15s}.pm-sec[open] .pm-sec-seta{transform:rotate(180deg)}
 .pm-sec-b{padding:0 10px 8px;border-top:1px solid #f0f1f3}
 </style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ── Apuração: tema estúdio (painéis grafite, estilo editor de imagem) ── */
+#apmkt-content{--ws:#1b1d21;--pn:#24272c;--pn2:#2c3036;--ln:#383d45;--tx:#e8eaed;--mu:#959ca7;--ac:#31a8ff;--po:#3ddc97;--ne:#ff6b78;--wa:#ffb547;
+  background:var(--ws);color:var(--tx);font-family:'Manrope',system-ui,sans-serif;min-height:calc(100vh - 60px);font-variant-numeric:tabular-nums}
+#apmkt-content .content{max-width:1500px}
+#apmkt-content [style*="background:white"],#apmkt-content .section{background:var(--pn)!important;border:1px solid var(--ln)!important;border-radius:6px!important;box-shadow:0 1px 0 rgba(255,255,255,.03) inset,0 8px 24px rgba(0,0,0,.25)}
+#apmkt-content .section{overflow:hidden;margin-bottom:14px}
+#apmkt-content .section>.sec-head{background:var(--pn2)!important;border-bottom:1px solid var(--ln)!important;color:var(--tx);font-size:12.5px;font-weight:700;letter-spacing:.01em;padding:9px 14px!important}
+#apmkt-content .sec-head .cnt{background:var(--ws);color:var(--mu);border-radius:4px}
+#apmkt-content table{color:var(--tx)}
+#apmkt-content th{color:var(--mu)!important;font-weight:600;font-size:11.5px;position:sticky;top:0;background:var(--pn2);z-index:1}
+#apmkt-content tr[style*="border-top"]{border-top-color:var(--ln)!important}
+#apmkt-content tr:hover td{background:rgba(49,168,255,.06)}
+#apmkt-content [style*="color:#888"],#apmkt-content [style*="color:#999"],#apmkt-content [style*="color:#666"]{color:var(--mu)!important}
+#apmkt-content [style*="color:#2e7d32"]{color:var(--po)!important}
+#apmkt-content [style*="color:#c62828"],#apmkt-content [style*="color:#b71c1c"]{color:var(--ne)!important}
+#apmkt-content [style*="color:#0d1b2a"]{color:var(--tx)!important}
+#apmkt-content [style*="background:#FFF3E0"]{background:rgba(255,181,71,.12)!important;color:var(--wa)!important;border:1px solid rgba(255,181,71,.3)}
+#apmkt-content [style*="background:#E3F2FD"]{background:rgba(49,168,255,.12)!important;color:#9fd3ff!important;border:1px solid rgba(49,168,255,.3)}
+#apmkt-content [style*="background:#F3E5F5"]{background:rgba(190,120,255,.12)!important;color:#d6b4ff!important;border:1px solid rgba(190,120,255,.3)}
+#apmkt-content [style*="background:#FFEBEE"]{background:rgba(255,107,120,.12)!important;color:#ffb3ba!important;border:1px solid rgba(255,107,120,.3)}
+#apmkt-content [style*="background:#eee"]{background:var(--ln)!important}
+#apmkt-content .tl-lbl{color:var(--mu);font-size:11px}
+#apmkt-content .tl-in,#apmkt-content .sinput,#apmkt-content select{background:var(--ws)!important;color:var(--tx)!important;border:1px solid var(--ln)!important;border-radius:5px;color-scheme:dark}
+#apmkt-content .tl-in:focus,#apmkt-content .sinput:focus{outline:none;border-color:var(--ac)!important;box-shadow:0 0 0 2px rgba(49,168,255,.25)}
+#apmkt-content .tl-btn{border-radius:5px!important;font-family:inherit;font-weight:700}
+#apmkt-content .tl-btn[style*="background:white"]{background:var(--pn2)!important;color:var(--tx)!important;border:1px solid var(--ln)!important;box-shadow:none}
+#apmkt-content .tl-btn[style*="background:#0d1b2a"]{background:var(--ac)!important;color:#06121d!important}
+#apmkt-content .tl-btn[style*="background:#2e7d32"]{background:var(--po)!important;color:#06190f!important}
+#apmkt-content .am-fl{color:var(--mu);font-weight:600}
+#apmkt-content .am-chip{background:var(--ws);border:1px solid var(--ln);color:var(--tx);border-radius:4px;font-family:inherit;font-weight:600;padding:5px 11px;transition:background .12s,border-color .12s}
+#apmkt-content .am-chip:hover{border-color:var(--ac)}
+#apmkt-content .am-chip.on{background:var(--ac);border-color:var(--ac);color:#06121d}
+#apmkt-content .am-chip:focus-visible,#apmkt-content button:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+#apmkt-content a{color:var(--ac)}
+#apmkt-content .loading{color:var(--mu)}
+/* cabeçalho */
+#am-topo{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:4px 0 12px}
+#am-topo h1{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:0;color:var(--tx)}
+#am-topo p{margin:0;color:var(--mu);font-size:13px}
+/* da receita ao lucro */
+.am-flow{background:var(--pn);border:1px solid var(--ln);border-radius:6px;padding:18px 20px 16px;margin-bottom:14px;display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:26px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.am-flow .lk small{display:block;color:var(--mu);font-size:12px;font-weight:600}
+.am-flow .lk b{display:block;font-size:44px;font-weight:800;letter-spacing:-.03em;line-height:1.05;margin:4px 0}
+.am-flow .lk span{color:var(--mu);font-size:13px}
+.am-flow .lk .mg{display:inline-block;margin-top:8px;padding:3px 9px;border-radius:4px;font-weight:800;font-size:13px}
+.am-bar{display:flex;height:34px;border-radius:5px;overflow:hidden;background:var(--ws);border:1px solid var(--ln)}
+.am-bar div{height:100%;transition:width .5s cubic-bezier(.2,.7,.2,1)}
+.am-leg{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:12px}
+.am-leg div{border-left:3px solid;padding:2px 0 2px 10px}
+.am-leg small{display:block;color:var(--mu);font-size:11.5px;font-weight:600}
+.am-leg b{font-size:15px;font-weight:800}
+.am-leg em{font-style:normal;color:var(--mu);font-size:12px;margin-left:5px}
+.am-fat{display:flex;justify-content:space-between;color:var(--mu);font-size:12px;margin-bottom:6px}
+.am-fat strong{color:var(--tx);font-size:14px}
+@media (max-width:760px){.am-flow{grid-template-columns:1fr}.am-flow .lk b{font-size:34px}}
+@media (prefers-reduced-motion:reduce){.am-bar div{transition:none}}
+</style>
 </head><body>
 <header class="hd">
   <div class="top-bar">
@@ -231,7 +291,7 @@ body{background:#f0f2f5;color:#111}
 
 <!-- Apuração Amazon / Shein / TikTok — todas as empresas (ML e Shopee: Mercado Turbo) -->
 <div id="apmkt-content" style="display:none"><div class="content">
-  <div class="sec-head" style="background:none;border:none;padding:0 0 10px"><span style="font-size:16px;font-weight:700">📊 Apuração · todos os canais</span><span style="font-size:12px;color:#888">Mercado Livre e Shopee direto das APIs (tarifa, frete e repasse reais)</span></div>
+  <div id="am-topo"><h1>Apuração</h1><p>Lucro real por pedido em todos os canais, com tarifas, frete e repasse direto das APIs.</p></div>
   <div id="am-auto" style="font-size:12px;color:#666;margin:-4px 0 10px"></div>
   <div id="am-alerta"></div>
   <div style="background:white;border-radius:10px;border:1px solid #eee;padding:14px 18px;margin-bottom:14px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
@@ -3875,7 +3935,10 @@ function amRender(){
   if(devT>0||F.length) h+='<div style="background:#F3E5F5;color:#4a148c;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px">↩ '+(devT>0?'<b>'+fmt(devT)+'</b> devolvidos na Amazon (descontado do faturamento; custo e imposto estornados). ':'')+(F.length?'<b>'+F.length+' pedidos</b> cancelados/devolvidos fora da apuração ('+fmt(F.reduce((s,f)=>s+f.valor,0))+'): '+F.slice(0,6).map(f=>shpEsc(f.pedidoCanal||f.pedido)+' · '+shpEsc(f.situacao)).join(', ')+(F.length>6?'…':''):'')+'</div>';
   const SC=(r.semCusto||[]).filter(s=>!_amF.emp.size||_amF.emp.has(AM_KEY[s.empresa]));
   if(SC.length) h+='<div style="background:#FFEBEE;color:#b71c1c;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px"><b>'+SC.length+' SKUs vendidos sem custo no Bling/Tiny</b> — cadastre o custo no sistema; até lá o lucro deles está superestimado: '+SC.slice(0,8).map(s=>shpEsc(s.sku)+' ('+s.empresa.replace('Com Amor de Mãe','Mãe')+')').join(', ')+(SC.length>8?'…':'')+'</div>';
-  h+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'+card('Faturamento',fmt((T.receita||0)-(T.devolucao||0)),(T.pedidos||0)+' pedidos'+(T.devolucao?' · '+fmt(T.devolucao)+' devolvido':''))+card('Custo dos produtos',fmt(T.cmv||0),pct(T.cmv||0))+card('Tarifas + frete',fmt((T.comissao||0)+(T.taxa||0)+(T.frete||0)),pct((T.comissao||0)+(T.taxa||0)+(T.frete||0)))+card('Imposto + embalagem',fmt((T.imposto||0)+(T.embalagem||0)),pct((T.imposto||0)+(T.embalagem||0)))+card('Lucro',fmt(T.lucro||0),'margem '+pct(T.lucro||0),(T.lucro||0)>=0?'#2e7d32':'#c62828')+'</div>';
+  {const RLq=RL||1,seg=[['Custo dos produtos',T.cmv||0,'#5b6472'],['Tarifas e comissões',(T.comissao||0)+(T.taxa||0),'#ff8a3d'],['Frete',T.frete||0,'#ffc94a'],['Imposto',T.imposto||0,'#b07cff'],['Embalagem',T.embalagem||0,'#7a8494']],lu=T.lucro||0;
+   h+='<div class="am-flow"><div class="lk"><small>Lucro no período</small><b style="color:'+(lu>=0?'var(--po)':'var(--ne)')+'">'+fmt(lu)+'</b><span>'+(T.pedidos||0).toLocaleString('pt-BR')+' pedidos'+(T.devolucao?' · '+fmt(T.devolucao)+' devolvido':'')+'</span><br><span class="mg" style="background:'+(lu>=0?'rgba(61,220,151,.14);color:var(--po)':'rgba(255,107,120,.14);color:var(--ne)')+'">margem '+pct(lu)+'</span></div>'+
+   '<div><div class="am-fat"><span>Para onde vai cada real faturado</span><span>Faturamento <strong>'+fmt(RL)+'</strong></span></div><div class="am-bar">'+seg.map(([n,v,c])=>'<div title="'+n+': '+fmt(v)+' ('+pct(v)+')" style="width:'+Math.max(0,v/RLq*100)+'%;background:'+c+'"></div>').join('')+'<div title="Lucro: '+fmt(lu)+'" style="width:'+Math.max(0,lu/RLq*100)+'%;background:linear-gradient(90deg,#2fc487,#3ddc97)"></div></div>'+
+   '<div class="am-leg">'+seg.map(([n,v,c])=>'<div style="border-color:'+c+'"><small>'+n+'</small><b>'+fmt(v)+'</b><em>'+pct(v)+'</em></div>').join('')+'<div style="border-color:#3ddc97"><small>Lucro</small><b style="color:var(--po)">'+fmt(lu)+'</b><em>'+pct(lu)+'</em></div></div></div></div>';}
   h+='<div class="section"><div class="sec-head"><span>Por empresa e canal</span></div><div style="overflow-x:auto"><table style="width:100%;font-size:13px;border-collapse:collapse"><tr style="color:#888;text-align:right"><th style="text-align:left;padding:8px">Empresa</th><th style="text-align:left">Canal</th><th>Pedidos</th><th>Faturamento</th><th>Devolução</th><th>Custo</th><th>Comissão</th><th>Tarifas</th><th>Frete</th><th>Imposto</th><th>Embalagem</th><th>Lucro</th><th style="padding-right:8px">Margem</th></tr>'+
     G.map(g=>'<tr style="border-top:1px solid #f0f0f0;text-align:right"><td style="text-align:left;padding:8px">'+g.empresa+'</td><td style="text-align:left">'+g.canal+'</td><td>'+g.pedidos+'</td><td>'+fmt(g.receita)+'</td><td>'+(g.devolucao?'<span style="color:#6a1b9a">−'+fmt(g.devolucao)+'</span>':'—')+'</td><td>'+fmt(g.cmv)+'</td><td>'+fmt(g.comissao)+'</td><td>'+fmt(g.taxa)+'</td><td>'+fmt(g.frete)+'</td><td>'+fmt(g.imposto)+'</td><td>'+fmt(g.embalagem)+'</td><td style="font-weight:700;color:'+(g.lucro>=0?'#2e7d32':'#c62828')+'">'+fmt(g.lucro)+'</td><td style="padding-right:8px">'+g.pct.toLocaleString('pt-BR')+'%</td></tr>').join('')+'</table></div></div>';
   h+=amGraficosHtml(L);
@@ -3883,7 +3946,7 @@ function amRender(){
   el('am-out').innerHTML=h;el('am-exp').style.display='inline-block';amTabela();amGraficos(L,G);
 }
 // ── gráficos e margens por item ──
-const AM_COR_EMP={'Zagodini':'#1565C0','Com Amor de Mãe':'#D81B60','Lufe':'#2E7D32'},AM_COR_CANAL={'Mercado Livre':'#E0B400',Shopee:'#EE4D2D',Amazon:'#FF9900',Shein:'#222222',TikTok:'#00A6A6'};
+const AM_COR_EMP={'Zagodini':'#4f8dff','Com Amor de Mãe':'#ff5fa2','Lufe':'#3ddc97'},AM_COR_CANAL={'Mercado Livre':'#E0B400',Shopee:'#EE4D2D',Amazon:'#FF9900',Shein:'#d9dde3',TikTok:'#25f4ee'};
 let amCharts={};
 function amItens(L){
   const m={};for(const l of L){if(l.custoUn==null)continue;const k=l.empresa+'|'+l.sku;const o=m[k]||(m[k]={empresa:l.empresa,canais:new Set(),sku:l.sku,descricao:l.descricao,qtd:0,receita:0,lucro:0});o.canais.add(l.canal);o.qtd+=l.qtd;o.receita+=l.receita-(l.devolucao||0);o.lucro+=l.lucro;}
@@ -3916,6 +3979,15 @@ function amGraficos(L,G){
   const barra=(id,key,cores)=>{const {ks,m}=agg(key);const totR=ks.reduce((s,k)=>s+m[k].r,0);amCharts[id]=new Chart(el(id),{type:'bar',data:{labels:ks.map(k=>[k+' · '+(totR?(m[k].r/totR*100).toFixed(1).replace('.',','):'0')+'% do fat.','margem '+(m[k].r?(m[k].l/m[k].r*100).toFixed(1).replace('.',','):'0')+'%']),datasets:[{label:'Faturamento',data:ks.map(k=>m[k].r),backgroundColor:ks.map(k=>(cores[k]||'#888')+'40'),borderColor:ks.map(k=>cores[k]||'#888'),borderWidth:1,borderRadius:4},{label:'Lucro',data:ks.map(k=>m[k].l),backgroundColor:ks.map(k=>cores[k]||'#888'),borderRadius:4}]},
     options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:12}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+brl(c.raw)+(c.datasetIndex===1&&m[ks[c.dataIndex]].r?' ('+(m[ks[c.dataIndex]].l/m[ks[c.dataIndex]].r*100).toFixed(1).replace('.',',')+'%)':'')}}},scales:{x:{grid:{display:false}},y:{ticks:{callback:brl}}}}});};
   barra('amc-emp','empresa',AM_COR_EMP);barra('amc-canal','canal',AM_COR_CANAL);
+  Object.values(amCharts).forEach(amTema);
+}
+function amTema(ch){
+  const o=ch.options,mu='#959ca7',ln='rgba(255,255,255,.07)',f={family:"'Manrope',system-ui,sans-serif",size:11,weight:'600'};
+  for(const s of Object.values(o.scales||{})){s.ticks=Object.assign(s.ticks||{},{color:mu,font:f});s.grid=Object.assign(s.grid||{},{color:ln,drawBorder:false});}
+  o.plugins.legend.labels=Object.assign(o.plugins.legend.labels||{},{color:'#e8eaed',font:f,usePointStyle:true,pointStyle:'rectRounded'});
+  o.plugins.tooltip=Object.assign(o.plugins.tooltip||{},{backgroundColor:'#2c3036',borderColor:'#383d45',borderWidth:1,titleColor:'#e8eaed',bodyColor:'#e8eaed',padding:10,titleFont:f,bodyFont:f});
+  ch.data.datasets.forEach(d=>{if(d.type!=='line'){d.borderRadius=4;d.borderSkipped=false;}else{d.borderWidth=2;d.borderColor='#31a8ff';d.backgroundColor='#31a8ff';}});
+  ch.update('none');
 }
 function amTabela(){
   const q=(el('am-busca')?.value||'').toLowerCase();
