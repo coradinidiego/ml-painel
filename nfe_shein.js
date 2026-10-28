@@ -29,15 +29,22 @@ const S = Object.assign({ modo: 'manual', pendentes: [], hist: [] }, ler(ARQ, {}
 const salvar = () => { S.hist = S.hist.slice(0, 300); gravar(ARQ, S); };
 const erroTxt = e => { const d = e.response?.data?.error; return d ? [d.message, d.description, ...(d.fields || []).map(f => f.msg)].filter(Boolean).join(' · ') : e.message; };
 // situação da NF-e no Bling: 1 pendente, 2 cancelada, 3 aguardando recibo, 4 rejeitada, 5 autorizada, 6 emitida DANFE, 7 registrada, 8 aguardando protocolo, 9 denegada, 10 consulta situação, 11 bloqueada
+// Bling: 3 req/s — repete em 429
+async function req(c, metodo, url, cfg) {
+  for (let t = 0; ; t++) {
+    try { return await c[metodo](url, ...(metodo === 'post' ? [undefined, cfg] : [cfg])); }
+    catch (e) { if (e.response?.status === 429 && t < 6) { await delay(1500 * (t + 1)); continue; } throw e; }
+  }
+}
 const SIT = { 1: 'pendente', 2: 'cancelada', 3: 'aguardando recibo', 4: 'rejeitada', 5: 'autorizada', 6: 'autorizada', 7: 'autorizada', 8: 'aguardando protocolo', 9: 'denegada', 10: 'em consulta', 11: 'bloqueada' };
 
 let _sitAberto = {};
 async function idEmAberto(idx) {
   if (_sitAberto[idx]) return _sitAberto[idx];
   try {
-    const c = bling.client(idx), mods = (await c.get('/situacoes/modulos')).data?.data || [];
+    const c = bling.client(idx), mods = (await req(c, 'get', '/situacoes/modulos')).data?.data || [];
     const v = mods.find(m => /venda/i.test(m.nome || m.descricao || ''));
-    for (const s of v ? (await c.get(`/situacoes/modulos/${v.id}`)).data?.data || [] : []) if (/^em aberto$/i.test((s.nome || '').trim())) return (_sitAberto[idx] = s.id);
+    for (const s of v ? (await req(c, 'get', `/situacoes/modulos/${v.id}`)).data?.data || [] : []) if (/^em aberto$/i.test((s.nome || '').trim())) return (_sitAberto[idx] = s.id);
   } catch (e) {}
   return (_sitAberto[idx] = 6);
 }
@@ -50,7 +57,7 @@ async function listar() {
       const canais = await bling.getCanaisVenda(E.idx).catch(() => ({}));
       const de = ymd(new Date(Date.now() - DIAS * 864e5)), ate = ymd(new Date(Date.now() + 864e5));
       for (let pagina = 1; pagina <= 20; pagina++) {
-        const L = (await c.get('/pedidos/vendas', { params: { 'idsSituacoes[]': sit, dataInicial: de, dataFinal: ate, limite: 100, pagina } })).data?.data || [];
+        const L = (await req(c, 'get', '/pedidos/vendas', { params: { 'idsSituacoes[]': sit, dataInicial: de, dataFinal: ate, limite: 100, pagina } })).data?.data || [];
         for (const p of L) {
           const loja = canais[p.loja?.id] || '';
           if (!(/shein/i.test(loja) || /^GSH/i.test(p.numeroLoja || ''))) continue;
@@ -63,7 +70,7 @@ async function listar() {
   }
   // tira quem já tem nota
   for (const p of out.filter(x => x.id)) {
-    try { const d = (await bling.client(p.idx).get('/pedidos/vendas/' + p.id)).data?.data; p.nota = d?.notaFiscal?.id || null; } catch (e) {}
+    try { const d = (await req(bling.client(p.idx), 'get', '/pedidos/vendas/' + p.id)).data?.data; p.nota = d?.notaFiscal?.id || null; } catch (e) {}
     await delay(350);
   }
   S.pendentes = out.filter(x => x.erro || !x.nota);
@@ -84,16 +91,16 @@ async function emitir(p, por) {
     }
     const c = bling.client(p.idx);
     // 2. confere de novo que o pedido continua sem nota
-    const ped = (await c.get('/pedidos/vendas/' + p.id)).data?.data;
+    const ped = (await req(c, 'get', '/pedidos/vendas/' + p.id)).data?.data;
     let nfe = ped?.notaFiscal?.id || null;
     // 3. gera a NF-e a partir do pedido
-    if (!nfe) { const r = await c.post(`/pedidos/vendas/${p.id}/gerar-nfe`); nfe = r.data?.data?.id || r.data?.data?.idNotaFiscal || null; }
+    if (!nfe) { const r = await req(c, 'post', `/pedidos/vendas/${p.id}/gerar-nfe`); nfe = r.data?.data?.id || r.data?.data?.idNotaFiscal || null; }
     if (!nfe) throw new Error('o Bling não devolveu o id da nota gerada');
     reg.nfe = nfe;
     // 4. transmite à SEFAZ (se ainda pendente)
-    let n = (await c.get('/nfe/' + nfe)).data?.data;
-    if ([1, 4].includes(Number(n?.situacao))) { await c.post(`/nfe/${nfe}/enviar`); await delay(4000); n = (await c.get('/nfe/' + nfe)).data?.data; }
-    for (let t = 0; t < 4 && [3, 8, 10].includes(Number(n?.situacao)); t++) { await delay(5000); n = (await c.get('/nfe/' + nfe)).data?.data; }
+    let n = (await req(c, 'get', '/nfe/' + nfe)).data?.data;
+    if ([1, 4].includes(Number(n?.situacao))) { await req(c, 'post', `/nfe/${nfe}/enviar`); await delay(4000); n = (await req(c, 'get', '/nfe/' + nfe)).data?.data; }
+    for (let t = 0; t < 4 && [3, 8, 10].includes(Number(n?.situacao)); t++) { await delay(5000); n = (await req(c, 'get', '/nfe/' + nfe)).data?.data; }
     reg.numeroNota = n?.numero; reg.chave = n?.chaveAcesso; reg.situacao = SIT[n?.situacao] || ('situação ' + n?.situacao);
     reg.ok = [5, 6, 7].includes(Number(n?.situacao));
   } catch (e) { reg.situacao = 'erro'; reg.erro = erroTxt(e); }

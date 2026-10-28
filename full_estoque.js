@@ -181,6 +181,8 @@ module.exports = function (app, { ml, dadosCache, getUid }) {
     if (!inv || !TARIFA[tamanho]) return res.status(400).json({ erro: 'dados inválidos' });
     t[inv] = tamanho; gravar(arqTam, t); res.json({ ok: true });
   });
+  // se o servidor reiniciou no meio do cálculo, retoma
+  setTimeout(async () => { for (const i of CONTAS) { const d = ler(arq(i), null); if (!d || d.parcial) await atualizar(i).catch(() => {}); } }, 120e3);
   // roda 1x por dia de madrugada (03h), uma conta de cada vez
   setInterval(async () => {
     const h = new Date(Date.now() - 3 * 3600e3);
