@@ -230,6 +230,11 @@ body{background:#f0f2f5;color:#111}
 #apmkt-content th{color:var(--mu)!important;font-weight:600;font-size:11.5px;position:sticky;top:0;background:var(--pn2);z-index:1}
 #apmkt-content tr[style*="border-top"]{border-top-color:var(--ln)!important}
 #apmkt-content tr:hover td{background:rgba(49,168,255,.06)}
+#apmkt-content td{padding-top:7px;padding-bottom:7px;padding-right:10px;white-space:nowrap}
+#apmkt-content th{padding-right:10px;white-space:nowrap}
+#apmkt-content [style*="color:#6a1b9a"],#apmkt-content [style*="color:#4a148c"]{color:#d6b4ff!important}
+#apmkt-content [style*="color:#e65100"],#apmkt-content [style*="color:#E65100"]{color:var(--wa)!important}
+#apmkt-content [style*="color:#1565c0"]{color:var(--ac)!important}
 #apmkt-content [style*="color:#888"],#apmkt-content [style*="color:#999"],#apmkt-content [style*="color:#666"]{color:var(--mu)!important}
 #apmkt-content [style*="color:#2e7d32"]{color:var(--po)!important}
 #apmkt-content [style*="color:#c62828"],#apmkt-content [style*="color:#b71c1c"]{color:var(--ne)!important}
@@ -269,7 +274,7 @@ body{background:#f0f2f5;color:#111}
 .am-leg div{border-left:3px solid;padding:2px 0 2px 10px}
 .am-leg small{display:block;color:var(--mu);font-size:11.5px;font-weight:600}
 .am-leg b{font-size:15px;font-weight:800}
-.am-leg em{font-style:normal;color:var(--mu);font-size:12px;margin-left:5px}
+.am-leg b{display:block}.am-leg em{font-style:normal;color:var(--mu);font-size:12px}
 .am-fat{display:flex;justify-content:space-between;color:var(--mu);font-size:12px;margin-bottom:6px}
 .am-fat strong{color:var(--tx);font-size:14px}
 @media (max-width:760px){.am-flow{grid-template-columns:1fr}.am-flow .lk b{font-size:34px}}
@@ -3936,9 +3941,9 @@ function amRender(){
   const SC=(r.semCusto||[]).filter(s=>!_amF.emp.size||_amF.emp.has(AM_KEY[s.empresa]));
   if(SC.length) h+='<div style="background:#FFEBEE;color:#b71c1c;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px"><b>'+SC.length+' SKUs vendidos sem custo no Bling/Tiny</b> — cadastre o custo no sistema; até lá o lucro deles está superestimado: '+SC.slice(0,8).map(s=>shpEsc(s.sku)+' ('+s.empresa.replace('Com Amor de Mãe','Mãe')+')').join(', ')+(SC.length>8?'…':'')+'</div>';
   {const RLq=RL||1,seg=[['Custo dos produtos',T.cmv||0,'#5b6472'],['Tarifas e comissões',(T.comissao||0)+(T.taxa||0),'#ff8a3d'],['Frete',T.frete||0,'#ffc94a'],['Imposto',T.imposto||0,'#b07cff'],['Embalagem',T.embalagem||0,'#7a8494']],lu=T.lucro||0;
-   h+='<div class="am-flow"><div class="lk"><small>Lucro no período</small><b style="color:'+(lu>=0?'var(--po)':'var(--ne)')+'">'+fmt(lu)+'</b><span>'+(T.pedidos||0).toLocaleString('pt-BR')+' pedidos'+(T.devolucao?' · '+fmt(T.devolucao)+' devolvido':'')+'</span><br><span class="mg" style="background:'+(lu>=0?'rgba(61,220,151,.14);color:var(--po)':'rgba(255,107,120,.14);color:var(--ne)')+'">margem '+pct(lu)+'</span></div>'+
+   h='<div class="am-flow"><div class="lk"><small>Lucro no período</small><b style="color:'+(lu>=0?'var(--po)':'var(--ne)')+'">'+fmt(lu)+'</b><span>'+(T.pedidos||0).toLocaleString('pt-BR')+' pedidos'+(T.devolucao?' · '+fmt(T.devolucao)+' devolvido':'')+'</span><br><span class="mg" style="background:'+(lu>=0?'rgba(61,220,151,.14);color:var(--po)':'rgba(255,107,120,.14);color:var(--ne)')+'">margem '+pct(lu)+'</span></div>'+
    '<div><div class="am-fat"><span>Para onde vai cada real faturado</span><span>Faturamento <strong>'+fmt(RL)+'</strong></span></div><div class="am-bar">'+seg.map(([n,v,c])=>'<div title="'+n+': '+fmt(v)+' ('+pct(v)+')" style="width:'+Math.max(0,v/RLq*100)+'%;background:'+c+'"></div>').join('')+'<div title="Lucro: '+fmt(lu)+'" style="width:'+Math.max(0,lu/RLq*100)+'%;background:linear-gradient(90deg,#2fc487,#3ddc97)"></div></div>'+
-   '<div class="am-leg">'+seg.map(([n,v,c])=>'<div style="border-color:'+c+'"><small>'+n+'</small><b>'+fmt(v)+'</b><em>'+pct(v)+'</em></div>').join('')+'<div style="border-color:#3ddc97"><small>Lucro</small><b style="color:var(--po)">'+fmt(lu)+'</b><em>'+pct(lu)+'</em></div></div></div></div>';}
+   '<div class="am-leg">'+seg.map(([n,v,c])=>'<div style="border-color:'+c+'"><small>'+n+'</small><b>'+fmt(v)+'</b><em>'+pct(v)+'</em></div>').join('')+'<div style="border-color:#3ddc97"><small>Lucro</small><b style="color:var(--po)">'+fmt(lu)+'</b><em>'+pct(lu)+'</em></div></div></div></div>'+h;}
   h+='<div class="section"><div class="sec-head"><span>Por empresa e canal</span></div><div style="overflow-x:auto"><table style="width:100%;font-size:13px;border-collapse:collapse"><tr style="color:#888;text-align:right"><th style="text-align:left;padding:8px">Empresa</th><th style="text-align:left">Canal</th><th>Pedidos</th><th>Faturamento</th><th>Devolução</th><th>Custo</th><th>Comissão</th><th>Tarifas</th><th>Frete</th><th>Imposto</th><th>Embalagem</th><th>Lucro</th><th style="padding-right:8px">Margem</th></tr>'+
     G.map(g=>'<tr style="border-top:1px solid #f0f0f0;text-align:right"><td style="text-align:left;padding:8px">'+g.empresa+'</td><td style="text-align:left">'+g.canal+'</td><td>'+g.pedidos+'</td><td>'+fmt(g.receita)+'</td><td>'+(g.devolucao?'<span style="color:#6a1b9a">−'+fmt(g.devolucao)+'</span>':'—')+'</td><td>'+fmt(g.cmv)+'</td><td>'+fmt(g.comissao)+'</td><td>'+fmt(g.taxa)+'</td><td>'+fmt(g.frete)+'</td><td>'+fmt(g.imposto)+'</td><td>'+fmt(g.embalagem)+'</td><td style="font-weight:700;color:'+(g.lucro>=0?'#2e7d32':'#c62828')+'">'+fmt(g.lucro)+'</td><td style="padding-right:8px">'+g.pct.toLocaleString('pt-BR')+'%</td></tr>').join('')+'</table></div></div>';
   h+=amGraficosHtml(L);
@@ -3986,7 +3991,7 @@ function amTema(ch){
   for(const s of Object.values(o.scales||{})){s.ticks=Object.assign(s.ticks||{},{color:mu,font:f});s.grid=Object.assign(s.grid||{},{color:ln,drawBorder:false});}
   o.plugins.legend.labels=Object.assign(o.plugins.legend.labels||{},{color:'#e8eaed',font:f,usePointStyle:true,pointStyle:'rectRounded'});
   o.plugins.tooltip=Object.assign(o.plugins.tooltip||{},{backgroundColor:'#2c3036',borderColor:'#383d45',borderWidth:1,titleColor:'#e8eaed',bodyColor:'#e8eaed',padding:10,titleFont:f,bodyFont:f});
-  ch.data.datasets.forEach(d=>{if(d.type!=='line'){d.borderRadius=4;d.borderSkipped=false;}else{d.borderWidth=2;d.borderColor='#31a8ff';d.backgroundColor='#31a8ff';}});
+  ch.data.datasets.forEach(d=>{if(d.type!=='line'){d.borderRadius=4;d.borderSkipped=false;}else{d.borderWidth=2.5;d.borderColor='#ffffff';d.backgroundColor='#ffffff';d.pointBackgroundColor='#ffffff';d.pointRadius=2.5;}});
   ch.update('none');
 }
 function amTabela(){
