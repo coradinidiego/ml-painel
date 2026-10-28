@@ -128,7 +128,7 @@ async function custosErp(idx) {
 // O Bling não guarda data do custo e a API v2 do Tiny também não: a cada leitura do ERP (6 h) o painel
 // anota { sku: [[AAAA-MM-DD, custo], ...] } quando o custo muda. A apuração usa o custo vigente na data da venda.
 const arqHist = idx => path.join(DATA, 'apuracao_cache', `custos_hist_${idx}.json`);
-const _hist = {};
+const _hist = {}, _naData = {};
 const hojeSP = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
 function historico(idx) { if (!_hist[idx]) { try { _hist[idx] = JSON.parse(fs.readFileSync(arqHist(idx))); } catch (e) { _hist[idx] = {}; } } return _hist[idx]; }
 function registrarHistorico(idx, mapa) {
@@ -141,8 +141,8 @@ function registrarHistorico(idx, mapa) {
   }
   if (mud) try { fs.writeFileSync(arqHist(idx), JSON.stringify(h)); console.log('[custos] histórico', idx, mud, 'mudanças'); } catch (e) {}
 }
+function salvarHistorico(idx) { for (const x of Object.keys(_naData)) if (x.startsWith(idx + '|')) delete _naData[x]; try { fs.writeFileSync(arqHist(idx), JSON.stringify(historico(idx))); } catch (e) {} }
 /** Mapa de custos do ERP vigente na data (AAAA-MM-DD). Antes do 1º registro vale o 1º custo conhecido. */
-const _naData = {};
 function custosNaData(idx, data, erpAtual) {
   const h = historico(idx); if (!data || !Object.keys(h).length) return erpAtual;
   const ck = idx + '|' + data + '|' + (_erp[idx]?.ts || 0);
@@ -315,4 +315,4 @@ async function margemPreco(ml, idx, uid, it, preco, rebate = 0, erp) {
 
 function recarregarErp(idx) { if (_erp[idx]) _erp[idx].ts = 0; }
 
-module.exports = { custosNaData, historico, PLANILHAS, fixosCanal, recarregarErp, calcularMargens, margemPreco, custoSku, custosConta, custosErp, custoComFonte, aliquota };
+module.exports = { custosNaData, historico, salvarHistorico, PLANILHAS, fixosCanal, recarregarErp, calcularMargens, margemPreco, custoSku, custosConta, custosErp, custoComFonte, aliquota };
