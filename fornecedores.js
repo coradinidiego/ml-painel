@@ -27,7 +27,7 @@ let rodando = {};
 async function atualizarBling(idx) {
   if (rodando[idx]) return; rodando[idx] = true;
   try {
-    const c = require('./bling').client(idx), cod = {}, forn = {}, nomes = {};
+    const c = require('./bling').client(idx), cod = {}, forn = {}, nomes = {}, antigos = cache(idx).nomes || {};
     for (let pagina = 1; pagina <= 200; pagina++) {
       const L = await req(c, '/produtos', { limite: 100, pagina });
       for (const p of L) if (p.id && p.codigo) cod[p.id] = p.codigo;
@@ -39,12 +39,17 @@ async function atualizarBling(idx) {
       if (L.length < 100) break;
     }
     for (const fid of new Set(Object.values(forn))) {
-      try { const d = (await c.get('/contatos/' + fid)).data?.data; nomes[fid] = (d?.fantasia || d?.nome || '').trim() || String(fid); } catch (e) { nomes[fid] = String(fid); }
-      await delay(380);
+      let nome = null;
+      for (let t = 0; t < 6 && !nome; t++) {
+        try { const d = (await c.get('/contatos/' + fid)).data?.data; nome = (d?.fantasia || d?.nome || '').trim() || null; if (!nome) break; }
+        catch (e) { if (e.response?.status === 429) { await delay(2000 * (t + 1)); continue; } break; }
+      }
+      nomes[fid] = nome || antigos[fid] || ('Fornecedor ' + fid);
+      await delay(400);
     }
     const mapa = {};
     for (const [pid, fid] of Object.entries(forn)) if (cod[pid]) mapa[K(cod[pid])] = nomes[fid];
-    _c[idx] = { em: new Date().toISOString(), mapa };
+    _c[idx] = { em: new Date().toISOString(), mapa, nomes };
     gravar(arq(idx), _c[idx]);
     console.log('[fornecedores]', idx, Object.keys(mapa).length, 'SKUs,', Object.keys(nomes).length, 'fornecedores');
   } catch (e) { console.warn('[fornecedores]', idx, e.message); }
@@ -72,4 +77,5 @@ function iniciar() {
   setInterval(ver, 3 * 3600e3).unref?.();
 }
 
-module.exports = { fornecedor, gravarTiny, atualizarBling, iniciar, cache };
+function rotas(app) { app.post('/fornecedores/atualizar', (req, res) => { for (const i of [0, 1]) atualizarBling(i).catch(() => {}); res.json({ ok: true }); }); }
+module.exports = { rotas, fornecedor, gravarTiny, atualizarBling, iniciar, cache };
