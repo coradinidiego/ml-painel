@@ -60,9 +60,13 @@ module.exports = function (app, { ml, dadosCache, getUid }) {
   let fila = Promise.resolve();
   // chamadas em série, devagar (a API de operações tem cota baixa)
   const get = (idx, p, params) => (fila = fila.then(async () => {
-    for (let t = 0; t < 6; t++) {
-      try { const r = await ml(idx, p, params); await delay(900); return r; }
-      catch (e) { if (e.response?.status === 429) { await delay(30e3 * (t + 1)); continue; } if (e.response?.status === 404) return null; throw e; }
+    for (let t = 0; t < 40; t++) {
+      try { const r = await ml(idx, p, params); await delay(1500); return r; }
+      catch (e) {
+        // cota da API de operações do Full: espera e continua de onde parou (pode levar horas na 1ª vez)
+        if (e.response?.status === 429) { const st = ST[idx]; if (st) st.aguardando = 'cota da API do ML esgotada — aguardando (' + (t + 1) + ')'; await delay(Math.min(15, 2 + t) * 60e3); if (st) delete st.aguardando; continue; }
+        if (e.response?.status === 404) return null; throw e;
+      }
     }
     throw new Error('limite da API do ML');
   }));
