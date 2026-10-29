@@ -329,10 +329,18 @@ async function carregarConta(idx) {
         // boosts: lista [{id,status,description}] (v2) ou objeto {fulfillment: true, ...} (v1)
         const NOMEB = { fulfillment: 'Envios Full', free_shipping: 'Frete grátis', free_installments: 'Pagamento sem juros', same_day_shipping: 'Envios no mesmo dia', cross_docking: 'Envios com coleta', drop_off: 'Envios por agência', shipping_collect: 'Envios com coleta' };
         const normB = b => Array.isArray(b) ? b.map(x => ({ id: x.id, on: x.status === 'boosted', d: x.description || NOMEB[x.id] || x.id })) : Object.entries(b || {}).map(([id, on]) => ({ id, on: !!on, d: NOMEB[id] || id }));
+        let meusB = {}, ganB = {};
         try {
-          const meusB = Object.fromEntries(normB(ptw.boosts).map(x => [x.id, x.on]));
+          meusB = Object.fromEntries(normB(ptw.boosts).map(x => [x.id, x.on])); ganB = Object.fromEntries(normB(ptw.winner?.boosts).map(x => [x.id, x.on]));
           it.vantagens_ganhador = normB(ptw.winner?.boosts).filter(x => x.on && !meusB[x.id]).map(x => x.d);
         } catch (eb) { it.vantagens_ganhador = []; }
+        // Frete grátis do ML só vale de R$ 19 para cima (fora do Full): baixar para menos de R$ 19 tira o frete grátis
+        // do seu anúncio e ele continua perdendo — o ML não considera isso no price_to_win.
+        const LIM19 = 19;
+        if (!meusB.fulfillment && ptw.price_to_win > 0 && ptw.price_to_win < LIM19 && ganB.free_shipping) {   // (se o ganhador também não tem frete grátis, o preço ainda pode resolver)
+          it.abaixo19 = true; it.preco_nao_resolve = true;
+          it.vantagens_ganhador = [ptw.current_price >= LIM19 ? 'o ML pede ' + String(ptw.price_to_win.toFixed(2)).replace('.', ',') + ', mas abaixo de R$ 19 você perde o Frete grátis' : 'abaixo de R$ 19 você já perdeu o Frete grátis'].concat(ganB.fulfillment ? ['o ganhador é Full (mantém o frete grátis abaixo de R$ 19)'] : []);
+        }
         if (it.preco_nao_resolve && ptw.status === 'competing' && !it.vantagens_ganhador.length) {
           try { const p2 = await ml(idx, '/items/' + catIds[i] + '/price_to_win', { siteId: 'MLB', version: 'v2' }); const mB = Object.fromEntries(normB(p2.boosts).map(x => [x.id, x.on])); it.vantagens_ganhador = normB(p2.winner?.boosts).filter(x => x.on && !mB[x.id]).map(x => x.d); } catch (e4) {}
         }

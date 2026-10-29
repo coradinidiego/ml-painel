@@ -114,7 +114,7 @@ async function carregar(idx) {
   try {
     const uid = await F.uid(idx), erp = await cm.custosErp(idx).catch(() => ({}));
     const cat = {};
-    for (const it of d.perdendo || []) cat[it.id] = { status: 'competing', ptw: it.price_to_win };
+    for (const it of d.perdendo || []) cat[it.id] = { status: 'competing', ptw: it.preco_nao_resolve ? null : it.price_to_win };   // preço não resolve (inclui abaixo de R$ 19): não sugere
     for (const it of d.ganhando || []) cat[it.id] = { status: 'winning', s2price: it.s2price };
     const semPromo = new Set((d.semPromo || []).map(x => x.id));
     const todos = [...(d.semPromo || []), ...(d.comPromo || [])];   // sem promoção primeiro: são os que aparecem na tela
