@@ -332,6 +332,9 @@ async function carregarConta(idx) {
           const meusB = Object.fromEntries(normB(ptw.boosts).map(x => [x.id, x.on]));
           it.vantagens_ganhador = normB(ptw.winner?.boosts).filter(x => x.on && !meusB[x.id]).map(x => x.d);
         } catch (eb) { it.vantagens_ganhador = []; }
+        if (it.preco_nao_resolve && ptw.status === 'competing' && !it.vantagens_ganhador.length) {
+          try { const p2 = await ml(idx, '/items/' + catIds[i] + '/price_to_win', { siteId: 'MLB', version: 'v2' }); const mB = Object.fromEntries(normB(p2.boosts).map(x => [x.id, x.on])); it.vantagens_ganhador = normB(p2.winner?.boosts).filter(x => x.on && !mB[x.id]).map(x => x.d); } catch (e4) {}
+        }
         it.preco_nao_resolve = (ptw.reason || []).includes('no_improvement_price') || !(ptw.price_to_win < ptw.current_price - 0.005);
         it.visit_share = ptw.visit_share;
         it.catalog_product_id = ptw.catalog_product_id;
