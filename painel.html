@@ -191,8 +191,9 @@ body{background:#f0f2f5;color:#111}
 .pm-tverde{background:#e8f5e9;color:#2e7d32}.pm-tverm{background:#ffebee;color:#c62828}.pm-tazul{background:#e3f2fd;color:#1565c0}.pm-tlaranja{background:#fff3e0;color:#e65100}
 .pm-pill{display:inline-block;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:700;white-space:nowrap}
 .pm-hastip{position:relative;cursor:help}
-.pm-tip{display:none;position:absolute;z-index:50;right:0;bottom:calc(100% + 8px);width:250px;background:#1c1d21;color:#f1f1f1;border-radius:8px;padding:12px 14px 10px;box-shadow:0 10px 30px rgba(0,0,0,.35);font-weight:500;white-space:normal;text-align:left;font-size:12.5px;line-height:1.35}
-.pm-tip::after{content:'';position:absolute;right:22px;top:100%;border:7px solid transparent;border-top-color:#1c1d21}
+.pm-tip{display:none;position:absolute;z-index:50;left:0;bottom:calc(100% + 8px);width:250px;background:#1c1d21;color:#f1f1f1;border-radius:8px;padding:12px 14px 10px;box-shadow:0 10px 30px rgba(0,0,0,.35);font-weight:500;white-space:normal;text-align:left;font-size:12.5px;line-height:1.35}
+.pm-tip::after{content:'';position:absolute;left:22px;top:100%;border:7px solid transparent;border-top-color:#1c1d21}
+.pm-hoje .pm-tip{left:auto;right:0}.pm-hoje .pm-tip::after{left:auto;right:22px}
 .pm-hastip:hover .pm-tip,.pm-hastip:focus .pm-tip{display:block}
 .pm-tip-t{display:block;text-align:center;font-size:13px;margin-bottom:8px}
 .pm-tip-l{display:flex;justify-content:space-between;gap:10px;padding:2px 0}
