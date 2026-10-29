@@ -492,7 +492,7 @@ body{background:#f0f2f5;color:#111}
     <button class="tab" onclick="showTab('promos',this);carregarPromosML()">🏷️ Promoções (<span id="tc-sempromo">...</span> sem promo) <span class="badge" id="tc-promos-alerta" style="display:none;background:#2e7d32"></span></button>
     <button class="tab" onclick="showTab('perguntas',this)">💬 Perguntas (<span id="tc-perguntas">...</span>)</button>
     <button class="tab" onclick="showTab('estoque',this);carregarEstoque()">📦 Estoque</button>
-    <button class="tab" onclick="showTab('adsml',this);carregarAdsML()">📣 ADS</button>
+    <button class="tab" onclick="showTab('adsml',this);carregarAdsML();carregarAdsPlano()">📣 ADS</button>
     <button class="tab" onclick="showTab('precos',this);carregarPrecos()">💲 Preços × planilha</button>
     <button class="tab" onclick="showTab('turbo',this);carregarTurbo()">⚡ Custos × Turbo</button>
   </div>
@@ -577,6 +577,7 @@ body{background:#f0f2f5;color:#111}
     <div class="footer"><span id="upd-q">-</span><button class="btn" onclick="recarregarConta()">↺ Atualizar</button></div>
   </div>
   <div id="tab-adsml" class="tab-content">
+    <div id="ad-plano" style="margin-bottom:14px"></div>
     <div class="sf">
       <input class="sinput" type="text" placeholder="Buscar por SKU, nome ou MLB..." oninput="renderAdsML()" id="ad-q">
       <select class="sselect" id="ad-f" onchange="renderAdsML()">
@@ -760,6 +761,53 @@ function showTab(name,btn){
   if(btn)btn.classList.add('active');
 }
 function goTab(idx){const n=['inicio','perdendo','ganhando','sempromo','perguntas'][idx];showTab(n,[...document.querySelectorAll('#ml-content .tab')].find(x=>(x.getAttribute('onclick')||'').includes("'"+n+"'")));}
+
+// ── ADS: o que fazer hoje (todas as contas, 7 e 15 dias) ──
+let _ap=null,_apTimer=null,_apAberta=null;
+async function carregarAdsPlano(recalc){
+  clearTimeout(_apTimer);
+  try{const d=await (await fetch('/ml/ads-plano'+(recalc?'?recalcular=1':''))).json();_ap=d;renderAdsPlano();
+    if(d.rodando||recalc)_apTimer=setTimeout(()=>{if(el('tab-adsml').classList.contains('active'))carregarAdsPlano();},6000);
+  }catch(e){el('ad-plano').innerHTML='';}
+}
+function renderAdsPlano(){
+  const d=_ap,P=d?.plano;const brl=v=>v==null?'—':'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}),pc=v=>v==null?'—':String(v).replace('.',',')+'%';
+  let h='<div style="background:white;border:1px solid #e3e3e3;border-radius:10px;padding:12px 16px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b style="font-size:15px">🎯 O que fazer hoje no ADS</b><span style="font-size:12px;color:#888">'+(P?'análise de '+new Date(P.em).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})+' · últimos 7 e 15 dias · todas as contas':'ainda sem análise')+(d?.rodando?' · <b style="color:#e65100">analisando…</b>':'')+'</span><button class="btn" style="margin-left:auto;padding:4px 10px;font-size:12px" onclick="carregarAdsPlano(1)"'+(d?.rodando?' disabled':'')+'>↺ Analisar agora</button></div>';
+  if(!P){el('ad-plano').innerHTML=h+'<div class="loading">Clique em Analisar agora (leva 1 a 3 minutos).</div></div>';return;}
+  if(_apAberta==null)_apAberta=ci;
+  const TIPO={remover:['⛔','Tirar do ADS','#c62828'],acos:['🎯','Baixar o ACOS alvo','#e65100'],orcamento:['💰','Subir o orçamento','#2e7d32'],criar:['➕','Criar campanha','#1565c0']};
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">'+P.contas.map(c=>{const n=t=>c.recs.filter(r=>r.tipo===t).length,R=c.resumo||{};
+    return '<div onclick="_apAberta='+c.idx+';renderAdsPlano()" style="cursor:pointer;flex:1;min-width:220px;border:2px solid '+(_apAberta===c.idx?'#1565c0':'#eee')+';border-radius:8px;padding:8px 10px;font-size:12px"><b style="font-size:13px">'+c.conta+'</b>'+(c.erro?'<div style="color:#c62828">'+shpEsc(c.erro)+'</div>':
+      '<div style="color:#666">7 dias: ADS '+brl(R.custo7)+' → vendas '+brl(R.vendas7)+'<br>lucro depois do ADS <b style="color:'+(R.lucro7<0?'#c62828':'#2e7d32')+'">'+brl(R.lucro7)+'</b> · '+R.anunciosAtivos+' anúncios em '+R.campanhas+' campanhas</div><div style="margin-top:4px">'+
+      Object.entries(TIPO).map(([k,[ic]])=>n(k)?'<span style="margin-right:8px">'+ic+' '+n(k)+'</span>':'').join('')+(c.recs.length?'':'✅ nada a fazer')+'</div>')+'</div>';}).join('')+'</div>';
+  const c=P.contas.find(x=>x.idx===_apAberta)||P.contas[0];
+  if(c&&!c.erro){
+    if(!c.recs.length)h+='<div class="loading" style="color:green">✓ Nada a fazer em '+c.conta+' hoje.</div>';
+    for(const [k,[ic,rot,cor]] of Object.entries(TIPO)){const L=c.recs.filter(r=>r.tipo===k);if(!L.length)continue;
+      h+='<div style="margin-top:10px;font-weight:700;color:'+cor+'">'+ic+' '+rot+' ('+L.length+')'+(k==='remover'?' <span style="font-weight:400;color:#888;font-size:12px">· economia de '+brl(L.reduce((a,r)=>a+(r.q?.custo||0),0))+' a cada 15 dias</span>':'')+'</div>';
+      h+='<div class="gwrap"><table class="gtab" style="border:none;font-size:12px"><tr><th class="l">Anúncio / campanha</th><th class="l">Por quê</th><th>15 dias<br><small style="font-weight:400">ADS → vendas · lucro</small></th><th>7 dias<br><small style="font-weight:400">ADS → vendas · lucro</small></th><th>Margem</th><th></th></tr>'+
+        L.map((r,i)=>{const q=r.q,s=r.s,f=x=>x?brl(x.custo)+' → '+brl(x.vendas)+'<br><b style="color:'+((x.lucro||0)<0?'#c62828':'#2e7d32')+'">'+brl(x.lucro)+'</b>':'—';
+          const bt=k==='remover'?'<button class="btn" style="padding:3px 8px;font-size:11px" onclick="apAcao(this,'+c.idx+',\'remover\','+i+')">⛔ Tirar</button>'
+            :k==='acos'?'<button class="btn" style="padding:3px 8px;font-size:11px" onclick="apAcao(this,'+c.idx+',\'acos\','+i+')">ACOS '+pc(r.campanha?.acosAlvo)+' → '+pc(r.sugestao.acos_target)+'</button><br><small style="color:#888">ROAS '+Math.round(100/r.sugestao.acos_target)+'x</small>'
+            :k==='orcamento'?'<button class="btn" style="padding:3px 8px;font-size:11px" onclick="apAcao(this,'+c.idx+',\'orcamento\','+i+')">'+brl(r.campanha.orcamento)+' → '+brl(r.sugestao.budget)+'/dia</button>'
+            :'<button class="btn" style="padding:3px 8px;font-size:11px" onclick="apAcao(this,'+c.idx+',\'criar\','+i+')">➕ '+brl(r.sugestao.budget)+'/dia · ACOS '+pc(r.sugestao.acos_target)+'</button><br><small style="color:#888">ROAS '+Math.round(100/r.sugestao.acos_target)+'x</small>';
+          return '<tr><td class="l"><div style="display:flex;gap:8px;align-items:center">'+(r.thumb?'<img src="'+shpEsc(r.thumb)+'" style="width:34px;height:34px;object-fit:cover;border-radius:4px">':'')+'<div><a href="'+shpEsc(r.link||'#')+'" target="_blank" style="color:inherit;font-weight:600;display:block;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+shpEsc(r.titulo||r.item||'')+'</a><small style="color:#888">'+(r.item||'')+(r.sku?' · '+shpEsc(r.sku):'')+(r.campanha&&k!=='orcamento'?' · '+shpEsc(r.campanha.nome||''):'')+'</small></div></div></td>'+
+            '<td class="l" style="max-width:280px">'+shpEsc(r.motivo)+'</td><td>'+(k==='orcamento'?'—':f(q))+'</td><td>'+f(s)+'</td><td>'+(r.margem!=null?pc(r.margem):'—')+'</td><td style="white-space:nowrap">'+bt+'</td></tr>';}).join('')+'</table></div>';}
+    if(c.manter?.length)h+='<details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:#2e7d32;font-weight:600">✅ Funcionando bem — manter ('+c.manter.length+')</summary><div style="font-size:12px;color:#555;margin-top:6px">'+c.manter.map(r=>shpEsc((r.titulo||r.item).slice(0,50))+' — 15 dias: '+brl(r.q.custo)+' → '+brl(r.q.vendas)+', lucro '+brl(r.q.lucro)).join('<br>')+'</div></details>';
+  }
+  h+='<div style="font-size:11px;color:#888;margin-top:8px">Lucro = vendas atribuídas ao ADS × lucro por unidade (custo, tarifa, frete, imposto) − gasto do ADS. ACOS alvo sugerido = metade da margem. Roda sozinho todo dia às 7h e manda o resumo no Telegram.</div></div>';
+  el('ad-plano').innerHTML=h;
+}
+async function apAcao(b,idx,tipo,i){
+  const c=_ap.plano.contas.find(x=>x.idx===idx),r=c.recs.filter(x=>x.tipo===tipo)[i];if(!r)return;
+  const nome=(r.titulo||r.item||'').slice(0,60);
+  const msg=tipo==='remover'?'Tirar do ADS:\n'+nome+'?':tipo==='acos'?'Mudar o ACOS alvo da campanha "'+r.campanha.nome+'" de '+r.campanha.acosAlvo+'% para '+r.sugestao.acos_target+'% (ROAS '+Math.round(100/r.sugestao.acos_target)+'x)?':tipo==='orcamento'?'Subir o orçamento da campanha "'+r.campanha.nome+'" de R$ '+r.campanha.orcamento+' para R$ '+r.sugestao.budget+' por dia?':'Criar uma campanha só para:\n'+nome+'\nOrçamento R$ '+r.sugestao.budget+'/dia · ACOS alvo '+r.sugestao.acos_target+'% (ROAS '+Math.round(100/r.sugestao.acos_target)+'x)?';
+  if(!confirm(msg))return;b.disabled=true;b.textContent='…';
+  const J=(u,body)=>fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(x=>x.json());
+  const res=tipo==='remover'?await J('/ml/ads-plano/'+idx+'/remover',{item:r.item}):tipo==='acos'?await J('/ml/ads-plano/'+idx+'/campanha/'+r.campanha.id,{acos_target:r.sugestao.acos_target}):tipo==='orcamento'?await J('/ml/ads-plano/'+idx+'/campanha/'+r.campanha.id,{budget:r.sugestao.budget}):await J('/ml/ads-plano/'+idx+'/criar',{item:r.item,budget:r.sugestao.budget,acos_target:r.sugestao.acos_target,nome:(r.sku||r.item)+' '+(r.titulo||'').slice(0,40)});
+  if(res.erro){alert('O ML recusou: '+res.erro);b.disabled=false;b.textContent='tentar de novo';return;}
+  c.recs=c.recs.filter(x=>x!==r);renderAdsPlano();
+}
 let _ad=null,_adEmp=null,_adTimer=null;
 async function carregarAdsML(forcar){
   clearTimeout(_adTimer);

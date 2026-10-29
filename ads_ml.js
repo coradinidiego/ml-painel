@@ -69,8 +69,14 @@ async function todosItens(idx, adv, dias) {
   return out;
 }
 async function campanhas(idx, adv, dias) {
-  const d = await getCand(idx, adv, 'camps', { limit: 50, offset: 0, date_from: hojeSP(dias), date_to: hojeSP(0), metrics: 'clicks,prints,cost,acos,units_quantity,total_amount,direct_amount' });
-  return (d.results || d.campaigns || []).map(c => ({ id: c.id, nome: c.name, status: c.status, orcamento: c.budget ?? null, acosAlvo: c.acos_target ?? null, estrategia: c.strategy || null,
+  const R = [];
+  for (let offset = 0; offset < 2000; offset += 50) {
+    const d = await getCand(idx, adv, 'camps', { limit: 50, offset, date_from: hojeSP(dias), date_to: hojeSP(0), metrics: 'clicks,prints,cost,acos,units_quantity,total_amount,direct_amount' });
+    const L = d.results || d.campaigns || []; R.push(...L);
+    if (L.length < 50 || (d.paging?.total != null && offset + 50 >= d.paging.total)) break;
+    await delay(250);
+  }
+  return R.map(c => ({ id: c.id, nome: c.name, status: c.status, orcamento: c.budget ?? null, acosAlvo: c.acos_target ?? null, estrategia: c.strategy || null,
     custo: r2(c.metrics?.cost), vendas: r2(c.metrics?.total_amount), unidades: c.metrics?.units_quantity || 0, acos: c.metrics?.acos ?? null, cliques: c.metrics?.clicks || 0 }));
 }
 
@@ -190,4 +196,21 @@ function rotas(app, fontes) {
     } catch (e) { const d = e.response?.data; res.status(400).json({ erro: d?.message || d?.error || e.message, detalhe: d?.cause || null }); }
   });
 }
-module.exports = { rotas, custoPeriodo };
+// ── campanhas: alterar orçamento / ACOS alvo, criar campanha individual para um anúncio ──
+async function alterarCampanha(idx, id, { budget, acos_target, status }) {
+  const adv = await anunciante(idx), body = {};
+  if (budget != null) body.budget = Number(budget);
+  if (acos_target != null) body.acos_target = Number(acos_target);
+  if (status) body.status = status === 'paused' ? 'paused' : 'active';
+  return req(idx, 'put', `/marketplace/advertising/${adv.site}/product_ads/campaigns/${id}`, { data: body });
+}
+async function criarCampanha(idx, item, { nome, budget, acos_target }) {
+  const adv = await anunciante(idx);
+  const c = await req(idx, 'post', `/marketplace/advertising/${adv.site}/advertisers/${adv.id}/product_ads/campaigns`,
+    { data: { name: String(nome || item).slice(0, 60), status: 'active', budget: Number(budget), strategy: 'PROFITABILITY', acos_target: Number(acos_target), channel: 'marketplace' } });
+  const cid = c?.id || c?.campaign_id; if (!cid) throw new Error('o ML não devolveu o id da campanha: ' + JSON.stringify(c).slice(0, 200));
+  const a = await req(idx, 'put', `/marketplace/advertising/${adv.site}/product_ads/ads/${item}`, { params: { channel: 'marketplace' }, data: { campaign_id: Number(cid), status: 'active' } });
+  return { campanha: c, anuncio: a, id: cid };
+}
+const estado = (idx, dias) => ST[idx + '|' + dias];
+module.exports = { rotas, custoPeriodo, carregar, estado, alterarCampanha, criarCampanha, moverAnuncio: async (idx, item, body) => { const adv = await anunciante(idx); return req(idx, 'put', `/marketplace/advertising/${adv.site}/product_ads/ads/${item}`, { params: { channel: 'marketplace' }, data: body }); } };
