@@ -56,8 +56,10 @@ function planoConta(c, Q, S) {   // Q = 15 dias, S = 7 dias
     const m = x.margem?.pct, ativo = x.campanha && x.status === 'active', b = base(x), y = b.s || {};
     if (ativo) {
       if (x.custo >= 5 && !x.unidadesAds) { recs.push({ ...b, tipo: 'remover', peso: x.custo, motivo: `R$ ${x.custo.toFixed(2)} em 15 dias sem nenhuma venda pelo ADS` }); continue; }
-      if (m != null && m < 5 && x.custo >= 3) { recs.push({ ...b, tipo: 'remover', peso: x.custo, motivo: `margem de ${m}% não comporta ADS (R$ ${x.custo.toFixed(2)} gastos em 15 dias)` }); continue; }
-      if (x.lucroAds != null && x.lucroAds < -5 && (y.lucro ?? 0) <= 0) {
+      if (m != null && m < 5 && x.custo >= 3 && (x.lucroAds ?? 0) <= 0) { recs.push({ ...b, tipo: 'remover', peso: x.custo, motivo: `margem de ${m}% não comporta ADS (R$ ${x.custo.toFixed(2)} gastos em 15 dias)` }); continue; }
+      // ACOS bem abaixo da margem mas "prejuízo": o preço que vendeu não bate com o de hoje (variação/kit) — não recomenda no escuro
+      const incoerente = x.acos != null && m != null && x.acos < m * 0.7;
+      if (x.lucroAds != null && x.lucroAds < -5 && (y.lucro ?? 0) <= 0 && !incoerente) {
         const alvo = m != null ? acosAlvo(m) : null;
         if (b.campanha?.individual && alvo && m >= 8 && (b.campanha.acosAlvo == null || b.campanha.acosAlvo > alvo)) recs.push({ ...b, tipo: 'acos', peso: -x.lucroAds, sugestao: { acos_target: alvo }, motivo: `prejuízo de R$ ${(-x.lucroAds).toFixed(2)} em 15 dias (ACOS ${x.acos ?? '—'}% × margem ${m}%)` });
         else recs.push({ ...b, tipo: 'remover', peso: -x.lucroAds, motivo: `prejuízo de R$ ${(-x.lucroAds).toFixed(2)} em 15 dias (ACOS ${x.acos ?? '—'}% × margem ${m ?? '—'}%)` + (b.campanha && !b.campanha.individual ? ' — está numa campanha com outros anúncios, não dá para ajustar só ele' : '') });
