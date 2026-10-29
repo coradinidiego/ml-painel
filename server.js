@@ -1444,6 +1444,17 @@ app.get('/debug/bling/:idx', async (req, res) => {
   }
 });
 
+// Ativa Mercado Envios num anúncio (admin): PUT /items/{id} { shipping: { mode: 'me2', local_pick_up: false } }
+app.post('/ml/item/:idx/:item/mercado-envios', async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const idx = parseInt(req.params.idx), item = String(req.params.item);
+  if (!/^MLB\d+$/.test(item)) return res.status(400).json({ erro: 'anúncio inválido' });
+  try {
+    const r = await mlReq(idx, 'put', '/items/' + item, { shipping: { mode: 'me2', local_pick_up: false } });
+    const d = await ml(idx, '/items/' + item, { attributes: 'id,shipping,status' });
+    res.json({ ok: true, shipping: d.shipping, status: d.status });
+  } catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
+});
 // Diagnóstico (admin): GET cru na API do ML com o token da conta. Ex.: /debug/ml-raw/0?path=/products/MLB123
 app.get('/debug/ml-raw/:idx', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
