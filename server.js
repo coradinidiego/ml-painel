@@ -1444,6 +1444,17 @@ app.get('/debug/bling/:idx', async (req, res) => {
   }
 });
 
+// Muda a categoria de um anúncio (admin): PUT /items/{id} { category_id }
+app.post('/ml/item/:idx/:item/categoria', require('express').json(), async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const idx = parseInt(req.params.idx), item = String(req.params.item), cat = String(req.body?.categoria || '');
+  if (!/^MLB\d+$/.test(item) || !/^MLB\d+$/.test(cat)) return res.status(400).json({ erro: 'dados inválidos' });
+  try {
+    await mlReq(idx, 'put', '/items/' + item, { category_id: cat });
+    const d = await ml(idx, '/items/' + item, { attributes: 'id,category_id,shipping,status' });
+    res.json({ ok: true, item: d });
+  } catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
+});
 // Ativa Mercado Envios num anúncio (admin): PUT /items/{id} { shipping: { mode: 'me2', local_pick_up: false } }
 app.post('/ml/item/:idx/:item/mercado-envios', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
