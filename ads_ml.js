@@ -18,6 +18,7 @@ const cm = require('./custos_ml');
 const BASE = 'https://api.mercadolibre.com';
 const METRICAS = 'clicks,prints,cost,cpc,acos,ctr,direct_units_quantity,indirect_units_quantity,units_quantity,direct_amount,indirect_amount,total_amount,organic_units_quantity,organic_units_amount';
 const r2 = v => Math.round((+v || 0) * 100) / 100;
+const MARGEM_INDIRETA = 0.12;   // margem usada nas vendas indiretas do ADS (outros produtos), conservadora
 const delay = ms => new Promise(r => setTimeout(r, ms));
 const hojeSP = (d = 0) => new Date(Date.now() - d * 864e5).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
 
@@ -115,12 +116,13 @@ async function carregar(idx, dias) {
       const mg = it ? await cm.margemPreco(F.ml, idx, uid, it, preco, 0, erp) : { erro: 'anúncio fora da lista do painel' };
       const un = (+m.units_quantity || ((+m.direct_units_quantity || 0) + (+m.indirect_units_quantity || 0)));
       const custo = r2(m.cost);
-      // lucro das vendas do ADS pelo preço que realmente saiu (vendas ÷ unidades), não pelo preço de hoje do anúncio:
-      // receita − tarifa% − imposto% − unidades × (custo + frete + embalagem)
-      const vend = +m.total_amount || ((+m.direct_amount || 0) + (+m.indirect_amount || 0));
-      const lucroAntes = mg.lucro == null ? null : !un ? 0 : vend > 0 && mg.preco > 0
-        ? r2(vend * (1 - (mg.tarifa + mg.imposto) / mg.preco) - un * (mg.custo + mg.frete + mg.embalagem))
-        : r2(un * mg.lucro);
+      // lucro das vendas do ADS:
+      //  diretas (o próprio anúncio): pelo preço que realmente saiu → receita − tarifa% − imposto% − unidades × (custo + frete + embalagem)
+      //  indiretas (o comprador clicou no ADS e levou OUTRO produto seu): receita × margem média conservadora (MARGEM_INDIRETA)
+      const dU = +m.direct_units_quantity || 0, dV = +m.direct_amount || 0, iV = +m.indirect_amount || 0;
+      const lucroDireto = mg.lucro == null ? null : !dU ? 0 : dV > 0 && mg.preco > 0
+        ? dV * (1 - (mg.tarifa + mg.imposto) / mg.preco) - dU * (mg.custo + mg.frete + mg.embalagem) : dU * mg.lucro;
+      const lucroAntes = lucroDireto == null ? null : r2(lucroDireto + iV * MARGEM_INDIRETA);
       out.push({ id: a.item_id, titulo: a.title || it?.title, thumb: a.thumbnail || it?.thumbnail, link: a.permalink || it?.permalink, sku: it?._sku || '',
         status: a.status, campanha: a.campaign_id ? { id: a.campaign_id, nome: nomeCamp[String(a.campaign_id)] || ('#' + a.campaign_id) } : null,
         recomendado: !!a.recommended, catalogo: cat[a.item_id] || null, preco: r2(preco), estoque: it?.available_quantity ?? null,
