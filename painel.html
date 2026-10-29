@@ -179,7 +179,7 @@ body{background:#f0f2f5;color:#111}
 @media(max-width:600px){.ini-tot{grid-template-columns:1fr}}
 .gwrap{overflow-x:auto}
 @media(max-width:700px){.conta-tab{min-width:180px}.hd .top-bar,.contas{padding-left:16px;padding-right:16px}}
-.pm-card{background:#fff;border:1px solid #e6e8ec;border-radius:14px;margin:12px 0;box-shadow:0 1px 3px #0000000d;overflow:hidden}
+.pm-card{background:#fff;border:1px solid #e6e8ec;border-radius:14px;margin:12px 0;box-shadow:0 1px 3px #0000000d;overflow:visible}
 .pm-head{display:flex;gap:12px;align-items:center;padding:12px 14px;background:linear-gradient(180deg,#fafbfc,#fff);border-bottom:1px solid #f0f1f3;flex-wrap:wrap}
 .pm-head img,.pm-noimg{width:54px;height:54px;object-fit:cover;border-radius:10px;border:1px solid #eee;display:flex;align-items:center;justify-content:center;font-size:24px}
 .pm-tit{flex:1;min-width:220px}.pm-tit a{color:#1a1a1a;font-weight:700;font-size:14px;text-decoration:none}.pm-tit a:hover{text-decoration:underline}
@@ -190,6 +190,17 @@ body{background:#f0f2f5;color:#111}
 .pm-tag{display:inline-block;border-radius:20px;padding:1px 8px;font-size:11px;font-weight:600;margin-left:4px}
 .pm-tverde{background:#e8f5e9;color:#2e7d32}.pm-tverm{background:#ffebee;color:#c62828}.pm-tazul{background:#e3f2fd;color:#1565c0}.pm-tlaranja{background:#fff3e0;color:#e65100}
 .pm-pill{display:inline-block;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:700;white-space:nowrap}
+.pm-hastip{position:relative;cursor:help}
+.pm-tip{display:none;position:absolute;z-index:50;right:0;bottom:calc(100% + 8px);width:250px;background:#1c1d21;color:#f1f1f1;border-radius:8px;padding:12px 14px 10px;box-shadow:0 10px 30px rgba(0,0,0,.35);font-weight:500;white-space:normal;text-align:left;font-size:12.5px;line-height:1.35}
+.pm-tip::after{content:'';position:absolute;right:22px;top:100%;border:7px solid transparent;border-top-color:#1c1d21}
+.pm-hastip:hover .pm-tip,.pm-hastip:focus .pm-tip{display:block}
+.pm-tip-t{display:block;text-align:center;font-size:13px;margin-bottom:8px}
+.pm-tip-l{display:flex;justify-content:space-between;gap:10px;padding:2px 0}
+.pm-tip-l b{font-weight:600}
+.pm-tip-pos b{color:#7ee2a8}
+.pm-tip-tot{border-top:1px solid #3a3c42;margin-top:5px;padding-top:6px}
+.pm-tip-tot b{font-weight:800}
+.pm-tip-n{display:block;color:#a7abb3;font-style:normal;font-size:11px;margin-top:7px;border-top:1px solid #3a3c42;padding-top:6px}
 .pm-verde{background:#e8f5e9;color:#2e7d32}.pm-amar{background:#fff8e1;color:#b26a00}.pm-verm{background:#ffebee;color:#c62828}.pm-cinza{background:#f1f3f5;color:#777;font-weight:500}
 .pm-ops{padding:6px 10px 10px}
 .pm-op{display:grid;grid-template-columns:minmax(180px,2.2fr) minmax(150px,1.6fr) minmax(110px,1fr) minmax(120px,1fr) 90px;gap:10px;align-items:center;padding:9px 10px;border-left:4px solid #90a4ae;border-radius:8px;margin-top:6px;background:#fafbfc}
@@ -889,7 +900,12 @@ function pmBase(x,o){return +(o.original||x.precoAtual)||0;}
 function pmLucroHtml(m){
   if(!m||m.erro||m.lucro==null)return '<span class="pm-pill pm-cinza">'+shpEsc(m?.erro||'sem custo')+'</span>';
   const c=m.lucro<0?'pm-verm':m.pct<8?'pm-amar':'pm-verde';
-  return '<span class="pm-pill '+c+'">'+pmBRL(m.lucro)+' · '+String(m.pct).replace('.',',')+'%</span>';
+  const L=(r,v,neg,cls)=>v==null?'':'<div class="pm-tip-l'+(cls?' '+cls:'')+'"><span>'+r+'</span><b>'+(neg&&v?'-':'')+pmBRL(Math.abs(v))+'</b></div>';
+  const tip='<span class="pm-tip" role="tooltip"><b class="pm-tip-t">Sua margem de contribuição</b>'+
+    L('Preço final',m.preco)+(m.rebate?L('Rebate do ML',m.rebate,false,'pm-tip-pos'):'')+L('Tarifa ML',m.tarifa,true)+L('Frete',m.frete,true)+L('Custo do produto',m.custo,true)+L('Imposto',m.imposto,true)+(m.embalagem?L('Embalagem',m.embalagem,true):'')+
+    '<div class="pm-tip-l pm-tip-tot"><span>Margem</span><b>'+(m.lucro<0?'-':'')+pmBRL(Math.abs(m.lucro))+' ('+String(m.pct).replace('.',',')+'%)</b></div>'+
+    '<i class="pm-tip-n">'+(m.frete?'Frete do ML para o vendedor neste preço.':'Sem frete para o vendedor neste preço.')+(m.custoFonte?' Custo: '+shpEsc(m.custoFonte)+'.':'')+(m.impostoPct!=null?' Imposto '+String(m.impostoPct).replace('.',',')+'%.':'')+'</i></span>';
+  return '<span class="pm-pill pm-hastip '+c+'" tabindex="0">'+pmBRL(m.lucro)+' · '+String(m.pct).replace('.',',')+'%'+tip+'</span>';
 }
 function pmCampoPreco(x,o,i){
   const base=pmBase(x,o),k=x.id+'|'+i,preco=_pmPreco[k]??o.preco,pct=base?Math.round((1-preco/base)*1000)/10:0;
