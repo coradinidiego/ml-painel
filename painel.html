@@ -851,7 +851,7 @@ function pmListas(q){
   const ganhando=ordenar(I.filter(x=>x.catalogo?.status==='winning'&&busca(x)));
   const todos=ordenar(I.filter(x=>x.opcoes.length&&busca(x)));
   const mgMin=+(el('pm-ganhar-min')?.value??_pmGanharMin);
-  const ganhar=I.filter(x=>x.ganhar?.m?.lucro!=null&&x.ganhar.m.pct>=mgMin&&busca(x)).sort((a,b)=>b.ganhar.m.pct-a.ganhar.m.pct);
+  const ganhar=I.filter(x=>x.ganhar?.m?.lucro!=null&&x.ganhar.ptw<x.precoAtual-0.005&&x.ganhar.m.pct>=mgMin&&busca(x)).sort((a,b)=>b.ganhar.m.pct-a.ganhar.m.pct);
   return _pmL={sem,rebate,perdendo,ganhando,todos,ganhar,pm};
 }
 function renderPromosML(){
