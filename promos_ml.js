@@ -51,7 +51,10 @@ async function opcoesItem(idx, uid, it, cat, erp) {
     if (IGNORAR.has(p.type) || !STATUS[p.status]) continue;
     const preco = +p.price > 0 ? +p.price : (+p.max_discounted_price || +p.suggested_discounted_price || 0);
     if (!(preco > 0)) continue;
-    const reb = +p.meli_percentage > 0 ? r2((+p.original_price || it.price) * +p.meli_percentage / 100) : 0;
+    // redução de tarifa (ML banca meli_percentage): na oferta ativa o ML aplica sobre o preço cheio (confere com o "Reduzimos R$ X" do ML);
+    // nas propostas ainda não aceitas o ML costuma mostrar um valor menor (≈ % sobre o desconto) — usa o menor dos dois, para não superestimar
+    const orig = +p.original_price || it.price, pctM = +p.meli_percentage || 0;
+    const reb = pctM > 0 ? r2(p.status === 'started' ? orig * pctM / 100 : Math.min(orig * pctM / 100, Math.max(0, orig - preco) * pctM / 100)) : 0;
     const m = await cm.margemPreco(F.ml, idx, uid, it, preco, reb, erp);
     const o = { id: p.id || null, ref: p.ref_id || p.offer_id || null, tipo: p.type, tipoNome: NOME_TIPO[p.type] || p.type, nome: p.name || NOME_TIPO[p.type] || p.type,
       status: p.status, situacao: STATUS[p.status], preco: r2(preco), original: +p.original_price || null, meliPct: +p.meli_percentage || 0, rebate: reb,
