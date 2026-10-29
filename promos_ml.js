@@ -81,7 +81,24 @@ async function opcoesItem(idx, uid, it, cat, erp) {
     const rebDepois = seguinte && +seguinte.meli_percentage > 0 ? r2((+seguinte.original_price || 0) * +seguinte.meli_percentage / 100) : 0;
     saida = { fim: ativa.finish_date, precoDepois: r2(precoDepois), depoisCom: seguinte ? (seguinte.name || NOME_TIPO[seguinte.type] || seguinte.type) : null, depois: await cm.margemPreco(F.ml, idx, uid, it, precoDepois, rebDepois, erp) };
   }
-  return { precoAtual: r2(precoAtual), atual, ativa: ativa ? { nome: ativa.name || NOME_TIPO[ativa.type] || ativa.type, tipo: ativa.type, rebate: rebAtual, fim: ativa.finish_date || null } : null, saida, opcoes, rebateMelhor: melhores.length };
+  // perdendo catálogo: margem no preço que faz ganhar (price_to_win) e qual promoção leva até ele
+  let ganhar = null;
+  if (cat && cat.status !== 'winning' && cat.ptw > 0) {
+    const ptw = r2(cat.ptw);
+    const m = await cm.margemPreco(F.ml, idx, uid, it, ptw, 0, erp);
+    let via = null;
+    for (let i = 0; i < opcoes.length; i++) {
+      const o = opcoes[i]; if (o.status !== 'candidate' || !o.podeEntrar) continue;
+      let p = null;
+      if (o.livre && o.faixa && ptw >= o.faixa[0] - 0.001) p = Math.min(ptw, o.faixa[1]);
+      else if (o.preco <= ptw + 0.001) p = o.preco;
+      if (p == null || p > ptw + 0.001) continue;
+      const mo = (o.livre && Math.abs(p - o.preco) > 0.004) ? await cm.margemPreco(F.ml, idx, uid, it, p, o.rebate || 0, erp) : o.m;
+      if (!via || (mo.lucro ?? -1e9) > (via.m.lucro ?? -1e9)) via = { opcao: i, nome: o.nome, preco: r2(p), livre: !!o.livre, rebate: o.rebate || 0, m: mo };
+    }
+    ganhar = { ptw, m, via, s2: cat.s2price || null };
+  }
+  return { ganhar, precoAtual: r2(precoAtual), atual, ativa: ativa ? { nome: ativa.name || NOME_TIPO[ativa.type] || ativa.type, tipo: ativa.type, rebate: rebAtual, fim: ativa.finish_date || null } : null, saida, opcoes, rebateMelhor: melhores.length };
 }
 
 const fs = require('fs'), path = require('path');

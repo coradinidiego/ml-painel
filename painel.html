@@ -837,7 +837,7 @@ async function carregarPromosML(forcar){
   }catch(e){el('b-promos').innerHTML='<div class="loading" style="color:#c0392b">Erro ao carregar.</div>';}
 }
 // Promoções: painel com indicadores + listas que abrem e fecham (sem promoção, rebate, catálogo, todos)
-const _pmAberto={sem:true};let _pmL={};
+const _pmAberto={sem:true};let _pmL={},_pmGanharMin=10;
 function pmListas(q){
   const d=window._dados?.[ci], pm=_pm&&_pm.itens?Object.fromEntries(_pm.itens.map(x=>[x.id,x])):{}, I=_pm?.itens||[];
   const busca=x=>!q||((x.sku||x._sku||x.seller_sku||'')+' '+(x.titulo||x.title||'')+' '+x.id).toLowerCase().includes(q);
@@ -850,7 +850,9 @@ function pmListas(q){
   const perdendo=ordenar(I.filter(x=>x.catalogo?.status==='competing'&&busca(x))).sort((a,b)=>(b.opcoes.some(o=>o.catalogo==='passa a ganhar')?1:0)-(a.opcoes.some(o=>o.catalogo==='passa a ganhar')?1:0));
   const ganhando=ordenar(I.filter(x=>x.catalogo?.status==='winning'&&busca(x)));
   const todos=ordenar(I.filter(x=>x.opcoes.length&&busca(x)));
-  return _pmL={sem,rebate,perdendo,ganhando,todos,pm};
+  const mgMin=+(el('pm-ganhar-min')?.value??_pmGanharMin);
+  const ganhar=I.filter(x=>x.ganhar?.m?.lucro!=null&&x.ganhar.m.pct>=mgMin&&busca(x)).sort((a,b)=>b.ganhar.m.pct-a.ganhar.m.pct);
+  return _pmL={sem,rebate,perdendo,ganhando,todos,ganhar,pm};
 }
 function renderPromosML(){
   const ae=document.activeElement;if(ae&&ae.tagName==='INPUT'&&ae.closest&&ae.closest('#b-promos'))return;   // não atrapalha quem está digitando
@@ -861,13 +863,14 @@ function renderPromosML(){
   const nCat=I.filter(x=>x.catalogo).length, prej=I.filter(x=>x.atual?.lucro<0).length;
   const K=(v,l,c,k)=>'<div class="pm-kpi" style="border-top-color:'+c+'"'+(k?' onclick="pmAbrir(\''+k+'\')"':'')+'><div class="v">'+v+'</div><div class="l">'+l+'</div></div>';
   el('pm-kpis').innerHTML=K(L.sem.length,'⚠️ sem promoção','#E65100','sem')+K(L.rebate.length,'💰 rebate que lucra mais','#2e7d32','rebate')+
-    K(L.perdendo.length+'<small>/'+nCat+'</small>','🔴 perdendo catálogo','#c62828','perdendo')+K(L.ganhando.length,'🟢 ganhando catálogo','#2e7d32','ganhando')+
+    K(L.perdendo.length+'<small>/'+nCat+'</small>','🔴 perdendo catálogo','#c62828','perdendo')+K(L.ganhar.length,'🎯 ganha o catálogo com margem ≥ '+_pmGanharMin+'%','#6a1b9a','ganhar')+K(L.ganhando.length,'🟢 ganhando catálogo','#2e7d32','ganhando')+
     K(rec?String(Math.round(luc/rec*1000)/10).replace('.',',')+'%':'—','📈 margem média hoje','#1565c0')+K(prej,'🔻 anúncios no prejuízo','#c62828','todos')+K(sai,'⏳ saem de promoção em 7 dias','#ef6c00','saida');
   const carregando=!_pm||_pm.status!=='pronto';
   const S=(k,t,cor,n,desc)=>'<details class="pm-sec" data-k="'+k+'"'+(_pmAberto[k]?' open':'')+' ontoggle="pmToggle(this)"><summary><span class="pm-sec-t" style="border-left-color:'+cor+'">'+t+'</span><span class="cnt">'+n+'</span><small>'+desc+'</small><span class="pm-sec-seta">▾</span></summary><div class="pm-sec-b" id="pm-sec-'+k+'"></div></details>';
   el('b-promos').innerHTML=(carregando?'<div style="font-size:12px;color:#888;padding:4px 0 8px">⏳ Atualizando as opções de promoção'+(_pm?.total?' ('+_pm.feito+' de '+_pm.total+')':'')+'… o que já foi calculado aparece nas listas.</div>':'')+
     S('sem','⚠️ Sem promoção','#E65100',L.sem.length,'anúncios sem promoção ativa, com as opções para entrar')+
     S('rebate','💰 Rebate que dá mais lucro que hoje','#2e7d32',L.rebate.length,'o ML banca parte do desconto e o lucro fica maior que o atual')+
+    S('ganhar','🎯 Dá para ganhar o catálogo mantendo margem','#6a1b9a',L.ganhar.length,'perdendo hoje · margem no preço que faz ganhar ≥ <select id="pm-ganhar-min" onclick="event.stopPropagation()" onchange="_pmGanharMin=+this.value;renderPromosML()" style="font-size:11px;padding:1px 4px">'+[0,5,8,10,12,15,20,25].map(v=>'<option'+(v===_pmGanharMin?' selected':'')+' value="'+v+'">'+v+'%</option>').join('')+'</select>')+
     S('perdendo','🔴 Perdendo catálogo','#c62828',L.perdendo.length,'primeiro os que têm uma promoção que faz ganhar')+
     S('ganhando','🟢 Ganhando catálogo','#2e7d32',L.ganhando.length,'com o preço do 2º colocado')+
     S('todos','📋 Todos com promoções disponíveis','#607d8b',L.todos.length,'lista completa');
@@ -877,12 +880,21 @@ function renderPromosML(){
 }
 function pmAbrir(k){if(k==='saida'){const b=el('pm-saida-box');b.open=true;b.scrollIntoView({behavior:'smooth'});return;}_pmAberto[k]=true;const d=document.querySelector('.pm-sec[data-k="'+k+'"]');if(d){d.open=true;pmRenderSec(k);d.scrollIntoView({behavior:'smooth',block:'start'});}}
 function pmToggle(d){const k=d.dataset.k;_pmAberto[k]=d.open;if(d.open)pmRenderSec(k);}
+function pmGanharFaixa(x){
+  const g=x.ganhar,a=x.atual||{},v=g.via,pc=n=>String(n).replace('.',',')+'%',d=(a.pct!=null?Math.round((a.pct-g.m.pct)*10)/10:null);
+  return '<div style="margin:8px 14px 2px;padding:10px 12px;border-radius:10px;background:#f3e5f5;display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13px">'+
+    '<div>Hoje <b>'+pmBRL(x.precoAtual)+'</b> · margem <b>'+(a.pct!=null?pc(a.pct):'—')+'</b> · <span style="color:#c62828">perdendo</span></div><div style="font-size:18px;color:#6a1b9a">→</div>'+
+    '<div>A <b>'+pmBRL(g.ptw)+'</b> você <b style="color:#2e7d32">ganha o catálogo</b> · margem <b>'+pc(g.m.pct)+'</b> ('+pmBRL(g.m.lucro)+')'+(d!=null?' <span style="color:#888">· '+(d>=0?'−':'+')+String(Math.abs(d)).replace('.',',')+' p.p.</span>':'')+'</div>'+
+    '<div style="margin-left:auto">'+(v?'<span style="font-size:12px;color:#555">via <b>'+shpEsc(v.nome)+'</b>'+(v.preco<g.ptw-0.004?' a '+pmBRL(v.preco):'')+(v.rebate?' (+ rebate)':'')+' · margem '+pc(v.m.pct)+'</span> <button class="pm-btn" onclick="pmGanhar(\''+x.id+'\',this)">Entrar e ganhar</button>':'<span style="font-size:12px;color:#c62828">nenhuma promoção chega a '+pmBRL(g.ptw)+' — ajuste o preço do anúncio</span> <a class="pm-link" href="https://www.mercadolivre.com.br/anuncios/'+x.id+'/modificar" target="_blank">Editar ↗</a>')+'</div></div>';
+}
+function pmGanhar(id,btn){const x=_pm.itens.find(y=>y.id===id),v=x?.ganhar?.via;if(!v)return;if(v.livre){_pmPreco[id+'|'+v.opcao]=v.preco;_pmSim[id+'|'+v.opcao]=v.m;}entrarPromoML(id,v.opcao,btn);}
 function pmRenderSec(k){
   const b=el('pm-sec-'+k);if(!b)return;const L=_pmL[k]||[],pm=_pmL.pm||{};
   if(!L.length){b.innerHTML='<div class="pm-vazio" style="color:#2e7d32">✓ Nada nesta lista.</div>';return;}
   const carregando=!_pm||_pm.status!=='pronto';
   const ocultar=id=>'<div style="font-size:11px;margin-top:4px;padding:0 14px"><a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="#" onclick="ignorarPromo(\''+id+'\',true);return false" title="Tirar da lista (produto que não pode ter promoção)">Ocultar</a></div>';
   let html=L.slice(0,150).map(it=>{
+    if(k==='ganhar')return cardPromoML(it,pmGanharFaixa(it));
     if(k!=='sem')return cardPromoML(it);
     const x=pm[it.id];
     if(x)return cardPromoML({...x,semPromo:true},ocultar(it.id));
