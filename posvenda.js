@@ -4,12 +4,11 @@
  *  - Para analisar: o marketplace está esperando uma decisão do vendedor
  *      ML: reclamação aberta em que o vendedor pode reembolsar / abrir disputa / tem ação obrigatória
  *      Shopee: devolução com status REQUESTED (aguardando resposta do vendedor)
- *      (a SHEIN não pede análise do vendedor: aprova sozinha)
  *  - Chegou na empresa: o produto devolvido foi entregue no endereço do vendedor (últimos 30 dias).
  *      Fica na lista até alguém marcar "conferido" no painel.
  *      ML: devolução entregue em seller_address (ou com "revisar devolução" pendente)
  *      Shopee: logística reversa LOGISTICS_DELIVERY_DONE
- *      SHEIN: devolução recebida pelo vendedor (sellerSignedTime)
+ *      SHEIN: pacote de devolução entregue (status 6) esperando o vendedor aprovar o reembolso ou reportar problema
  *  - A caminho: devolução postada, ainda não chegou (só contagem)
  *
  *  GET  /posvenda                 situação de todas as empresas
@@ -161,7 +160,7 @@ async function coletarShopee(e) {
 }
 
 // ─── SHEIN ──────────────────────────────────────────────────────────────────
-const ST_SHEIN = { 2: 'aguardando envio do cliente', 5: 'recebida pelo vendedor', 7: 'em trânsito', 8: 'reembolsada', 9: 'finalizada' };
+const ST_SHEIN = { 2: 'aguardando envio do cliente', 6: 'entregue — aguardando sua verificação', 5: 'recebida pelo vendedor', 7: 'em trânsito', 8: 'reembolsada', 9: 'finalizada' };
 async function coletarShein(e) {
   const shein = require('./shein');
   if (!shein.autorizada(e.id)) return { naoConectada: true };
@@ -189,7 +188,13 @@ async function coletarShein(e) {
         titulo: g.goodsName || g.goodsTitle || g.skuSn || x.orderNo, sku: g.skuSn || g.goodsSn || '', thumb: g.goodsImg || g.imgUrl || null,
         link: 'https://sso.geiwohuo.com/#/order-management/return-order-list?returnOrderNo=' + encodeURIComponent(x.returnOrderNo) };
       const recebida = x.sellerSignedTime ? new Date(x.sellerSignedTime.replace(' ', 'T') + '+08:00') : null;
-      if (recebida && x.returnOrderStatus === 5) { if (false && x.checkStatus === 2) out.chegou.push({ ...base, chegouEm: recebida.toISOString(), acao: 'conferir a devolução na SHEIN' }); }
+      // 6 = pacote de devolução entregue: a SHEIN espera o vendedor conferir e "Aprovar reembolso" ou "Reportar problema"
+      // (prazo de ~3 dias após a entrega; depois disso a SHEIN confirma o recebimento sozinha). Horário da SHEIN em UTC+8.
+      if (x.returnOrderStatus === 6 && !x.completedTime) {
+        const ent = x.lastUpdateTime ? new Date(x.lastUpdateTime.replace(' ', 'T') + '+08:00') : null;
+        out.chegou.push({ ...base, chegouEm: ent ? ent.toISOString() : null, acao: 'conferir o produto e aprovar o reembolso (ou reportar problema) na SHEIN', prazo: ent ? new Date(ent.getTime() + 72 * 3600e3).toISOString() : null });
+      }
+      else if (recebida && x.returnOrderStatus === 5) { /* já recebida e conferida */ }
       else if ([2, 7].includes(x.returnOrderStatus)) out.caminho++;
     }
     await delay(150);
@@ -218,7 +223,7 @@ async function sincronizarTrello() {
     const pend = new Map(), canaisOk = new Set();
     for (const e of EMP) {
       const R = ST[e.id] || {};
-      for (const c of ['ml', 'shopee']) {
+      for (const c of ['ml', 'shopee', 'shein']) {
         const x = R[c]; if (!x || x.naoConectada) continue;
         if (!x.erro) canaisOk.add(e.id + '|' + c);
         for (const i of [...(x.analisar || []), ...(x.chegou || [])]) pend.set(i.chave, { ...i, emp: e.id });
