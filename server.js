@@ -1444,6 +1444,19 @@ app.get('/debug/bling/:idx', async (req, res) => {
   }
 });
 
+// Ativa Mercado Envios Flex num anúncio (admin)
+app.post('/ml/item/:idx/:item/flex', async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const idx = parseInt(req.params.idx), item = String(req.params.item);
+  if (!/^MLB\d+$/.test(item)) return res.status(400).json({ erro: 'anúncio inválido' });
+  const tent = [];
+  for (const [m, p] of [['post', '/sites/MLB/shipping/selfservice/items/' + item], ['post', '/flex/sites/MLB/items/' + item + '/v2']]) {
+    try { const r = await mlReq(idx, m, p, {}); tent.push({ p, ok: true, r: r.data }); break; }
+    catch (e) { tent.push({ p, status: e.response?.status, body: e.response?.data }); }
+  }
+  try { const d = await ml(idx, '/items/' + item, { attributes: 'id,shipping' }); res.json({ tent, tags: d.shipping?.tags }); }
+  catch (e) { res.json({ tent, erro: e.message }); }
+});
 // Muda a categoria de um anúncio (admin): PUT /items/{id} { category_id }
 app.post('/ml/item/:idx/:item/categoria', require('express').json(), async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
