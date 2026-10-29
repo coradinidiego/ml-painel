@@ -324,6 +324,10 @@ async function carregarConta(idx) {
         it.price_to_win = ptw.price_to_win;
         it.winner_price = ptw.winner?.price;
         it.status_cat = ptw.status;
+        it.ptw_reason = ptw.reason || [];
+        const meusB = Object.fromEntries((ptw.boosts || []).map(b => [b.id, b.status]));
+        it.vantagens_ganhador = (ptw.winner?.boosts || []).filter(b => b.status === 'boosted' && meusB[b.id] !== 'boosted').map(b => b.description || b.id);
+        it.preco_nao_resolve = (ptw.reason || []).includes('no_improvement_price') || !(ptw.price_to_win < ptw.current_price - 0.005);
         it.visit_share = ptw.visit_share;
         it.catalog_product_id = ptw.catalog_product_id;
         it.diff = ptw.current_price && ptw.price_to_win ? (ptw.current_price - ptw.price_to_win) : 999;
