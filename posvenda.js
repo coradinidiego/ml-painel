@@ -107,7 +107,9 @@ async function coletarML(ctx, e) {
   for (let off = 0; off < 300; off += 50) {
     const s = await ml(e.idx, '/post-purchase/v1/claims/search', { status: 'closed', limit: 50, offset: off, sort: 'last_updated:desc' });
     const L = s.data || [];
-    for (const c of L) if (Date.parse(c.last_updated) >= limite && (c.type === 'returns' || (c.related_entities || []).includes('return'))) await tratar(c, false);
+    // a busca nem sempre traz related_entities: entra também a reclamação fechada em que o ML ainda pede a revisão da devolução ao vendedor
+    const pedeRevisao = c => (c.players || []).some(p => (p.type === 'seller' || p.role === 'respondent') && (p.available_actions || []).some(a => ACOES_REVISAR.has(a.action)));
+    for (const c of L) if (Date.parse(c.last_updated) >= limite && (c.type === 'returns' || (c.related_entities || []).includes('return') || pedeRevisao(c))) await tratar(c, false);
     if (L.length < 50 || Date.parse(L[L.length - 1].last_updated) < limite) break;
   }
   // número da venda como aparece no ML (pacote, quando o pedido faz parte de um carrinho)
