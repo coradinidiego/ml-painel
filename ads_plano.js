@@ -6,10 +6,10 @@
  * ACOS alvo sugerido = metade da margem (metade do lucro fica com você, metade vira ADS).
  *
  * Recomendações:
- *   remover    gastou ≥ R$ 10 em 15 dias sem nenhuma venda pelo ADS · ou margem < 5% (não comporta ADS) · ou prejuízo nos 15 e nos 7 dias
+ *   remover    gastou ≥ R$ 5 em 15 dias sem nenhuma venda pelo ADS · ou margem < 5% (não comporta ADS) · ou prejuízo nos 15 e nos 7 dias
  *   acos       campanha individual com ACOS alvo acima do que a margem aguenta → baixar o ACOS alvo (= subir o ROAS)
  *   orcamento  campanha lucrativa batendo no orçamento (gasto/dia nos 7 dias ≥ 80% do orçamento) → subir 50%
- *   criar      anúncio sem ADS, com estoque, margem ≥ 12% e vendendo orgânico (ou recomendado pelo ML) → campanha individual
+ *   criar      anúncio sem ADS, com estoque, margem ≥ 12% ≥ 3 vendas orgânicas em 15 dias e sem gasto de ADS no período (não volta quem foi tirado) → campanha individual
  *   manter     dando lucro com ACOS confortável (só contagem / lista)
  *
  * Roda sozinho todo dia às 7h (Brasília), grava em apuracao_cache/ads_plano.json e manda o resumo no Telegram.
@@ -55,7 +55,7 @@ function planoConta(c, Q, S) {   // Q = 15 dias, S = 7 dias
   for (const x of Q.itens) {
     const m = x.margem?.pct, ativo = x.campanha && x.status === 'active', b = base(x), y = b.s || {};
     if (ativo) {
-      if (x.custo >= 10 && !x.unidadesAds) { recs.push({ ...b, tipo: 'remover', peso: x.custo, motivo: `R$ ${x.custo.toFixed(2)} em 15 dias sem nenhuma venda pelo ADS` }); continue; }
+      if (x.custo >= 5 && !x.unidadesAds) { recs.push({ ...b, tipo: 'remover', peso: x.custo, motivo: `R$ ${x.custo.toFixed(2)} em 15 dias sem nenhuma venda pelo ADS` }); continue; }
       if (m != null && m < 5 && x.custo >= 3) { recs.push({ ...b, tipo: 'remover', peso: x.custo, motivo: `margem de ${m}% não comporta ADS (R$ ${x.custo.toFixed(2)} gastos em 15 dias)` }); continue; }
       if (x.lucroAds != null && x.lucroAds < -5 && (y.lucro ?? 0) <= 0) {
         const alvo = m != null ? acosAlvo(m) : null;
@@ -67,7 +67,8 @@ function planoConta(c, Q, S) {   // Q = 15 dias, S = 7 dias
         recs.push({ ...b, tipo: 'acos', peso: x.custo, sugestao: { acos_target: acosAlvo(m) }, motivo: `ACOS alvo da campanha (${b.campanha.acosAlvo}%) é maior que a margem do anúncio (${m}%)` }); continue;
       }
       if (x.lucroAds > 0) ok.push({ ...b, tipo: 'manter', peso: x.lucroAds });
-    } else if ((!x.campanha || x.status === 'idle') && x.status !== 'hold' && (x.estoque ?? 1) > 0 && m != null && m >= 12 && ((x.organicas || 0) >= 2 || x.recomendado)) {
+    } else if ((!x.campanha || x.status === 'idle') && x.status !== 'hold' && !(x.custo > 0) && (x.estoque ?? 1) > 0 && m != null && m >= 12 && (x.organicas || 0) >= 3) {
+      // (custo > 0 nos 15 dias = esteve no ADS e foi tirado: não sugere voltar)
       recs.push({ ...b, tipo: 'criar', peso: (x.organicas || 0) * (x.margem?.lucro || 0) + (x.recomendado ? 5 : 0), sugestao: { budget: ORC_PADRAO, acos_target: acosAlvo(m) },
         motivo: `sem ADS · ${x.organicas || 0} venda(s) orgânica(s) em 15 dias${x.recomendado ? ' · recomendado pelo ML' : ''} · margem ${m}%` });
     }

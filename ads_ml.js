@@ -115,7 +115,12 @@ async function carregar(idx, dias) {
       const mg = it ? await cm.margemPreco(F.ml, idx, uid, it, preco, 0, erp) : { erro: 'anúncio fora da lista do painel' };
       const un = (+m.units_quantity || ((+m.direct_units_quantity || 0) + (+m.indirect_units_quantity || 0)));
       const custo = r2(m.cost);
-      const lucroAntes = mg.lucro != null ? r2(un * mg.lucro) : null;
+      // lucro das vendas do ADS pelo preço que realmente saiu (vendas ÷ unidades), não pelo preço de hoje do anúncio:
+      // receita − tarifa% − imposto% − unidades × (custo + frete + embalagem)
+      const vend = +m.total_amount || ((+m.direct_amount || 0) + (+m.indirect_amount || 0));
+      const lucroAntes = mg.lucro == null ? null : !un ? 0 : vend > 0 && mg.preco > 0
+        ? r2(vend * (1 - (mg.tarifa + mg.imposto) / mg.preco) - un * (mg.custo + mg.frete + mg.embalagem))
+        : r2(un * mg.lucro);
       out.push({ id: a.item_id, titulo: a.title || it?.title, thumb: a.thumbnail || it?.thumbnail, link: a.permalink || it?.permalink, sku: it?._sku || '',
         status: a.status, campanha: a.campaign_id ? { id: a.campaign_id, nome: nomeCamp[String(a.campaign_id)] || ('#' + a.campaign_id) } : null,
         recomendado: !!a.recommended, catalogo: cat[a.item_id] || null, preco: r2(preco), estoque: it?.available_quantity ?? null,
