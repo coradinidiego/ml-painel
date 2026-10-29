@@ -325,8 +325,13 @@ async function carregarConta(idx) {
         it.winner_price = ptw.winner?.price;
         it.status_cat = ptw.status;
         it.ptw_reason = ptw.reason || [];
-        const meusB = Object.fromEntries((ptw.boosts || []).map(b => [b.id, b.status]));
-        it.vantagens_ganhador = (ptw.winner?.boosts || []).filter(b => b.status === 'boosted' && meusB[b.id] !== 'boosted').map(b => b.description || b.id);
+        // boosts: lista [{id,status,description}] (v2) ou objeto {fulfillment: true, ...} (v1)
+        const NOMEB = { fulfillment: 'Envios Full', free_shipping: 'Frete grátis', free_installments: 'Pagamento sem juros', same_day_shipping: 'Envios no mesmo dia', cross_docking: 'Envios com coleta', drop_off: 'Envios por agência', shipping_collect: 'Envios com coleta' };
+        const normB = b => Array.isArray(b) ? b.map(x => ({ id: x.id, on: x.status === 'boosted', d: x.description || NOMEB[x.id] || x.id })) : Object.entries(b || {}).map(([id, on]) => ({ id, on: !!on, d: NOMEB[id] || id }));
+        try {
+          const meusB = Object.fromEntries(normB(ptw.boosts).map(x => [x.id, x.on]));
+          it.vantagens_ganhador = normB(ptw.winner?.boosts).filter(x => x.on && !meusB[x.id]).map(x => x.d);
+        } catch (eb) { it.vantagens_ganhador = []; }
         it.preco_nao_resolve = (ptw.reason || []).includes('no_improvement_price') || !(ptw.price_to_win < ptw.current_price - 0.005);
         it.visit_share = ptw.visit_share;
         it.catalog_product_id = ptw.catalog_product_id;
