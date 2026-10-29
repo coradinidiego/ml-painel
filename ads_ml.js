@@ -92,6 +92,20 @@ async function carregar(idx, dias) {
     const cat = {};
     for (const x of d.perdendo || []) cat[x.id] = 'perdendo';
     for (const x of d.ganhando || []) cat[x.id] = 'ganhando';
+    // anúncios que a lista do painel ainda não tem (ex.: logo depois de reiniciar): busca no ML
+    const faltam = itens.map(a => a.item_id).filter(id => id && !porId[id]);
+    for (let i = 0; i < faltam.length; i += 20) {
+      try {
+        const R = await F.ml(idx, '/items', { ids: faltam.slice(i, i + 20).join(','), attributes: 'id,title,price,original_price,thumbnail,permalink,seller_custom_field,attributes,variations,listing_type_id,category_id,available_quantity' });
+        for (const w of Array.isArray(R) ? R : [R]) {
+          const it = w.body || w; if (!it?.id) continue;
+          const skuAttr = o => o?.seller_custom_field || (o?.attributes || []).find(x => x.id === 'SELLER_SKU')?.value_name;
+          it._sku = skuAttr(it) || (it.variations || []).map(skuAttr).find(Boolean) || '';
+          porId[it.id] = it;
+        }
+      } catch (e) {}
+      await delay(150);
+    }
     const uid = await F.uid(idx), erp = await cm.custosErp(idx).catch(() => ({}));
     const out = [];
     for (const a of itens) {
