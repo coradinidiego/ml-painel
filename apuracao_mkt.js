@@ -516,13 +516,25 @@ router.get('/status', (req, res) => {
     res.json(Object.fromEntries(emps.map(e => [e, jobs[`${e}_${ini}_${fim}`] || null])));
   } catch (e) { res.status(400).json({ erro: e.message }); }
 });
+// períodos já baixados que contêm [ini, fim] — do mais curto (mais preciso) ao mais longo
+function periodosQueCobrem(emp, ini, fim) {
+  const re = new RegExp('^apmkt_ml_' + emp + '_(\\d{4}-\\d{2}-\\d{2})_(\\d{4}-\\d{2}-\\d{2})\\.json$');
+  let L = []; try { L = fs.readdirSync(DIR).map(f => f.match(re)).filter(Boolean).map(m => [m[1], m[2]]); } catch (e) {}
+  return L.filter(([a, b]) => a <= ini && b >= fim && !(a === ini && b === fim)).sort((x, y) => (Date.parse(x[1]) - Date.parse(x[0])) - (Date.parse(y[1]) - Date.parse(y[0])));
+}
 router.get('/resultado', async (req, res) => {
   try {
     const [ini, fim] = periodo(req.query);
     const emps = req.query.emp === 'todas' ? Object.keys(EMP) : [req.query.emp].filter(e => EMP[e]);
     const linhas = [], pendentes = [], amz = {}, fora = [];
     for (const e of emps) {
-      const r = await calcular(e, ini, fim);
+      let r = await calcular(e, ini, fim);
+      // sem download exato do período: usa um período maior já baixado (ex.: o automático 01→ontem) e recorta pelas datas
+      if (r.pendente) for (const [a, b] of periodosQueCobrem(e, ini, fim)) {
+        const r2_ = await calcular(e, a, b); if (r2_.pendente) continue;
+        const ok = l => l.data >= ini && l.data <= fim;
+        r = { ...r2_, linhas: r2_.linhas.filter(ok), fora: r2_.fora.filter(ok) }; break;
+      }
       if (r.pendente) pendentes.push(EMP[e].nome); else { linhas.push(...r.linhas); fora.push(...r.fora); amz[EMP[e].nome] = r.amazonFinanceiro; }
     }
     const canal = CANAIS.includes(req.query.canal) ? req.query.canal : null;
