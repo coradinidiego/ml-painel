@@ -196,10 +196,12 @@ function embalagem(idx) { return require('./config_empresas').porMlIdx(idx)?.emb
 
 // ─── Tarifas e frete do ML (com cache) ─────────────────────────────────────
 const _tarifa = new Map(), _frete = new Map();
-async function tarifaML(ml, idx, preco, tipo, categoria) {
-  const k = `${preco.toFixed(2)}|${tipo}|${categoria}`;
+async function tarifaML(ml, idx, preco, tipo, categoria, itemId) {
+  // sem Mercado Envios o ML cobra a taxa fixa abaixo de R$ 79 (com ME2 ela vira custo de frete)
+  const modo = itemId ? await modoEnvio(ml, idx, itemId) : '';
+  const k = `${preco.toFixed(2)}|${tipo}|${categoria}|${modo}`;
   if (_tarifa.has(k)) return _tarifa.get(k);
-  const r = await ml(idx, '/sites/MLB/listing_prices', { price: preco.toFixed(2), listing_type_id: tipo, category_id: categoria });
+  const r = await ml(idx, '/sites/MLB/listing_prices', { price: preco.toFixed(2), listing_type_id: tipo, category_id: categoria, ...(modo ? { shipping_mode: modo } : {}) });
   const linha = Array.isArray(r) ? r.find(x => x.listing_type_id === tipo) || r[0] : r;
   const valor = num(linha?.sale_fee_amount);
   const v = valor == null ? null : { valor, pct: num(linha?.sale_fee_details?.percentage_fee), fixa: num(linha?.sale_fee_details?.fixed_fee) || 0, tipo: linha?.listing_type_name || tipo };
@@ -208,15 +210,19 @@ async function tarifaML(ml, idx, preco, tipo, categoria) {
 }
 // frete do vendedor NO PREÇO SIMULADO: o ML muda a faixa (abaixo/acima de R$ 79) e o desconto conforme o preço
 const _modoEnvio = new Map();
+async function modoEnvio(ml, idx, itemId) {
+  let modo = _modoEnvio.get(itemId);
+  if (!modo || Date.now() - modo.ts > 6 * 3600e3) { try { const it = await ml(idx, '/items/' + itemId, { attributes: 'shipping' }); modo = { m: it?.shipping?.mode || '', ts: Date.now() }; _modoEnvio.set(itemId, modo); } catch (e) { return ''; } }
+  return modo.m;
+}
 async function freteML(ml, idx, uid, itemId, preco) {
   const k = itemId + '|' + (preco ? Math.round(preco * 100) : '');
   const c = _frete.get(k);
   if (c && Date.now() - c.ts < 6 * 3600e3) return c.v;
   try {
     // anúncio sem Mercado Envios (frete a combinar / retirada): o vendedor não paga frete ao ML
-    let modo = _modoEnvio.get(itemId);
-    if (!modo || Date.now() - modo.ts > 6 * 3600e3) { try { const it = await ml(idx, '/items/' + itemId, { attributes: 'shipping' }); modo = { m: it?.shipping?.mode || '', ts: Date.now() }; _modoEnvio.set(itemId, modo); } catch (e) { modo = { m: '' }; } }
-    if (modo.m && !/^me/.test(modo.m)) { const v = { valor: 0, pesoG: null, semME: true }; _frete.set(k, { v, ts: Date.now() }); return v; }
+    const m = await modoEnvio(ml, idx, itemId);
+    if (m && !/^me/.test(m)) { const v = { valor: 0, pesoG: null, semME: true }; _frete.set(k, { v, ts: Date.now() }); return v; }
     const r = await ml(idx, `/users/${uid}/shipping_options/free`, preco ? { item_id: itemId, item_price: Math.round(preco * 100) / 100, verbose: true } : { item_id: itemId });
     const v = { valor: num(r?.coverage?.all_country?.list_cost) ?? 0, pesoG: num(r?.coverage?.all_country?.billable_weight) };
     _frete.set(k, { v, ts: Date.now() });
@@ -268,7 +274,7 @@ async function calcularMargens(ml, idx, uid, itens) {
       const ativa = campanhas.find(p => p.status === 'ativa' && Math.abs(p.preco - it.current_price) < 0.05) || null;
       const calc = async (preco, camp) => {
         if (!(preco > 0)) return null;
-        const t = await tarifaML(ml, idx, preco, it.listing_type_id, it.category_id);
+        const t = await tarifaML(ml, idx, preco, it.listing_type_id, it.category_id, it.id);
         if (!t) return null;
         const frete = (await freteML(ml, idx, uid, it.id, preco))?.valor ?? freteBase?.valor ?? 0;   // custo de envio do vendedor nesse preço
         const imposto = preco * imp;
@@ -309,7 +315,7 @@ async function margemPreco(ml, idx, uid, it, preco, rebate = 0, erp) {
   const cf = custoComFonte(idx, it._sku || it.seller_sku, erp || await custosErp(idx));
   if (!cf || cf.fonte === 'planilha') return { erro: 'sem custo no ' + (idx === 2 ? 'Tiny' : 'Bling') };
   if (!it.listing_type_id || !it.category_id) return { erro: 'sem dados do anúncio' };
-  const t = await tarifaML(ml, idx, preco, it.listing_type_id, it.category_id);
+  const t = await tarifaML(ml, idx, preco, it.listing_type_id, it.category_id, it.id);
   if (!t) return { erro: 'tarifa do ML indisponível' };
   const fr = await freteML(ml, idx, uid, it.id, preco);
   const r2 = x => Math.round(x * 100) / 100, imp = aliquota(idx), emb = embalagem(idx);
