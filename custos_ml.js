@@ -207,11 +207,16 @@ async function tarifaML(ml, idx, preco, tipo, categoria) {
   return v;
 }
 // frete do vendedor NO PREÇO SIMULADO: o ML muda a faixa (abaixo/acima de R$ 79) e o desconto conforme o preço
+const _modoEnvio = new Map();
 async function freteML(ml, idx, uid, itemId, preco) {
   const k = itemId + '|' + (preco ? Math.round(preco * 100) : '');
   const c = _frete.get(k);
   if (c && Date.now() - c.ts < 6 * 3600e3) return c.v;
   try {
+    // anúncio sem Mercado Envios (frete a combinar / retirada): o vendedor não paga frete ao ML
+    let modo = _modoEnvio.get(itemId);
+    if (!modo || Date.now() - modo.ts > 6 * 3600e3) { try { const it = await ml(idx, '/items/' + itemId, { attributes: 'shipping' }); modo = { m: it?.shipping?.mode || '', ts: Date.now() }; _modoEnvio.set(itemId, modo); } catch (e) { modo = { m: '' }; } }
+    if (modo.m && !/^me/.test(modo.m)) { const v = { valor: 0, pesoG: null, semME: true }; _frete.set(k, { v, ts: Date.now() }); return v; }
     const r = await ml(idx, `/users/${uid}/shipping_options/free`, preco ? { item_id: itemId, item_price: Math.round(preco * 100) / 100, verbose: true } : { item_id: itemId });
     const v = { valor: num(r?.coverage?.all_country?.list_cost) ?? 0, pesoG: num(r?.coverage?.all_country?.billable_weight) };
     _frete.set(k, { v, ts: Date.now() });
