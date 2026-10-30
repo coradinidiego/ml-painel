@@ -247,8 +247,7 @@ async function campanhasML(ml, idx, itemId) {
     .map(p => {
       const preco = num(p.price) || num(p.suggested_discounted_price) || num(p.max_discounted_price);
       const base = num(p.original_price) || 0;
-      // ativa: % sobre o preço cheio (bate com o "Reduzimos R$ X" do ML); proposta: o menor entre isso e % sobre o desconto (conservador)
-      const pc = num(p.meli_percentage), v = p.status === 'started' ? base * pc / 100 : Math.min(base * pc / 100, Math.max(0, base - preco) * pc / 100);
+      const pc = num(p.meli_percentage), v = base * pc / 100;   // % do ML é sobre o preço original (ML% + seller% = desconto total)
       return { preco, valor: Math.round(v * 100) / 100, meliPct: pc,
                nome: p.name || p.type, tipo: p.type, status: STATUS_PROMO[p.status], base };
     })
