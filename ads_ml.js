@@ -148,7 +148,8 @@ async function custoPeriodo(idx, ini, fim) {
   const DATA = require('./dados'), arq = path.join(DATA, 'apuracao_cache', `ads_${idx}_${ini}_${fim}.json`);
   let C = null; try { C = JSON.parse(fs.readFileSync(arq)); } catch (e) {}
   const recente = Date.parse(fim + 'T23:59:59-03:00') > Date.now() - 3 * 864e5;
-  if (C && (!recente || Date.now() - Date.parse(C.em) < 6 * 3600e3)) return C;
+  const ehHoje = fim >= hojeSP(0);   // dia corrente: renova a cada 30 min (números do dia)
+  if (C && (!recente || Date.now() - Date.parse(C.em) < (ehHoje ? 30 * 60e3 : 6 * 3600e3))) return C;
   const adv = await anunciante(idx);
   const L = [], params = { limit: 50, date_from: ini, date_to: fim, metrics: 'cost,total_amount,units_quantity' };
   for (let offset = 0; offset < 10000; offset += 50) {

@@ -625,9 +625,37 @@ setInterval(() => {
   if (st.data === ymd(h) && st.fimExec) return;
   rodarAuto(st.data === ymd(h) ? 'retomada' : 'agendada');
 }, 10 * 60e3).unref?.();
+// ─── Números do dia: apura HOJE a cada 30 min, das 7h às 23h30 (Brasília) ───
+const ARQ_HOJE = path.join(DATA, 'apuracao_cache', 'apmkt_hoje.json');
+const HOJE_CADA_MIN = 30;
+let _hojeRodando = false;
+async function rodarHoje() {
+  if (_hojeRodando || _autoRodando) return;
+  _hojeRodando = true;
+  const hoje = ymd(hojeSP()), st = { data: hoje, inicio: new Date().toISOString(), em: null, erros: {} };
+  try {
+    await Promise.all(Object.keys(EMP).map(async e => {
+      const j = jobs[`${e}_${hoje}_${hoje}`]; if (j?.rodando) return;
+      await buscar(e, hoje, hoje);
+      const r = jobs[`${e}_${hoje}_${hoje}`]; if (r?.erro) st.erros[e] = r.erro;
+    }));
+  } catch (e) { st.erros.geral = e.message; }
+  st.em = new Date().toISOString();
+  try { fs.writeFileSync(ARQ_HOJE, JSON.stringify(st)); } catch (e) {}
+  _hojeRodando = false;
+}
+setInterval(() => {
+  const h = hojeSP(), min = h.getUTCHours() * 60 + h.getUTCMinutes();
+  if (min < 7 * 60 || min > 23 * 60 + 30) return;
+  const st = lerJson(ARQ_HOJE, {});
+  if (st.data === ymd(h) && st.em && Date.now() - Date.parse(st.em) < (HOJE_CADA_MIN - 2) * 60e3) return;
+  rodarHoje().catch(() => { _hojeRodando = false; });
+}, 5 * 60e3).unref?.();
+router.post('/hoje/rodar', (req, res) => { rodarHoje().catch(() => {}); res.json({ ok: true }); });
+
 router.get('/auto', (req, res) => {
   const st = lerJson(ARQ_AUTO, null), [ini, fim] = periodoAuto();
-  res.json({ ultima: st, proximo: { ini, fim }, rodando: _autoRodando });
+  res.json({ ultima: st, proximo: { ini, fim }, rodando: _autoRodando, hoje: { ...lerJson(ARQ_HOJE, {}), rodando: _hojeRodando, cadaMin: HOJE_CADA_MIN } });
 });
 router.post('/auto/rodar', (req, res) => { rodarAuto('manual'); res.json({ ok: true }); });
 

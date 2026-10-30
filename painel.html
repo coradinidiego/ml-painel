@@ -3932,6 +3932,14 @@ function abrirApuracao(){
   if(typeof alertaCustos==='function'){el('am-alerta').innerHTML='';}
 }
 // apuração automática (todo dia após a meia-noite: do dia 1 até ontem; no dia 1, o mês anterior inteiro)
+// vendo "Hoje": recarrega sozinho quando a apuração do dia for atualizada
+let _amHojeEm=null;
+setInterval(async()=>{try{
+  if(!el('apmkt-content')||el('apmkt-content').style.display==='none'||document.hidden)return;
+  const h=new Date(),iso=h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0')+'-'+String(h.getDate()).padStart(2,'0');
+  const a=await fetch('/apuracao-mkt/auto').then(r=>r.json());const em=a.hoje&&a.hoje.em;
+  if(em&&em!==_amHojeEm){const mudou=_amHojeEm!=null;_amHojeEm=em;if(mudou&&el('am-ini').value===iso&&el('am-fim').value===iso)amVer();}
+}catch(e){}},120000);
 async function amAuto(){
   const a=await fetch('/apuracao-mkt/auto').then(r=>r.json()).catch(()=>null);if(!a)return;
   const u=a.ultima,br=d=>d.split('-').reverse().join('/');
@@ -3940,7 +3948,8 @@ async function amAuto(){
   if([...el('am-mes').options].some(o=>o.value===mes))el('am-mes').value=mes;
   el('am-ini').value=ini;el('am-fim').value=fim;amChips();
   el('am-auto').innerHTML='🕛 Automático todo dia após a meia-noite (mês atual até ontem + reapuração do mês anterior, para pegar devoluções e cancelamentos). '+(a.rodando||(u&&!u.fimExec)?'<b>Atualizando agora</b> ('+br(u?u.ini:ini)+' a '+br(u?u.fim:fim)+')…'+(p&&!u.fimExec?' Mostrando a última pronta: '+br(p.ini)+' a '+br(p.fim)+'.':''):
-    p?'Última: <b>'+br(p.ini)+' a '+br(p.fim)+'</b>, gerada em '+new Date(p.fimExec).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})+(Object.keys(p.erros||{}).length?' <span style="color:#c62828">· com erro: '+shpEsc(Object.entries(p.erros).map(([k,v])=>k+': '+v).join(' | '))+'</span>':''):'Ainda não rodou.');
+    p?'Última: <b>'+br(p.ini)+' a '+br(p.fim)+'</b>, gerada em '+new Date(p.fimExec).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})+(Object.keys(p.erros||{}).length?' <span style="color:#c62828">· com erro: '+shpEsc(Object.entries(p.erros).map(([k,v])=>k+': '+v).join(' | '))+'</span>':''):'Ainda não rodou.')+
+    (a.hoje?'<br>⏱ <b>Números de hoje</b>: atualizados a cada '+(a.hoje.cadaMin||30)+' min, das 7h às 23h30'+(a.hoje.rodando?' · <b>atualizando agora…</b>':a.hoje.em&&a.hoje.data===new Date(Date.now()-3*3600e3).toISOString().slice(0,10)?' · última às <b>'+new Date(a.hoje.em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'</b>':'')+' — clique em <b>Hoje</b>.':'');
   if(p)amVer();
 }
 function amMes(){const [a,m]=el('am-mes').value.split('-').map(Number);let fim=new Date(a,m,0);const ontem=new Date(Date.now()-864e5);if(fim>ontem)fim=ontem;const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');el('am-ini').value=el('am-mes').value+'-01';el('am-fim').value=iso(fim);if(typeof amChips==='function')amChips();}
@@ -3978,7 +3987,7 @@ function amChips(){
   el('am-f-canal').innerHTML=todos('canal')+' '+AM_CANAIS.map(c=>chip('canal',c,c)).join(' ');
   el('am-f-prod').innerHTML=[..._amF.prod].map(s=>'<button class="am-chip on" title="remover" onclick="amTog(\'prod\',\''+amEscA(s)+'\')">'+shpEsc(s)+'<span class="x">✕</span></button>').join(' ')+(_amF.prod.size>1?' <button class="am-chip" onclick="amTog(\'prod\',null)">limpar</button>':'');
   const h=new Date(),iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),ontem=new Date(h-864e5);
-  const P=[['Ontem',iso(ontem),iso(ontem)],['Últimos 7 dias',iso(new Date(h-7*864e5)),iso(ontem)],['Últimos 30 dias',iso(new Date(h-30*864e5)),iso(ontem)],['Este mês',iso(new Date(h.getFullYear(),h.getMonth(),1)),iso(ontem)],['Mês passado',iso(new Date(h.getFullYear(),h.getMonth()-1,1)),iso(new Date(h.getFullYear(),h.getMonth(),0))],['Este ano',iso(new Date(h.getFullYear(),0,1)),iso(ontem)]];
+  const P=[['Hoje',iso(h),iso(h)],['Ontem',iso(ontem),iso(ontem)],['Últimos 7 dias',iso(new Date(h-7*864e5)),iso(ontem)],['Últimos 30 dias',iso(new Date(h-30*864e5)),iso(ontem)],['Este mês',iso(new Date(h.getFullYear(),h.getMonth(),1)),iso(ontem)],['Mês passado',iso(new Date(h.getFullYear(),h.getMonth()-1,1)),iso(new Date(h.getFullYear(),h.getMonth(),0))],['Este ano',iso(new Date(h.getFullYear(),0,1)),iso(ontem)]];
   const ini=el('am-ini').value,fim=el('am-fim').value;
   el('am-f-per').innerHTML=P.map(([r,a,b])=>'<button class="am-chip'+(a===ini&&b===fim?' on':'')+'" onclick="amPer(\''+a+'\',\''+b+'\')">'+r+'</button>').join(' ');
 }
