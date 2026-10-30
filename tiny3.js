@@ -85,11 +85,20 @@ async function importar() {
     ST.total = prods.length;
     const cm = require('./custos_ml'), H = cm.historico(IDX);
     let comHist = 0; const fornMapa = {};
+    // composição dos kits: { CODIGO_OU_GTIN_DO_KIT: [{ codigo, qtd }] } (custo do kit = soma dos componentes)
+    const idCod = {}; for (const p of prods) idCod[p.id] = p.codigo;
+    const kitMapa = {};
     for (const p of prods) {
       try {
         const d = await get('/produtos/' + p.id);
         const fn = (d?.fornecedores || []).find(f => f.padrao)?.nome || d?.fornecedores?.[0]?.nome || d?.fornecedor?.nome || d?.marca?.nome || (typeof d?.marca === 'string' ? d.marca : '') || '';
         if (fn) for (const k of [K(p.codigo), K(p.gtin)].filter(Boolean)) fornMapa[k] = String(fn).trim();
+        const itensKit = Array.isArray(d?.kit) ? d.kit : [];
+        if (itensKit.length || String(d?.tipo || '').toUpperCase() === 'K') {
+          const comp = itensKit.map(x => ({ codigo: K(x?.produto?.sku || x?.produto?.codigo || idCod[x?.produto?.id] || x?.sku || x?.codigo), qtd: num(x?.quantidade) }))
+            .filter(c => c.codigo && c.qtd > 0);
+          if (comp.length) for (const k of [K(p.codigo), K(p.gtin)].filter(Boolean)) kitMapa[k] = comp;
+        }
         const L = historicoProduto(d);
         if (L.length) {
           comHist++;
@@ -105,6 +114,7 @@ async function importar() {
       await delay(700);
     }
     cm.salvarHistorico(IDX);
+    if (Object.keys(kitMapa).length) { cm.salvarKits(IDX, kitMapa); ST.kits = Object.keys(kitMapa).length; }
     if (Object.keys(fornMapa).length) require('./fornecedores').gravarTiny(fornMapa);
     Object.assign(ST, { comHistorico: comHist, fim: new Date().toISOString(), ok: new Date().toISOString() });
   } catch (e) { ST.erro = e.message; }

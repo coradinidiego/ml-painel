@@ -176,8 +176,31 @@ function kitOuComposicao(s, get) {
   if (partes.length >= 2 && partes.every(x => x && get(x) != null)) return partes.reduce((t, x) => t + get(x), 0);
   return null;
 }
+// ─── Kits do Tiny: custo = soma dos componentes (produto pai × quantidade), nunca o custo do próprio kit ───
+// A composição vem do Tiny v3 (tiny3.js grava kits_<idx>.json na importação diária). Sem composição importada,
+// vale o padrão do SKU: "PAI-3" = 3 × PAI (sufixo 2..20 sem zero à esquerda). Como o custo do pai vem do
+// histórico com data (custosNaData), o kit ganha um novo custo na mesma data em que o pai muda.
+const arqKits = idx => path.join(DATA, 'apuracao_cache', `kits_${idx}.json`);
+const _kits = {};
+function kits(idx) { if (!_kits[idx]) { try { _kits[idx] = JSON.parse(fs.readFileSync(arqKits(idx))); } catch (e) { _kits[idx] = {}; } } return _kits[idx]; }
+function salvarKits(idx, mapa) { _kits[idx] = mapa; try { fs.mkdirSync(path.dirname(arqKits(idx)), { recursive: true }); fs.writeFileSync(arqKits(idx), JSON.stringify(mapa)); } catch (e) {} }
+function direto(mapa, s) { if (!mapa || !s) return null; if (mapa[s] > 0) return mapa[s]; const z = s.replace(/^0+/, ''); return mapa[z] > 0 ? mapa[z] : null; }
+function custoKit(idx, sku, mapa) {
+  const s = K(sku); if (!s) return null;
+  const comp = kits(idx)[s];
+  if (Array.isArray(comp) && comp.length) {
+    let t = 0;
+    for (const c of comp) { const v = direto(mapa, K(c.codigo)); if (v == null) return null; t += v * c.qtd; }
+    return t;
+  }
+  const m = s.match(/^(.*)-(\d+)$/);
+  if (m && !/^0/.test(m[2])) { const n = parseInt(m[2]); if (n >= 2 && n <= 20) { const b = direto(mapa, m[1]); if (b != null) return b * n; } }
+  return null;
+}
+
 /** Custo do SKU: ERP primeiro, planilha de reserva. Retorna { v, fonte } ou null. */
 function custoComFonte(idx, sku, erp) {
+  if (idx === 2) { const k = custoKit(idx, sku, erp); if (k != null) return { v: k, fonte: 'Tiny (kit)' }; }
   const e = procurar(erp, sku); if (e != null) return { v: e, fonte: idx === 2 ? 'Tiny' : 'Bling' };
   const p = procurar(custosConta(idx), sku); if (p != null) return { v: p, fonte: 'planilha' };
   return null;
@@ -327,4 +350,4 @@ async function margemPreco(ml, idx, uid, it, preco, rebate = 0, erp) {
 
 function recarregarErp(idx) { if (_erp[idx]) _erp[idx].ts = 0; }
 
-module.exports = { custosNaData, historico, salvarHistorico, PLANILHAS, fixosCanal, recarregarErp, calcularMargens, margemPreco, custoSku, custosConta, custosErp, custoComFonte, aliquota };
+module.exports = { salvarKits, kits, custoKit, custosNaData, historico, salvarHistorico, PLANILHAS, fixosCanal, recarregarErp, calcularMargens, margemPreco, custoSku, custosConta, custosErp, custoComFonte, aliquota };
