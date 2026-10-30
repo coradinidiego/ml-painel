@@ -4005,7 +4005,7 @@ function dreRender(){
     linha('(−) Embalagens'+(embReal?' (lançadas)':' (estimada por pedido)'),v=>-v.emb,{sub:1})+linha('(−) ADS',v=>-v.ads,{sub:1})+
     linha('= Margem de contribuição',v=>mc(v),{tot:1,cor:1})+
     fixas.map(c=>linha('(−) '+esc(c),(v,k)=>-desp[c][k],{sub:1})).join('')+
-    (fixas.length?linha('(−) Total de despesas fixas',(v,k)=>-fx(k),{tot:1}):'<tr><td class="l" colspan="6" style="color:var(--mu);padding:10px 8px">Nenhuma despesa lançada neste mês — lance abaixo para ver o resultado e o ponto de equilíbrio.</td></tr>')+
+    (fixas.length?linha('(−) Total de despesas fixas',(v,k)=>-fx(k),{tot:1}):'<tr><td class="l" colspan="6" style="color:var(--mu);padding:10px 8px">Nenhuma despesa lançada neste mês — lance na aba Lançamentos para ver o resultado e o ponto de equilíbrio.</td></tr>')+
     linha('= Resultado (lucro líquido)',(v,k)=>mc(v)-fx(k),{tot:1,cor:1})+'</table>';
   // ── ponto de equilíbrio
   const MC=DRE_EMP.reduce((s,[k])=>s+mc(V[k]),0),FX=DRE_EMP.reduce((s,[k])=>s+fx(k),0),mcp=RLt?MC/RLt:0,PE=mcp>0?FX/mcp:null;
