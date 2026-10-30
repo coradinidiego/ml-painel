@@ -522,6 +522,7 @@ function periodosQueCobrem(emp, ini, fim) {
   let L = []; try { L = fs.readdirSync(DIR).map(f => f.match(re)).filter(Boolean).map(m => [m[1], m[2]]); } catch (e) {}
   return L.filter(([a, b]) => a <= ini && b >= fim && !(a === ini && b === fim)).sort((x, y) => (Date.parse(x[1]) - Date.parse(x[0])) - (Date.parse(y[1]) - Date.parse(y[0])));
 }
+router.get('/periodos', (req, res) => { try { res.json(fs.readdirSync(DIR).filter(f => /^apmkt_(ml|shp)?_?(zagodini|mae|lufe)_|^apmkt_(zagodini|mae|lufe)_/.test(f)).sort()); } catch (e) { res.json([]); } });
 async function comporPeriodo(emp, ini, fim) {
   const re = new RegExp('^apmkt_ml_' + emp + '_(\\d{4}-\\d{2}-\\d{2})_(\\d{4}-\\d{2}-\\d{2})\\.json$');
   let P = []; try { P = fs.readdirSync(DIR).map(f => f.match(re)).filter(Boolean).map(m => [m[1], m[2]]); } catch (e) {}
