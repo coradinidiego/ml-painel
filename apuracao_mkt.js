@@ -480,8 +480,11 @@ async function calcular(empKey, ini, fim) {
       if (e && e.reembolso > 0 && e.cogs <= 0.01 && e.reembolso >= (e.cogsOrig || o.total) - 0.05) {
         fora.push({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: 'reembolsado (devolução)', valor: o.total });
         const liq = e.escrow + aj;   // o que sobrou para o vendedor (negativo = cobrança; positivo = compensação da Shopee)
-        if (Math.abs(liq) > 0.01) add({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: 'reembolsado', cliente: o.cliente, sku: o.itens[0]?.sku || '', descricao: (liq < 0 ? 'Custo da devolução · ' : 'Compensação da Shopee · ') + (o.itens[0]?.titulo || ''), qtd: 0, precoUn: 0, receita: 0,
-          custoUn: 0, origemCusto: '-', cmv: 0, comissao: 0, taxa: 0, frete: -liq, imposto: 0, embalagem: 0, origemTaxa: 'Shopee (repasse real' + (aj ? ' + ajuste: ' + motivoAj : '') + ')', _valPed: 0 });
+        // objeto perdido na logística: a Shopee compensa, mas o produto não volta → o custo do produto entra
+        const perdido = aj > 0.01 && /perdid|lost|logistic/i.test(motivoAj);
+        let cmvP = 0; if (perdido) for (const x of o.itens) { const [cu] = custoDe(x.sku, 'Shopee', null, o.data); cmvP += (cu || 0) * (x.q || 1); }
+        if (Math.abs(liq) > 0.01 || perdido) add({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: 'reembolsado', cliente: o.cliente, sku: o.itens[0]?.sku || '', descricao: (perdido ? 'Produto perdido (compensado pela Shopee) · ' : liq < 0 ? 'Custo da devolução · ' : 'Compensação da Shopee · ') + (o.itens[0]?.titulo || ''), qtd: 0, precoUn: 0, receita: 0,
+          custoUn: 0, origemCusto: perdido ? 'produto perdido' : '-', cmv: cmvP, comissao: 0, taxa: 0, frete: -liq, imposto: 0, embalagem: 0, origemTaxa: 'Shopee (repasse real' + (aj ? ' + ajuste: ' + motivoAj : '') + ')', _valPed: 0 });
         continue;
       }
       // discounted_price pode vir por unidade ou pela linha: confere com o total de produtos (cost_of_goods_sold)
@@ -633,8 +636,21 @@ router.get('/resultado', async (req, res) => {
 // diagnóstico: movimentações da carteira Shopee (ajustes) e repasse bruto de um pedido
 router.get('/debug-shopee', async (req, res) => {
   try {
-    const sp = require('./shopee'), out = {};
+    const sp = require('./shopee').loja(req.query.emp || 'zagodini'), out = {};
     if (req.query.sn) out.escrow = (await sp.shopeeGet('/api/v2/payment/get_escrow_detail', { order_sn: req.query.sn })).response;
+    if (req.query.devolucao) {   // devoluções do pedido nos últimos 60 dias, com detalhe
+      const agora = Math.floor(Date.now() / 1000), R = [];
+      for (let w = 0; w < 4; w++) {
+        const to = agora - w * 15 * 86400, from = to - 15 * 86400 + 1;
+        for (let pg = 0; pg < 20; pg++) {
+          const d = await sp.shopeeGet('/api/v2/returns/get_return_list', { page_no: pg, page_size: 50, update_time_from: from, update_time_to: to });
+          R.push(...(d.response?.return || []).filter(r => r.order_sn === req.query.devolucao));
+          if (!d.response?.more) break;
+        }
+      }
+      out.devolucoes = [];
+      for (const r of R) { let det = null; try { det = (await sp.shopeeGet('/api/v2/returns/get_return_detail', { return_sn: r.return_sn })).response; } catch (e) { det = { erro: e.message }; } out.devolucoes.push({ lista: r, detalhe: det }); }
+    }
     if (req.query.ini) {
       const ini = Math.floor(Date.parse(req.query.ini + 'T00:00:00-03:00') / 1000), fim = Math.floor(Date.parse((req.query.fim || req.query.ini) + 'T23:59:59-03:00') / 1000);
       const L = [];
