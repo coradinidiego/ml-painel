@@ -2067,6 +2067,7 @@ require('./turbo')(app, { dadosCache });
 require('./tiny3')(app);
 require('./fornecedores').iniciar(); require('./fornecedores').rotas(app); // fornecedor por SKU (apuração por fornecedor)
 require('./nfe_shein')(app); // NF-e automática dos pedidos SHEIN no Bling
+require('./despesas')(app); // despesas fixas → DRE e ponto de equilíbrio
 
 // Só as telas são públicas para quem está logado — nunca a pasta inteira (.env, tokens...)
 app.get('/', (req, res) => res.redirect('/painel.html'));

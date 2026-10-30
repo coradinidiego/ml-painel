@@ -326,6 +326,8 @@ body{background:#f0f2f5;color:#111}
 <!-- Apuração Amazon / Shein / TikTok — todas as empresas (ML e Shopee: Mercado Turbo) -->
 <div id="apmkt-content" style="display:none"><div class="content">
   <div id="am-topo"><h1>Apuração</h1><p>Lucro real por pedido em todos os canais, com tarifas, frete e repasse direto das APIs.</p></div>
+  <div style="display:flex;gap:6px;margin:-2px 0 14px"><button class="am-chip on" id="am-v-apu" onclick="amVista('apu')">📊 Apuração</button><button class="am-chip" id="am-v-dre" onclick="amVista('dre')">🧾 DRE e ponto de equilíbrio</button></div>
+  <div id="am-apu">
   <div id="am-auto" style="font-size:12px;color:#666;margin:-4px 0 10px"></div>
   <div id="am-alerta"></div>
   <div style="background:white;border-radius:10px;border:1px solid #eee;padding:14px 18px;margin-bottom:14px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
@@ -344,6 +346,8 @@ body{background:#f0f2f5;color:#111}
   <div id="am-prog" style="display:none;background:white;border-radius:10px;border:1px solid #eee;padding:12px 18px;margin-bottom:14px;font-size:13px"></div>
   <div id="am-resumo"></div>
   <div id="am-out"><div style="text-align:center;color:#999;padding:3rem;font-size:14px">Escolha a empresa e o período. <b>Ver apuração</b> usa o que já foi baixado; <b>Buscar dados</b> baixa do Bling, Tiny e Amazon (pode levar alguns minutos).</div></div>
+  </div>
+  <div id="am-dre" style="display:none"></div>
 </div></div>
 
 <!-- Início: todas as empresas -->
@@ -3954,6 +3958,89 @@ async function amAuto(){
     (a.hoje?'<br>⏱ <b>Números de hoje</b>: atualizados a cada '+(a.hoje.cadaMin||30)+' min, das 7h às 23h30'+(a.hoje.rodando?' · <b>atualizando agora…</b>':a.hoje.em&&a.hoje.data===new Date(Date.now()-3*3600e3).toISOString().slice(0,10)?' · última às <b>'+new Date(a.hoje.em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'</b>':'')+' — clique em <b>Hoje</b>.':'');
   amVer();amResumoCarregar();
 }
+
+// ══ DRE e ponto de equilíbrio (aba auxiliar da Apuração) ══
+let _dre={mes:null,lanc:[],cats:[],res:null,edit:null};
+const DRE_EMP=[['zagodini','Zagodini'],['mae','Com Amor de Mãe'],['lufe','Lufe']];
+function amVista(v){
+  el('am-apu').style.display=v==='apu'?'':'none';el('am-dre').style.display=v==='dre'?'':'none';
+  el('am-v-apu').classList.toggle('on',v==='apu');el('am-v-dre').classList.toggle('on',v==='dre');
+  if(v==='dre'){if(!_dre.mes){const h=new Date();_dre.mes=h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0');}dreCarregar();}
+}
+async function dreCarregar(){
+  const m=_dre.mes,[a,mm]=m.split('-').map(Number),ult=new Date(a,mm,0),h=new Date(),z=n=>String(n).padStart(2,'0');
+  const hoje=h.getFullYear()+'-'+z(h.getMonth()+1)+'-'+z(h.getDate()),fimMes=m+'-'+z(ult.getDate()),fim=fimMes<hoje?fimMes:hoje;
+  el('am-dre').innerHTML='<div class="loading">Montando o DRE…</div>';
+  const [d,r]=await Promise.all([fetch('/despesas?mes='+m).then(x=>x.json()).catch(()=>({lanc:[],categorias:[]})),
+    m+'-01'<=fim?fetch('/apuracao-mkt/resultado?emp=todas&ini='+m+'-01&fim='+fim).then(x=>x.json()).catch(()=>null):Promise.resolve(null)]);
+  _dre.lanc=d.lanc||[];_dre.cats=d.categorias||[];_dre.res=r;_dre.fim=fim;_dre.diasMes=ult.getDate();
+  _dre.diasPassados=fim>=m+'-01'?Number(fim.slice(8,10)):0;_dre.mesAtual=fimMes>=hoje;dreRender();
+}
+function dreRender(){
+  const D=_dre,f=v=>(v<0?'-':'')+'R$ '+Math.abs(Math.round(v)).toLocaleString('pt-BR'),pc=(a,b)=>b?(a/b*100).toLocaleString('pt-BR',{maximumFractionDigits:1})+'%':'—',esc=shpEsc;
+  // ── resultado do mês por empresa (da apuração)
+  const V={};for(const [k] of DRE_EMP)V[k]={rb:0,dev:0,imp:0,cmv:0,tar:0,fre:0,emb:0,ads:0};
+  for(const l of D.res?.linhas||[]){const k=AM_KEY[l.empresa];if(!V[k])continue;const v=V[k];v.rb+=l.receita||0;v.dev+=l.devolucao||0;v.imp+=l.imposto||0;v.cmv+=l.cmv||0;v.tar+=(l.comissao||0)+(l.taxa||0);v.fre+=l.frete||0;v.emb+=l.embalagem||0;v.ads+=l.ads||0;}
+  for(const k in V)V[k].rl=V[k].rb-V[k].dev;
+  const RLt=Object.values(V).reduce((s,v)=>s+v.rl,0)||0,share=k=>RLt?V[k].rl/RLt:1/3;
+  // ── despesas: diretas da empresa + compartilhadas rateadas pela receita líquida
+  const cats=[...new Set(D.lanc.map(l=>l.categoria))];const embReal=D.lanc.some(l=>l.categoria==='Embalagens');
+  const desp={};for(const c of cats){desp[c]={};for(const [k] of DRE_EMP)desp[c][k]=0;}
+  for(const l of D.lanc){for(const [k] of DRE_EMP)desp[l.categoria][k]+=l.empresa==='todas'?l.valor*share(k):(l.empresa===k?l.valor:0);}
+  if(embReal)for(const [k] of DRE_EMP)V[k].emb=desp['Embalagens'][k];   // embalagem lançada substitui a estimada por pedido
+  const fixas=cats.filter(c=>!(embReal&&c==='Embalagens'));
+  const linha=(rot,fn,o={})=>{const vals=DRE_EMP.map(([k])=>fn(V[k],k)),t=vals.reduce((s,x)=>s+x,0);
+    return '<tr style="'+(o.tot?'font-weight:800;border-top:1px solid var(--ln)':'')+'"><td class="l" style="padding-left:'+(o.sub?22:8)+'px">'+rot+'</td>'+vals.map(x=>'<td style="color:'+(o.cor?(x<0?'var(--ne)':'var(--po)'):'inherit')+'">'+f(x)+'</td>').join('')+'<td style="color:'+(o.cor?(t<0?'var(--ne)':'var(--po)'):'inherit')+'"><b>'+f(t)+'</b></td><td style="color:var(--mu)">'+pc(t,RLt)+'</td></tr>';};
+  const mc=v=>v.rl-v.imp-v.cmv-v.tar-v.fre-v.emb-v.ads,fx=k=>fixas.reduce((s,c)=>s+desp[c][k],0);
+  let dre='<table class="gtab" style="border:none;font-size:12.5px;width:100%"><tr><th class="l">DRE '+D.mes.split('-').reverse().join('/')+(D.mesAtual?' (até '+D.fim.slice(8,10)+'/'+D.fim.slice(5,7)+')':'')+'</th>'+DRE_EMP.map(([,n])=>'<th>'+n+'</th>').join('')+'<th>Total</th><th>% receita líq.</th></tr>'+
+    linha('Receita bruta',v=>v.rb)+linha('(−) Devoluções',v=>-v.dev,{sub:1})+linha('= Receita líquida',v=>v.rl,{tot:1})+
+    linha('(−) Impostos',v=>-v.imp,{sub:1})+linha('(−) Custo dos produtos (CMV)',v=>-v.cmv,{sub:1})+linha('(−) Comissões e tarifas',v=>-v.tar,{sub:1})+linha('(−) Frete',v=>-v.fre,{sub:1})+
+    linha('(−) Embalagens'+(embReal?' (lançadas)':' (estimada por pedido)'),v=>-v.emb,{sub:1})+linha('(−) ADS',v=>-v.ads,{sub:1})+
+    linha('= Margem de contribuição',v=>mc(v),{tot:1,cor:1})+
+    fixas.map(c=>linha('(−) '+esc(c),(v,k)=>-desp[c][k],{sub:1})).join('')+
+    (fixas.length?linha('(−) Total de despesas fixas',(v,k)=>-fx(k),{tot:1}):'<tr><td class="l" colspan="6" style="color:var(--mu);padding:10px 8px">Nenhuma despesa lançada neste mês — lance abaixo para ver o resultado e o ponto de equilíbrio.</td></tr>')+
+    linha('= Resultado (lucro líquido)',(v,k)=>mc(v)-fx(k),{tot:1,cor:1})+'</table>';
+  // ── ponto de equilíbrio
+  const MC=DRE_EMP.reduce((s,[k])=>s+mc(V[k]),0),FX=DRE_EMP.reduce((s,[k])=>s+fx(k),0),mcp=RLt?MC/RLt:0,PE=mcp>0?FX/mcp:null;
+  const dp=D.diasPassados||1,proj=RLt/dp*D.diasMes,projRes=MC/dp*D.diasMes-FX;
+  let diaPE=null;if(PE&&D.res){const porDia={};for(const l of D.res.linhas||[])porDia[l.data]=(porDia[l.data]||0)+(l.receita||0)-(l.devolucao||0);let ac=0;for(const d of Object.keys(porDia).sort()){ac+=porDia[d];if(ac>=PE){diaPE=d;break;}}}
+  const kpi=(l,v,s,c)=>'<div style="flex:1;min-width:170px;background:var(--pn);border:1px solid var(--ln);border-radius:6px;padding:12px 14px"><div style="font-size:11.5px;color:var(--mu);font-weight:600">'+l+'</div><div style="font-size:21px;font-weight:800;color:'+(c||'var(--tx)')+'">'+v+'</div><div style="font-size:11.5px;color:var(--mu)">'+(s||'')+'</div></div>';
+  const pe='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'+
+    kpi('Despesas fixas do mês',f(FX),fixas.length+' categoria(s)')+kpi('Margem de contribuição',pc(MC,RLt),'sobra de cada R$ 100 vendidos: R$ '+(mcp*100).toLocaleString('pt-BR',{maximumFractionDigits:2}))+
+    kpi('Ponto de equilíbrio',PE?f(PE):'—',PE?f(PE/D.diasMes)+' por dia em vendas':'lance as despesas',PE?'#ffb547':null)+
+    kpi(D.mesAtual?'Faturamento até agora':'Faturamento do mês',f(RLt),PE?(RLt>=PE?'✅ equilíbrio atingido'+(diaPE?' em '+diaPE.slice(8,10)+'/'+diaPE.slice(5,7):''):'faltam '+f(PE-RLt)):'',RLt>=(PE||Infinity)?'var(--po)':null)+
+    (D.mesAtual?kpi('Projeção do mês',f(proj),'resultado projetado '+f(projRes),projRes>=0?'var(--po)':'var(--ne)'):kpi('Resultado do mês',f(MC-FX),'',MC-FX>=0?'var(--po)':'var(--ne)'))+'</div>';
+  // ── lançamentos
+  const nomeE=k=>k==='todas'?'Todas (rateio)':(DRE_EMP.find(e=>e[0]===k)||[,k])[1],e=D.edit||{};
+  const opE=sel=>[['todas','Todas (rateio)'],...DRE_EMP].map(([k,n])=>'<option value="'+k+'"'+(sel===k?' selected':'')+'>'+n+'</option>').join('');
+  const L=[...D.lanc].sort((a,b)=>a.categoria.localeCompare(b.categoria)||b.valor-a.valor);
+  const form='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">'+
+    '<div><label class="tl-lbl">Empresa</label><select id="dre-emp" class="tl-in">'+opE(e.empresa||'todas')+'</select></div>'+
+    '<div><label class="tl-lbl">Categoria</label><input id="dre-cat" class="tl-in" list="dre-cats" value="'+esc(e.categoria||'')+'" placeholder="Salários, Aluguel…" style="width:170px"><datalist id="dre-cats">'+D.cats.map(c=>'<option value="'+esc(c)+'">').join('')+'</datalist></div>'+
+    '<div><label class="tl-lbl">Descrição</label><input id="dre-desc" class="tl-in" value="'+esc(e.descricao||'')+'" placeholder="opcional" style="width:200px"></div>'+
+    '<div><label class="tl-lbl">Valor (R$)</label><input id="dre-val" class="tl-in" value="'+(e.valor!=null?String(e.valor).replace('.',','):'')+'" style="width:110px" onkeydown="if(event.key===\'Enter\')dreSalvar()"></div>'+
+    '<label style="font-size:12px;color:var(--mu);display:flex;gap:5px;align-items:center;padding-bottom:8px"><input type="checkbox" id="dre-rec"'+(e.id?(e.recorrente?' checked':''):' checked')+'> repete todo mês</label>'+
+    '<button class="tl-btn" style="background:#0d1b2a;color:white" onclick="dreSalvar()">'+(e.id?'💾 Salvar alteração':'➕ Lançar')+'</button>'+(e.id?'<button class="tl-btn" style="background:white;color:#0d1b2a;border:1px solid #0d1b2a" onclick="_dre.edit=null;dreRender()">Cancelar</button>':'')+'</div>';
+  const tab=L.length?'<table class="gtab" style="border:none;font-size:12.5px;width:100%"><tr><th class="l">Categoria</th><th class="l">Descrição</th><th class="l">Empresa</th><th>Valor</th><th>Repete</th><th></th></tr>'+
+    L.map(l=>'<tr><td class="l">'+esc(l.categoria)+'</td><td class="l">'+esc(l.descricao||'')+'</td><td class="l">'+nomeE(l.empresa)+'</td><td>'+f(l.valor)+'</td><td>'+(l.recorrente?'✓':'')+'</td><td style="white-space:nowrap"><button class="am-chip" onclick="dreEditar(\''+l.id+'\')">✏️</button> <button class="am-chip" onclick="dreExcluir(\''+l.id+'\')">🗑</button></td></tr>').join('')+
+    '<tr style="font-weight:800;border-top:1px solid var(--ln)"><td class="l" colspan="3">Total lançado</td><td>'+f(L.reduce((s,l)=>s+l.valor,0))+'</td><td colspan="2"></td></tr></table>':'<div style="color:var(--mu);font-size:13px;padding:8px 0">Nenhum lançamento neste mês.</div>';
+  const meses=[];{const h=new Date();for(let i=-1;i<12;i++){const d=new Date(h.getFullYear(),h.getMonth()-i,1);meses.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}}
+  const [ya,ma]=D.mes.split('-').map(Number),ant=new Date(ya,ma-2,1),mesAnt=ant.getFullYear()+'-'+String(ant.getMonth()+1).padStart(2,'0');
+  el('am-dre').innerHTML='<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px"><div><label class="tl-lbl">Mês</label><select class="tl-in" onchange="_dre.mes=this.value;_dre.edit=null;dreCarregar()">'+
+    meses.map(m=>'<option value="'+m+'"'+(m===D.mes?' selected':'')+'>'+new Date(m+'-15').toLocaleDateString('pt-BR',{month:'long',year:'numeric'})+'</option>').join('')+'</select></div>'+
+    '<button class="tl-btn" style="background:white;color:#0d1b2a;border:1px solid #0d1b2a" onclick="dreCopiar(\''+mesAnt+'\')">⤵ Copiar recorrentes de '+mesAnt.split('-').reverse().join('/')+'</button>'+
+    '<span style="font-size:12px;color:var(--mu)">Despesa de "Todas" é rateada entre as empresas pela receita líquida do mês.'+(embReal?'':' Lançando "Embalagens", o valor real substitui a embalagem estimada por pedido.')+'</span></div>'+
+    pe+'<div class="section"><div class="sec-head"><span>DRE do mês</span></div><div class="gwrap">'+dre+'</div></div>'+
+    '<div class="section"><div class="sec-head"><span>Lançamentos de despesas — '+D.mes.split('-').reverse().join('/')+'</span></div><div style="padding:12px 14px">'+form+tab+'</div></div>';
+}
+async function dreSalvar(){
+  const b={id:_dre.edit?.id,mes:_dre.mes,empresa:el('dre-emp').value,categoria:el('dre-cat').value.trim(),descricao:el('dre-desc').value.trim(),valor:el('dre-val').value.replace(/\./g,'').replace(',','.'),recorrente:el('dre-rec').checked};
+  const r=await fetch('/despesas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(x=>x.json()).catch(e=>({erro:e.message}));
+  if(r.erro)return alert(r.erro);_dre.edit=null;const d=await fetch('/despesas?mes='+_dre.mes).then(x=>x.json());_dre.lanc=d.lanc;_dre.cats=d.categorias;dreRender();
+}
+function dreEditar(id){_dre.edit=_dre.lanc.find(l=>l.id===id)||null;dreRender();el('dre-val')?.focus();}
+async function dreExcluir(id){const l=_dre.lanc.find(x=>x.id===id);if(!l||!confirm('Excluir '+l.categoria+(l.descricao?' — '+l.descricao:'')+'?'))return;await fetch('/despesas/'+id,{method:'DELETE'});_dre.lanc=_dre.lanc.filter(x=>x.id!==id);dreRender();}
+async function dreCopiar(de){const r=await fetch('/despesas/copiar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({de,para:_dre.mes})}).then(x=>x.json());if(r.erro)return alert(r.erro);alert(r.copiados+' lançamento(s) copiado(s).');dreCarregar();}
 // ── quadros: Hoje × Acumulado do mês (respeitam os filtros de empresa e marketplace) ──
 let _amRes=null;
 async function amResumoCarregar(){
