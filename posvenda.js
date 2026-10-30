@@ -148,6 +148,14 @@ async function coletarShopee(e) {
     if (r0.status === 'REQUESTED' && r0.reason === 'NOT_RECEIPT') { out.disputa++; continue; }
     if (r0.status === 'REQUESTED') { out.analisar.push({ ...base, prazo: iso(r0.due_date), criado: iso(r0.create_time) }); continue; }
     if (['SELLER_DISPUTE', 'JUDGING'].includes(r0.status)) out.disputa++;
+    // produto avariado/perdido no transporte: a Shopee deixa o vendedor pedir compensação até um prazo
+    if (r0.seller_compensation_status === 'PENDING_REQUEST') {
+      let det = null; try { det = (await sp.shopeeGet('/api/v2/returns/get_return_detail', { return_sn: r0.return_sn })).response || {}; } catch (er) {}
+      const ate = det?.seller_compensation?.seller_compensation_due_date;
+      if (!ate || ate * 1000 > Date.now()) out.analisar.push({ ...base, chave: 'shopee|' + r0.return_sn + '|compensacao', prazo: iso(ate), criado: iso(r0.create_time),
+        tipo: base.tipo + ' · compensação disponível', acao: 'solicitar compensação à Shopee (devolução ' + (r0.status === 'ACCEPTED' ? 'já aceita' : r0.status.toLowerCase()) + (r0.text_reason ? ' — cliente: "' + String(r0.text_reason).slice(0, 80) + '"' : '') + ')' });
+      await delay(80);
+    }
     if (!r0.needs_logistics) continue;
     let det;
     try { det = (await sp.shopeeGet('/api/v2/returns/get_return_detail', { return_sn: r0.return_sn })).response || {}; } catch (er) { continue; }
