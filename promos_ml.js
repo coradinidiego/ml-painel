@@ -58,7 +58,7 @@ async function opcoesItem(idx, uid, it, cat, erp) {
     const m = await cm.margemPreco(F.ml, idx, uid, it, preco, reb, erp);
     const o = { id: p.id || null, ref: p.ref_id || p.offer_id || null, tipo: p.type, tipoNome: NOME_TIPO[p.type] || p.type, nome: p.name || NOME_TIPO[p.type] || p.type,
       status: p.status, situacao: STATUS[p.status], preco: r2(preco), original: +p.original_price || null, meliPct: +p.meli_percentage || 0, rebate: reb,
-      faixa: p.min_discounted_price ? [+p.min_discounted_price, +p.max_discounted_price] : null, fim: p.finish_date || null, m,
+      faixa: p.min_discounted_price ? [+p.min_discounted_price, +p.max_discounted_price] : null, inicio: p.start_date || null, fim: p.finish_date || null, m,
       podeEntrar: p.status === 'candidate' && !!ENTRA[p.type] };
     if (cat) o.catalogo = cat.status === 'winning' ? (cat.s2price ? (preco < cat.s2price ? 'continua ganhando' : 'pode perder') : 'continua ganhando') : (cat.ptw ? (preco <= cat.ptw + 0.001 ? 'passa a ganhar' : 'continua perdendo') : null);
     opcoes.push(o);
