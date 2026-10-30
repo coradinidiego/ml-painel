@@ -111,6 +111,7 @@ async function carregar(idx) {
   if (!d) throw new Error('ML desta conta ainda carregando');
   const E = ST[idx] = { ...(ST[idx] || {}), status: 'carregando', feito: 0, total: 0, inicio: Date.now(), erro: null };
   try {
+    cm.recarregarErp(idx);   // custo sempre atualizado do Bling/Tiny a cada recálculo (correções no ERP aparecem logo)
     const uid = await F.uid(idx), erp = await cm.custosErp(idx).catch(() => ({}));
     const cat = {};
     for (const it of d.perdendo || []) cat[it.id] = { status: 'competing', ptw: it.preco_nao_resolve ? null : it.price_to_win };   // preço não resolve (inclui abaixo de R$ 19): não sugere
