@@ -604,6 +604,28 @@ router.get('/resultado', async (req, res) => {
   } catch (e) { res.status(400).json({ erro: e.message }); }
 });
 // diagnóstico (admin): um pedido do Bling por canal, para conferir as taxas que vêm
+// diagnóstico: movimentações da carteira Shopee (ajustes) e repasse bruto de um pedido
+router.get('/debug-shopee', async (req, res) => {
+  try {
+    const sp = require('./shopee'), out = {};
+    if (req.query.sn) out.escrow = (await sp.shopeeGet('/api/v2/payment/get_escrow_detail', { order_sn: req.query.sn })).response;
+    if (req.query.ini) {
+      const ini = Math.floor(Date.parse(req.query.ini + 'T00:00:00-03:00') / 1000), fim = Math.floor(Date.parse((req.query.fim || req.query.ini) + 'T23:59:59-03:00') / 1000);
+      const L = [];
+      for (let a = ini; a <= fim; a += 14 * 86400) {
+        const b = Math.min(fim, a + 14 * 86400 - 1);
+        for (let pg = 1; pg <= 30; pg++) {
+          const d = await sp.shopeeGet('/api/v2/payment/get_wallet_transaction_list', { page_no: pg, page_size: 100, create_time_from: a, create_time_to: b });
+          const T = d.response?.transaction_list || []; L.push(...T);
+          if (!d.response?.more || !T.length) break;
+        }
+      }
+      out.tipos = L.reduce((m, t) => (m[t.transaction_type] = (m[t.transaction_type] || 0) + 1, m), {});
+      out.transacoes = req.query.sn ? L.filter(t => t.order_sn === req.query.sn) : L.filter(t => !/ESCROW|WITHDRAW/i.test(String(t.transaction_type))).slice(0, 60);
+    }
+    res.json(out);
+  } catch (e) { res.status(400).json({ erro: e.message }); }
+});
 router.get('/debug-pedido', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   const idx = parseInt(req.query.idx) || 0, cache = pedBling(idx);
