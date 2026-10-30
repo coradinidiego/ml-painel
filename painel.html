@@ -342,6 +342,7 @@ body{background:#f0f2f5;color:#111}
   </div>
   <style>.am-fl{font-size:12px;color:#888;width:86px;font-weight:600}.am-chip{border:1px solid #ccd;background:white;color:#334;border-radius:16px;padding:4px 12px;font-size:12px;cursor:pointer;margin:2px 0}.am-chip.on{background:#0d1b2a;color:white;border-color:#0d1b2a}.am-chip .x{margin-left:6px;opacity:.7}</style>
   <div id="am-prog" style="display:none;background:white;border-radius:10px;border:1px solid #eee;padding:12px 18px;margin-bottom:14px;font-size:13px"></div>
+  <div id="am-resumo"></div>
   <div id="am-out"><div style="text-align:center;color:#999;padding:3rem;font-size:14px">Escolha a empresa e o período. <b>Ver apuração</b> usa o que já foi baixado; <b>Buscar dados</b> baixa do Bling, Tiny e Amazon (pode levar alguns minutos).</div></div>
 </div></div>
 
@@ -3938,19 +3939,43 @@ setInterval(async()=>{try{
   if(!el('apmkt-content')||el('apmkt-content').style.display==='none'||document.hidden)return;
   const h=new Date(),iso=h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0')+'-'+String(h.getDate()).padStart(2,'0');
   const a=await fetch('/apuracao-mkt/auto').then(r=>r.json());const em=a.hoje&&a.hoje.em;
-  if(em&&em!==_amHojeEm){const mudou=_amHojeEm!=null;_amHojeEm=em;if(mudou&&el('am-ini').value===iso&&el('am-fim').value===iso)amVer();}
+  if(em&&em!==_amHojeEm){const mudou=_amHojeEm!=null;_amHojeEm=em;if(mudou){amResumoCarregar();if(el('am-ini').value===iso&&el('am-fim').value===iso)amVer();}}
 }catch(e){}},120000);
 async function amAuto(){
   const a=await fetch('/apuracao-mkt/auto').then(r=>r.json()).catch(()=>null);if(!a)return;
   const u=a.ultima,br=d=>d.split('-').reverse().join('/');
   const p=(u&&u.fimExec)?u:(u&&u.ok?{...u.ok,fimExec:u.ok.em,erros:{}}:null);
-  const ini=p?p.ini:a.proximo.ini,fim=p?p.fim:a.proximo.fim,mes=ini.slice(0,7);
+  const hj=new Date(),hoje=hj.getFullYear()+'-'+String(hj.getMonth()+1).padStart(2,'0')+'-'+String(hj.getDate()).padStart(2,'0');
+  const ini=hoje,fim=hoje,mes=ini.slice(0,7);   // a tela abre no dia de hoje
   if([...el('am-mes').options].some(o=>o.value===mes))el('am-mes').value=mes;
   el('am-ini').value=ini;el('am-fim').value=fim;amChips();
   el('am-auto').innerHTML='🕛 Automático todo dia após a meia-noite (mês atual até ontem + reapuração do mês anterior, para pegar devoluções e cancelamentos). '+(a.rodando||(u&&!u.fimExec)?'<b>Atualizando agora</b> ('+br(u?u.ini:ini)+' a '+br(u?u.fim:fim)+')…'+(p&&!u.fimExec?' Mostrando a última pronta: '+br(p.ini)+' a '+br(p.fim)+'.':''):
     p?'Última: <b>'+br(p.ini)+' a '+br(p.fim)+'</b>, gerada em '+new Date(p.fimExec).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})+(Object.keys(p.erros||{}).length?' <span style="color:#c62828">· com erro: '+shpEsc(Object.entries(p.erros).map(([k,v])=>k+': '+v).join(' | '))+'</span>':''):'Ainda não rodou.')+
     (a.hoje?'<br>⏱ <b>Números de hoje</b>: atualizados a cada '+(a.hoje.cadaMin||30)+' min, das 7h às 23h30'+(a.hoje.rodando?' · <b>atualizando agora…</b>':a.hoje.em&&a.hoje.data===new Date(Date.now()-3*3600e3).toISOString().slice(0,10)?' · última às <b>'+new Date(a.hoje.em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'</b>':'')+' — clique em <b>Hoje</b>.':'');
-  if(p)amVer();
+  amVer();amResumoCarregar();
+}
+// ── quadros: Hoje × Acumulado do mês (respeitam os filtros de empresa e marketplace) ──
+let _amRes=null;
+async function amResumoCarregar(){
+  const hj=new Date(),z=n=>String(n).padStart(2,'0'),iso=d=>d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate());
+  const hoje=iso(hj),ini=hoje.slice(0,8)+'01',ontem=iso(new Date(hj-864e5));
+  const q=(a,b)=>fetch('/apuracao-mkt/resultado?emp=todas&ini='+a+'&fim='+b).then(r=>r.json()).catch(()=>null);
+  const [rh,rm]=await Promise.all([q(hoje,hoje),ini<=ontem?q(ini,ontem):Promise.resolve({linhas:[]})]);
+  _amRes={hoje,ini,rh,rm,dias:hj.getDate(),diasMes:new Date(hj.getFullYear(),hj.getMonth()+1,0).getDate()};amResumoRender();
+}
+function amResumoRender(){
+  const R=_amRes,box=el('am-resumo');if(!R||!box)return;
+  const soma=L=>{const t={receita:0,devolucao:0,ads:0,lucro:0,_p:new Set()};for(const l of L||[]){if(!amPassa(l.empresa,l.canal))continue;t.receita+=l.receita||0;t.devolucao+=l.devolucao||0;t.ads+=l.ads||0;t.lucro+=l.lucro||0;if(l.pedido!=='ADS')t._p.add(l.empresa+'|'+l.pedido);}t.pedidos=t._p.size;t.rl=t.receita-t.devolucao;return t;};
+  const H=soma(R.rh?.linhas),M0=soma(R.rm?.linhas),M={receita:M0.receita+H.receita,devolucao:M0.devolucao+H.devolucao,ads:M0.ads+H.ads,lucro:M0.lucro+H.lucro,pedidos:M0.pedidos+H.pedidos};M.rl=M.receita-M.devolucao;
+  const br=d=>d.slice(8,10)+'/'+d.slice(5,7),f=v=>'R$ '+Math.round(v).toLocaleString('pt-BR'),pc=(a,b)=>b?(a/b*100).toLocaleString('pt-BR',{maximumFractionDigits:1})+'%':'—';
+  const kpi=(l,v,s,c)=>'<div style="flex:1;min-width:110px"><div style="font-size:11.5px;color:var(--mu);font-weight:600">'+l+'</div><div style="font-size:21px;font-weight:800;color:'+(c||'var(--tx)')+'">'+v+'</div>'+(s?'<div style="font-size:11.5px;color:var(--mu)">'+s+'</div>':'')+'</div>';
+  const pend=[...(R.rh?.pendentes||[])];
+  const painel=(tit,sub,T,extra)=>'<div style="flex:1;min-width:320px;background:var(--pn);border:1px solid var(--ln);border-radius:6px;padding:14px 18px;box-shadow:0 8px 24px rgba(0,0,0,.25)"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px"><b style="font-size:14px">'+tit+'</b><span style="font-size:12px;color:var(--mu)">'+sub+'</span></div><div style="display:flex;gap:14px;flex-wrap:wrap">'+
+    kpi('Faturamento',f(T.rl),T.pedidos.toLocaleString('pt-BR')+' pedidos')+kpi('Lucro',f(T.lucro),'margem '+pc(T.lucro,T.rl),T.lucro>=0?'var(--po)':'var(--ne)')+kpi('ADS',f(T.ads),'TACOS '+pc(T.ads,T.rl))+kpi('Ticket médio',T.pedidos?'R$ '+(T.rl/T.pedidos).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—')+(extra||'')+'</div></div>';
+  const dd=R.dias,proj=M.rl/dd*R.diasMes,projL=M.lucro/dd*R.diasMes;
+  box.innerHTML='<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">'+
+    painel('Hoje',br(R.hoje)+(pend.length?' · sem dados ainda: '+pend.join(', '):''),H)+
+    painel('Acumulado do mês',br(R.ini)+' a '+br(R.hoje),M,kpi('Média por dia',f(M.rl/dd),'lucro '+f(M.lucro/dd))+kpi('Projeção do mês',f(proj),'lucro '+f(projL)))+'</div>';
 }
 function amMes(){const [a,m]=el('am-mes').value.split('-').map(Number);let fim=new Date(a,m,0);const ontem=new Date(Date.now()-864e5);if(fim>ontem)fim=ontem;const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');el('am-ini').value=el('am-mes').value+'-01';el('am-fim').value=iso(fim);if(typeof amChips==='function')amChips();}
 const amQ=()=>'emp='+(_amF.emp.size===1?[..._amF.emp][0]:'todas')+'&ini='+el('am-ini').value+'&fim='+el('am-fim').value;
@@ -3991,7 +4016,7 @@ function amChips(){
   const ini=el('am-ini').value,fim=el('am-fim').value;
   el('am-f-per').innerHTML=P.map(([r,a,b])=>'<button class="am-chip'+(a===ini&&b===fim?' on':'')+'" onclick="amPer(\''+a+'\',\''+b+'\')">'+r+'</button>').join(' ');
 }
-function amTog(grp,v){if(v==null)_amF[grp].clear();else if(_amF[grp].has(v))_amF[grp].delete(v);else _amF[grp].add(v);amSalvarF();amChips();if(_am){if(grp!=='prod')amProdLista();amRender();}}
+function amTog(grp,v){setTimeout(amResumoRender,0);if(v==null)_amF[grp].clear();else if(_amF[grp].has(v))_amF[grp].delete(v);else _amF[grp].add(v);amSalvarF();amChips();if(_am){if(grp!=='prod')amProdLista();amRender();}}
 function amPer(a,b){el('am-ini').value=a;el('am-fim').value=b;amChips();amVer();}
 function amProdLista(){
   if(!_am)return;const m={};for(const l of _am.linhas)if(amPassa(l.empresa,l.canal))m[l.sku]=l.descricao;
