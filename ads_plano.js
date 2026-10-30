@@ -129,7 +129,7 @@ function planoConta(c, Q, S) {   // Q = 15 dias, S = 7 dias
     if (gDia >= 0.8 * k.orcamento && luc > 0) {
       const novo = Math.ceil(k.orcamento * 1.5 / 5) * 5;
       recs.push({ conta: c.nome, idx: c.idx, tipo: 'orcamento', peso: luc, campanha: { id: k.id, nome: k.nome, orcamento: k.orcamento, acosAlvo: k.acosAlvo, individual: its.length <= 1 },
-        titulo: k.nome, item: its.length === 1 ? its[0].id : null, thumb: its[0]?.thumb, link: its.length === 1 ? its[0].link : null,
+        titulo: k.nome, item: its.length === 1 ? its[0].id : null, itens: its.map(x => x.id), thumb: its[0]?.thumb, link: its.length === 1 ? its[0].link : null,
         s: { custo: k7.custo, vendas: k7.vendas, acos: k7.acos, lucro: r2(luc) }, sugestao: { budget: novo },
         motivo: `gastando R$ ${gDia.toFixed(2)}/dia de R$ ${k.orcamento} (7 dias) com lucro de R$ ${luc.toFixed(2)} depois do ADS` });
     }
