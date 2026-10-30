@@ -43,6 +43,61 @@ const ARQ_SAIDAS = path.join(DATA, 'apuracao_cache', 'ads_saidas.json');
 let SAIDAS = ler(ARQ_SAIDAS, {});                          // { "idx|MLB": [{ data, tipo: 'saida'|'volta', motivo, razao, margem, organicas, acos, custo }] }
 // saída feita hoje (30/10/2026) antes deste controle existir: entra na quarentena
 if (!SAIDAS['2|MLB47278842']) { SAIDAS['2|MLB47278842'] = [{ data: '2026-10-30', tipo: 'saida', razao: 'manual', motivo: 'tirado pela tarefa do dia (antes do controle de quarentena)' }]; gravar(ARQ_SAIDAS, SAIDAS); }
+const ARQ_MUD = path.join(DATA, 'apuracao_cache', 'ads_mudancas.json'), ARQ_SNAP = path.join(DATA, 'apuracao_cache', 'ads_camp_snap.json');
+let MUD = ler(ARQ_MUD, []), SNAP = ler(ARQ_SNAP, {});   // MUD: [{ idx, conta, campanha, nome, itens, data, tipo: 'orcamento'|'roas', de, para, origem, antes, depois?, veredito? }]
+const f2 = v => (v < 0 ? '-' : '+') + 'R$ ' + Math.abs(v).toFixed(2).replace('.', ',');
+const metr7 = (k7, luc) => k7 ? { gastoDia: r2(k7.custo / 7), vendasDia: r2(k7.vendas / 7), lucroDia: luc == null ? null : r2(luc / 7), roas: k7.custo > 0 ? Math.round(k7.vendas / k7.custo * 10) / 10 : null } : null;
+// primeira vez: usa a última análise salva como "antes" (pega as mudanças feitas hoje direto no ML)
+if (!Object.keys(SNAP).length && P?.contas) {
+  for (const c of P.contas) for (const r of [...(c.recs || []), ...(c.manter || [])]) {
+    if (!r.campanha?.id || (r.campanha.individual === false && r.tipo !== 'orcamento')) continue;
+    const s7 = r.s; SNAP[c.idx + '|' + r.campanha.id] = { orcamento: r.campanha.orcamento ?? null, roas: r.campanha.acosAlvo ? Math.round(1000 / r.campanha.acosAlvo) / 10 : null,
+      m7: s7 ? { gastoDia: Math.round(s7.custo / 7 * 100) / 100, vendasDia: Math.round(s7.vendas / 7 * 100) / 100, lucroDia: s7.lucro == null ? null : Math.round(s7.lucro / 7 * 100) / 100, roas: s7.custo > 0 ? Math.round(s7.vendas / s7.custo * 10) / 10 : null } : null, em: (P.em || '').slice(0, 10) };
+  }
+  if (Object.keys(SNAP).length) gravar(ARQ_SNAP, SNAP);
+}
+function registrarMudanca(o) {
+  // mesma campanha e mesmo tipo no mesmo dia: atualiza em vez de duplicar
+  const u = MUD.find(x => x.idx === o.idx && String(x.campanha) === String(o.campanha) && x.tipo === o.tipo && x.data === o.data);
+  if (u) Object.assign(u, { para: o.para, origem: u.origem === 'painel' ? 'painel' : o.origem }); else MUD.push(o);
+  MUD = MUD.filter(x => diasDesde(x.data) <= 60); gravar(ARQ_MUD, MUD);
+}
+/** Compara com a análise anterior: orçamento ou ROAS objetivo diferente = alguém mudou (no painel ou no ML) */
+function detectarMudancas(c, Q, camp7, lucCamp, itensCamp) {
+  for (const k of Q.campanhas) {
+    const key = c.idx + '|' + k.id, ant = SNAP[key], roasK = k.acosAlvo ? Math.round(1000 / k.acosAlvo) / 10 : null;
+    if (ant) {
+      const base = { idx: c.idx, conta: c.nome, campanha: k.id, nome: k.nome, itens: itensCamp[k.id] || [], data: diaSP(), origem: 'detectada', antes: ant.m7 };
+      if (ant.orcamento != null && k.orcamento != null && Math.abs(ant.orcamento - k.orcamento) >= 0.5) registrarMudanca({ ...base, tipo: 'orcamento', de: ant.orcamento, para: k.orcamento });
+      if (ant.roas != null && roasK != null && Math.abs(ant.roas - roasK) >= 0.2) registrarMudanca({ ...base, tipo: 'roas', de: ant.roas, para: roasK });
+    }
+    SNAP[key] = { orcamento: k.orcamento ?? null, roas: roasK, m7: metr7(camp7[String(k.id)], lucCamp[k.id]), em: diaSP() };
+  }
+  gravar(ARQ_SNAP, SNAP);
+}
+/** Resultado das mudanças com 7 a 30 dias: antes (7 dias anteriores à mudança) × depois (últimos 7 dias) */
+function avaliarMudancas(c, Q, camp7, lucCamp) {
+  const out = [], empate = {};
+  for (const x of Q.itens) if (x.campanha && x.margem?.pct > 0) empate[x.campanha.id] = Math.max(empate[x.campanha.id] || 0, 100 / x.margem.pct);
+  for (const m of MUD.filter(x => x.idx === c.idx)) {
+    const d = diasDesde(m.data); if (d < 7 || d > 30 || !m.antes) continue;
+    const k = Q.campanhas.find(k => String(k.id) === String(m.campanha));
+    const dep = metr7(camp7[String(m.campanha)], lucCamp[m.campanha]); if (!dep) continue;
+    const A = m.antes, dl = (dep.lucroDia ?? 0) - (A.lucroDia ?? 0), dv = dep.vendasDia - A.vendasDia, emp = empate[m.campanha];
+    let ver, acao = null;
+    if (m.tipo === 'orcamento') {
+      if (dl >= 0) ver = { ok: true, txt: `funcionou: lucro ${f2(dl)}/dia e vendas ${f2(dv)}/dia` };
+      else if (m.para > m.de && ((dep.lucroDia ?? 0) < 0 || (emp && dep.roas != null && dep.roas < emp))) { ver = { ok: false, txt: `piorou: lucro ${f2(dl)}/dia e ROAS real ${A.roas ?? '—'}x → ${dep.roas ?? '—'}x` + (emp ? ` (empate ${Math.round(emp * 10) / 10}x)` : '') + ' — voltar o orçamento' }; acao = { budget: m.de }; }
+      else ver = { ok: null, txt: `lucro ${f2(dl)}/dia, ROAS real ${A.roas ?? '—'}x → ${dep.roas ?? '—'}x — acompanhar` };
+    } else {
+      if (dl >= 0) ver = { ok: true, txt: `funcionou: lucro ${f2(dl)}/dia (ROAS real ${A.roas ?? '—'}x → ${dep.roas ?? '—'}x)` };
+      else if (m.para > m.de && A.vendasDia > 0 && dep.vendasDia < A.vendasDia * 0.5) ver = { ok: false, txt: `ROAS objetivo alto travou as entregas: vendas pelo ADS caíram ${Math.round((1 - dep.vendasDia / A.vendasDia) * 100)}% e o lucro mudou ${f2(dl)}/dia — considerar voltar um pouco` };
+      else ver = { ok: null, txt: `lucro ${f2(dl)}/dia, ROAS real ${A.roas ?? '—'}x → ${dep.roas ?? '—'}x — acompanhar` };
+    }
+    out.push({ ...m, dias: d, depois: dep, veredito: ver, acao, atual: k ? { orcamento: k.orcamento, roas: k.acosAlvo ? Math.round(1000 / k.acosAlvo) / 10 : null } : null });
+  }
+  return out.sort((a, b) => (a.veredito.ok === false ? 0 : a.veredito.ok == null ? 1 : 2) - (b.veredito.ok === false ? 0 : b.veredito.ok == null ? 1 : 2));
+}
 const diaSP = () => hojeSP().toISOString().slice(0, 10);
 const diasDesde = d => Math.floor((Date.parse(diaSP()) - Date.parse(d)) / 864e5);
 const razaoDe = (motivo, x) => /sem nenhuma venda/.test(motivo || '') ? 'semvenda' : /margem de .* não comporta/.test(motivo || '') ? 'margem' : /prejuízo/.test(motivo || '') ? 'prejuizo'
@@ -106,6 +161,11 @@ function planoConta(c, Q, S) {   // Q = 15 dias, S = 7 dias
         continue;
       }
       if (b.campanha?.individual && m != null && b.campanha.acosAlvo != null && b.campanha.acosAlvo > m && x.custo >= 1) {
+        if (acosAlvo(m) >= b.campanha.acosAlvo - 0.01) {   // já está no máximo (35x): não tem o que subir
+          if (m < ACOS_MIN && ((y.lucro ?? 0) < 0 || (x.lucroAds ?? 0) < 0)) { recs.push({ ...b, tipo: 'remover', peso: x.custo, motivo: `margem de ${m}% precisa de ROAS ${roas(m)} para empatar, acima do máximo de 35x do ML — com prejuízo no ADS` }); continue; }
+          if (x.lucroAds > 0) ok.push({ ...b, tipo: 'manter', peso: x.lucroAds });
+          continue;
+        }
         recs.push({ ...b, tipo: 'acos', peso: x.custo, sugestao: { acos_target: acosAlvo(m) }, motivo: `ROAS objetivo da campanha (${roas(b.campanha.acosAlvo)}) está abaixo do mínimo para empatar com a margem de ${m}% (${roas(m)})` }); continue;
       }
       if (x.lucroAds > 0) ok.push({ ...b, tipo: 'manter', peso: x.lucroAds });
@@ -134,12 +194,17 @@ function planoConta(c, Q, S) {   // Q = 15 dias, S = 7 dias
         motivo: `gastando R$ ${gDia.toFixed(2)}/dia de R$ ${k.orcamento} (7 dias) com lucro de R$ ${luc.toFixed(2)} depois do ADS` });
     }
   }
+  const lucCamp = {}, itensCamp = {};
+  for (const [id, its] of Object.entries(naCamp)) { lucCamp[id] = its.reduce((a, x) => a + (s7[x.id]?.lucroAds || 0), 0); itensCamp[id] = its.map(x => x.id); }
+  detectarMudancas(c, Q, camp7, lucCamp, itensCamp);
+  const resultados = avaliarMudancas(c, Q, camp7, lucCamp);
+  const acompanhando = MUD.filter(x => x.idx === c.idx && diasDesde(x.data) < 7).map(x => ({ ...x, faltam: 7 - diasDesde(x.data) }));
   const ord = { remover: 0, acos: 1, orcamento: 2, criar: 3, voltar: 4 };
   recs.sort((a, b) => ord[a.tipo] - ord[b.tipo] || b.peso - a.peso);
   const soma = (L, f) => r2(L.reduce((a, x) => a + (f(x) || 0), 0));
   const atv = Q.itens.filter(x => x.campanha && x.status === 'active');
   return {
-    conta: c.nome, idx: c.idx, recs, manter: ok.sort((a, b) => b.peso - a.peso).slice(0, 30), quarentena: quarentena.sort((a, b) => a.faltam - b.faltam),
+    conta: c.nome, idx: c.idx, recs, manter: ok.sort((a, b) => b.peso - a.peso).slice(0, 30), quarentena: quarentena.sort((a, b) => a.faltam - b.faltam), resultados, acompanhando,
     resumo: { custo15: soma(Q.itens, x => x.custo), vendas15: soma(Q.itens, x => x.vendasAds), lucro15: soma(Q.itens.filter(x => x.lucroAds != null), x => x.lucroAds),
       custo7: soma(S.itens, x => x.custo), vendas7: soma(S.itens, x => x.vendasAds), lucro7: soma(S.itens.filter(x => x.lucroAds != null), x => x.lucroAds),
       anunciosAtivos: atv.length, campanhas: Q.campanhas.filter(k => k.status === 'active').length,
@@ -189,6 +254,13 @@ function rotas(app) {
     const idx = +req.params.idx;
     try {
       const r = await A.alterarCampanha(idx, req.params.id, req.body || {});
+      try {
+        const id = req.params.id, cta = CONTAS.find(c => c.idx === idx), rec = P?.contas.find(c => c.idx === idx)?.recs.find(x => String(x.campanha?.id) === String(id));
+        const snap = SNAP[idx + '|' + id] || {}, base = { idx, conta: cta?.nome, campanha: id, nome: rec?.campanha?.nome || rec?.titulo || id, itens: rec?.itens || (rec?.item ? [rec.item] : []), data: diaSP(), origem: 'painel', antes: snap.m7 || null };
+        if (req.body?.budget != null) { registrarMudanca({ ...base, tipo: 'orcamento', de: snap.orcamento ?? rec?.campanha?.orcamento ?? null, para: +req.body.budget }); if (SNAP[idx + '|' + id]) SNAP[idx + '|' + id].orcamento = +req.body.budget; }
+        if (req.body?.acos_target != null) { const para = Math.min(35, Math.round(1000 / req.body.acos_target) / 10); registrarMudanca({ ...base, tipo: 'roas', de: snap.roas ?? null, para }); if (SNAP[idx + '|' + id]) SNAP[idx + '|' + id].roas = para; }
+        gravar(ARQ_SNAP, SNAP);
+      } catch (e) {}
       if (P) for (const c of P.contas) if (c.idx === idx) c.recs = c.recs.filter(x => String(x.campanha?.id) !== String(req.params.id) || !['acos', 'orcamento'].includes(x.tipo));
       gravar(ARQ, P); res.json({ ok: true, resposta: r });
     } catch (e) { res.status(400).json({ erro: erroML(e) }); }
