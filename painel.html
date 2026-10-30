@@ -280,6 +280,9 @@ body{background:#f0f2f5;color:#111}
 #apmkt-content .tl-btn[style*="background:white"]{background:var(--pn2)!important;color:var(--tx)!important;border:1px solid var(--ln)!important;box-shadow:none}
 #apmkt-content .tl-btn[style*="background:#0d1b2a"]{background:var(--ac)!important;color:#06121d!important}
 #apmkt-content .tl-btn[style*="background:#2e7d32"]{background:var(--po)!important;color:#06190f!important}
+#apmkt-content .gtab{background:transparent!important;border:none!important}
+#apmkt-content .gtab td{border-bottom:1px solid var(--ln)!important;color:var(--tx)}
+#apmkt-content .gtab th{border-bottom:1px solid var(--ln)!important}
 #apmkt-content .am-fl{color:var(--mu);font-weight:600}
 #apmkt-content .am-chip{background:var(--ws);border:1px solid var(--ln);color:var(--tx);border-radius:4px;font-family:inherit;font-weight:600;padding:5px 11px;transition:background .12s,border-color .12s}
 #apmkt-content .am-chip:hover{border-color:var(--ac)}
@@ -326,7 +329,7 @@ body{background:#f0f2f5;color:#111}
 <!-- Apuração Amazon / Shein / TikTok — todas as empresas (ML e Shopee: Mercado Turbo) -->
 <div id="apmkt-content" style="display:none"><div class="content">
   <div id="am-topo"><h1>Apuração</h1><p>Lucro real por pedido em todos os canais, com tarifas, frete e repasse direto das APIs.</p></div>
-  <div style="display:flex;gap:6px;margin:-2px 0 14px"><button class="am-chip on" id="am-v-apu" onclick="amVista('apu')">📊 Apuração</button><button class="am-chip" id="am-v-dre" onclick="amVista('dre')">🧾 DRE e ponto de equilíbrio</button></div>
+  <div style="display:flex;gap:6px;margin:-2px 0 14px"><button class="am-chip on" id="am-v-apu" onclick="amVista('apu')">📊 Apuração</button><button class="am-chip" id="am-v-dre" onclick="amVista('dre')">🧾 DRE / Ponto de equilíbrio</button><button class="am-chip" id="am-v-lanc" onclick="amVista('lanc')">✍️ Lançamentos</button></div>
   <div id="am-apu">
   <div id="am-auto" style="font-size:12px;color:#666;margin:-4px 0 10px"></div>
   <div id="am-alerta"></div>
@@ -348,6 +351,7 @@ body{background:#f0f2f5;color:#111}
   <div id="am-out"><div style="text-align:center;color:#999;padding:3rem;font-size:14px">Escolha a empresa e o período. <b>Ver apuração</b> usa o que já foi baixado; <b>Buscar dados</b> baixa do Bling, Tiny e Amazon (pode levar alguns minutos).</div></div>
   </div>
   <div id="am-dre" style="display:none"></div>
+  <div id="am-lanc" style="display:none"></div>
 </div></div>
 
 <!-- Início: todas as empresas -->
@@ -3963,10 +3967,13 @@ async function amAuto(){
 let _dre={mes:null,lanc:[],cats:[],res:null,edit:null};
 const DRE_EMP=[['zagodini','Zagodini'],['mae','Com Amor de Mãe'],['lufe','Lufe']];
 function amVista(v){
-  el('am-apu').style.display=v==='apu'?'':'none';el('am-dre').style.display=v==='dre'?'':'none';
-  el('am-v-apu').classList.toggle('on',v==='apu');el('am-v-dre').classList.toggle('on',v==='dre');
-  if(v==='dre'){if(!_dre.mes){const h=new Date();_dre.mes=h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0');}dreCarregar();}
+  for(const k of ['apu','dre','lanc']){el('am-'+k).style.display=v===k?'':'none';el('am-v-'+k).classList.toggle('on',v===k);}
+  const h=new Date(),mAt=h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0');
+  if(v==='dre'){if(!_dre.mes)_dre.mes=mAt;dreCarregar();}
+  if(v==='lanc'){if(!_lc.mes)_lc.mes=mAt;lancCarregar();}
 }
+const dreMeses=(antes,depois)=>{const h=new Date(),L=[];for(let i=-depois;i<antes;i++){const d=new Date(h.getFullYear(),h.getMonth()-i,1);L.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}return L;};
+const dreNomeMes=m=>new Date(m+'-15T12:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
 async function dreCarregar(){
   const m=_dre.mes,[a,mm]=m.split('-').map(Number),ult=new Date(a,mm,0),h=new Date(),z=n=>String(n).padStart(2,'0');
   const hoje=h.getFullYear()+'-'+z(h.getMonth()+1)+'-'+z(h.getDate()),fimMes=m+'-'+z(ult.getDate()),fim=fimMes<hoje?fimMes:hoje;
@@ -4010,37 +4017,48 @@ function dreRender(){
     kpi('Ponto de equilíbrio',PE?f(PE):'—',PE?f(PE/D.diasMes)+' por dia em vendas':'lance as despesas',PE?'#ffb547':null)+
     kpi(D.mesAtual?'Faturamento até agora':'Faturamento do mês',f(RLt),PE?(RLt>=PE?'✅ equilíbrio atingido'+(diaPE?' em '+diaPE.slice(8,10)+'/'+diaPE.slice(5,7):''):'faltam '+f(PE-RLt)):'',RLt>=(PE||Infinity)?'var(--po)':null)+
     (D.mesAtual?kpi('Projeção do mês',f(proj),'resultado projetado '+f(projRes),projRes>=0?'var(--po)':'var(--ne)'):kpi('Resultado do mês',f(MC-FX),'',MC-FX>=0?'var(--po)':'var(--ne)'))+'</div>';
-  // ── lançamentos
-  const nomeE=k=>k==='todas'?'Todas (rateio)':(DRE_EMP.find(e=>e[0]===k)||[,k])[1],e=D.edit||{};
+  el('am-dre').innerHTML='<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px"><div><label class="tl-lbl">Mês</label><select class="tl-in" onchange="_dre.mes=this.value;dreCarregar()">'+
+    dreMeses(24,1).map(m=>'<option value="'+m+'"'+(m===D.mes?' selected':'')+'>'+dreNomeMes(m)+'</option>').join('')+'</select></div>'+
+    '<span style="font-size:12px;color:var(--mu)">Despesas de "Todas" são rateadas entre as empresas pela receita líquida do mês. '+(embReal?'Embalagens: valor lançado (substitui a estimativa por pedido).':'Embalagens: estimativa por pedido da apuração (lance "Embalagens" para usar o valor real).')+' Para lançar despesas, use a aba <b>Lançamentos</b>.</span></div>'+
+    pe+'<div class="section"><div class="sec-head"><span>DRE do mês</span></div><div class="gwrap">'+dre+'</div></div>';
+}
+// ── Lançamentos de despesas (qualquer mês) ──
+let _lc={mes:null,lanc:[],cats:[],edit:null};
+async function lancCarregar(){const d=await fetch('/despesas?mes='+_lc.mes).then(x=>x.json()).catch(()=>({lanc:[],categorias:[]}));_lc.lanc=d.lanc||[];_lc.cats=d.categorias||[];lancRender();}
+function lancRender(){
+  const D=_lc,f=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}),esc=shpEsc,e=D.edit||{};
+  const nomeE=k=>k==='todas'?'Todas (rateio)':(DRE_EMP.find(x=>x[0]===k)||[,k])[1];
   const opE=sel=>[['todas','Todas (rateio)'],...DRE_EMP].map(([k,n])=>'<option value="'+k+'"'+(sel===k?' selected':'')+'>'+n+'</option>').join('');
   const L=[...D.lanc].sort((a,b)=>a.categoria.localeCompare(b.categoria)||b.valor-a.valor);
-  const form='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">'+
+  const [ya,ma]=D.mes.split('-').map(Number),ant=new Date(ya,ma-2,1),mesAnt=ant.getFullYear()+'-'+String(ant.getMonth()+1).padStart(2,'0');
+  const porCat={};L.forEach(l=>porCat[l.categoria]=(porCat[l.categoria]||0)+l.valor);
+  const form='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">'+
     '<div><label class="tl-lbl">Empresa</label><select id="dre-emp" class="tl-in">'+opE(e.empresa||'todas')+'</select></div>'+
     '<div><label class="tl-lbl">Categoria</label><input id="dre-cat" class="tl-in" list="dre-cats" value="'+esc(e.categoria||'')+'" placeholder="Salários, Aluguel…" style="width:170px"><datalist id="dre-cats">'+D.cats.map(c=>'<option value="'+esc(c)+'">').join('')+'</datalist></div>'+
     '<div><label class="tl-lbl">Descrição</label><input id="dre-desc" class="tl-in" value="'+esc(e.descricao||'')+'" placeholder="opcional" style="width:200px"></div>'+
-    '<div><label class="tl-lbl">Valor (R$)</label><input id="dre-val" class="tl-in" value="'+(e.valor!=null?String(e.valor).replace('.',','):'')+'" style="width:110px" onkeydown="if(event.key===\'Enter\')dreSalvar()"></div>'+
+    '<div><label class="tl-lbl">Valor (R$)</label><input id="dre-val" class="tl-in" inputmode="decimal" value="'+(e.valor!=null?String(e.valor).replace('.',','):'')+'" style="width:110px" onkeydown="if(event.key===\'Enter\')lancSalvar()"></div>'+
     '<label style="font-size:12px;color:var(--mu);display:flex;gap:5px;align-items:center;padding-bottom:8px"><input type="checkbox" id="dre-rec"'+(e.id?(e.recorrente?' checked':''):' checked')+'> repete todo mês</label>'+
-    '<button class="tl-btn" style="background:#0d1b2a;color:white" onclick="dreSalvar()">'+(e.id?'💾 Salvar alteração':'➕ Lançar')+'</button>'+(e.id?'<button class="tl-btn" style="background:white;color:#0d1b2a;border:1px solid #0d1b2a" onclick="_dre.edit=null;dreRender()">Cancelar</button>':'')+'</div>';
-  const tab=L.length?'<table class="gtab" style="border:none;font-size:12.5px;width:100%"><tr><th class="l">Categoria</th><th class="l">Descrição</th><th class="l">Empresa</th><th>Valor</th><th>Repete</th><th></th></tr>'+
-    L.map(l=>'<tr><td class="l">'+esc(l.categoria)+'</td><td class="l">'+esc(l.descricao||'')+'</td><td class="l">'+nomeE(l.empresa)+'</td><td>'+f(l.valor)+'</td><td>'+(l.recorrente?'✓':'')+'</td><td style="white-space:nowrap"><button class="am-chip" onclick="dreEditar(\''+l.id+'\')">✏️</button> <button class="am-chip" onclick="dreExcluir(\''+l.id+'\')">🗑</button></td></tr>').join('')+
-    '<tr style="font-weight:800;border-top:1px solid var(--ln)"><td class="l" colspan="3">Total lançado</td><td>'+f(L.reduce((s,l)=>s+l.valor,0))+'</td><td colspan="2"></td></tr></table>':'<div style="color:var(--mu);font-size:13px;padding:8px 0">Nenhum lançamento neste mês.</div>';
-  const meses=[];{const h=new Date();for(let i=-1;i<12;i++){const d=new Date(h.getFullYear(),h.getMonth()-i,1);meses.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}}
-  const [ya,ma]=D.mes.split('-').map(Number),ant=new Date(ya,ma-2,1),mesAnt=ant.getFullYear()+'-'+String(ant.getMonth()+1).padStart(2,'0');
-  el('am-dre').innerHTML='<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px"><div><label class="tl-lbl">Mês</label><select class="tl-in" onchange="_dre.mes=this.value;_dre.edit=null;dreCarregar()">'+
-    meses.map(m=>'<option value="'+m+'"'+(m===D.mes?' selected':'')+'>'+new Date(m+'-15').toLocaleDateString('pt-BR',{month:'long',year:'numeric'})+'</option>').join('')+'</select></div>'+
-    '<button class="tl-btn" style="background:white;color:#0d1b2a;border:1px solid #0d1b2a" onclick="dreCopiar(\''+mesAnt+'\')">⤵ Copiar recorrentes de '+mesAnt.split('-').reverse().join('/')+'</button>'+
-    '<span style="font-size:12px;color:var(--mu)">Despesa de "Todas" é rateada entre as empresas pela receita líquida do mês.'+(embReal?'':' Lançando "Embalagens", o valor real substitui a embalagem estimada por pedido.')+'</span></div>'+
-    pe+'<div class="section"><div class="sec-head"><span>DRE do mês</span></div><div class="gwrap">'+dre+'</div></div>'+
-    '<div class="section"><div class="sec-head"><span>Lançamentos de despesas — '+D.mes.split('-').reverse().join('/')+'</span></div><div style="padding:12px 14px">'+form+tab+'</div></div>';
+    '<button class="tl-btn" style="background:#0d1b2a;color:white" onclick="lancSalvar()">'+(e.id?'💾 Salvar alteração':'➕ Lançar')+'</button>'+(e.id?'<button class="tl-btn" style="background:white;color:#0d1b2a;border:1px solid #0d1b2a" onclick="_lc.edit=null;lancRender()">Cancelar</button>':'')+'</div>';
+  const tab=L.length?'<table class="gtab" style="font-size:12.5px"><tr><th class="l">Categoria</th><th class="l">Descrição</th><th class="l">Empresa</th><th>Valor</th><th>Repete</th><th></th></tr>'+
+    L.map(l=>'<tr><td class="l">'+esc(l.categoria)+'</td><td class="l">'+esc(l.descricao||'')+'</td><td class="l">'+nomeE(l.empresa)+'</td><td>'+f(l.valor)+'</td><td>'+(l.recorrente?'✓':'')+'</td><td style="white-space:nowrap"><button class="am-chip" title="editar" onclick="lancEditar(\''+l.id+'\')">✏️</button> <button class="am-chip" title="excluir" onclick="lancExcluir(\''+l.id+'\')">🗑</button></td></tr>').join('')+
+    '<tr style="font-weight:800"><td class="l" colspan="3">Total do mês</td><td>'+f(L.reduce((s,l)=>s+l.valor,0))+'</td><td colspan="2"></td></tr></table>'
+    :'<div style="color:var(--mu);font-size:13px;padding:8px 0">Nenhuma despesa lançada em '+dreNomeMes(D.mes)+'.</div>';
+  const res=Object.keys(porCat).length?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+Object.entries(porCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>'<div style="background:var(--ws);border:1px solid var(--ln);border-radius:5px;padding:6px 10px;font-size:12px"><span style="color:var(--mu)">'+esc(c)+'</span> <b>'+f(v)+'</b></div>').join('')+'</div>':'';
+  el('am-lanc').innerHTML='<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px"><div><label class="tl-lbl">Mês da despesa</label><select class="tl-in" onchange="_lc.mes=this.value;_lc.edit=null;lancCarregar()">'+
+    dreMeses(24,3).map(m=>'<option value="'+m+'"'+(m===D.mes?' selected':'')+'>'+dreNomeMes(m)+'</option>').join('')+'</select></div>'+
+    '<button class="tl-btn" style="background:white;color:#0d1b2a;border:1px solid #0d1b2a" onclick="lancCopiar(\''+mesAnt+'\')">⤵ Copiar recorrentes de '+dreNomeMes(mesAnt)+'</button></div>'+
+    '<div class="section"><div class="sec-head"><span>'+(e.id?'Editando lançamento':'Novo lançamento')+' — '+dreNomeMes(D.mes)+'</span></div><div style="padding:12px 14px">'+form+
+    '<div style="font-size:11.5px;color:var(--mu)">"Todas (rateio)" divide a despesa entre as empresas pela receita líquida do mês. Lançando a categoria "Embalagens", o DRE usa o valor real no lugar da estimativa por pedido.</div></div></div>'+
+    '<div class="section"><div class="sec-head"><span>Despesas de '+dreNomeMes(D.mes)+' <span class="cnt">'+L.length+'</span></span></div><div style="padding:12px 14px">'+res+'<div class="gwrap">'+tab+'</div></div></div>';
 }
-async function dreSalvar(){
-  const b={id:_dre.edit?.id,mes:_dre.mes,empresa:el('dre-emp').value,categoria:el('dre-cat').value.trim(),descricao:el('dre-desc').value.trim(),valor:el('dre-val').value.replace(/\./g,'').replace(',','.'),recorrente:el('dre-rec').checked};
+async function lancSalvar(){
+  const b={id:_lc.edit?.id,mes:_lc.mes,empresa:el('dre-emp').value,categoria:el('dre-cat').value.trim(),descricao:el('dre-desc').value.trim(),valor:el('dre-val').value.trim().replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.'),recorrente:el('dre-rec').checked};
   const r=await fetch('/despesas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(x=>x.json()).catch(e=>({erro:e.message}));
-  if(r.erro)return alert(r.erro);_dre.edit=null;const d=await fetch('/despesas?mes='+_dre.mes).then(x=>x.json());_dre.lanc=d.lanc;_dre.cats=d.categorias;dreRender();
+  if(r.erro)return alert(r.erro);_lc.edit=null;_dre.mes=_dre.mes||null;await lancCarregar();el('dre-cat')?.focus();
 }
-function dreEditar(id){_dre.edit=_dre.lanc.find(l=>l.id===id)||null;dreRender();el('dre-val')?.focus();}
-async function dreExcluir(id){const l=_dre.lanc.find(x=>x.id===id);if(!l||!confirm('Excluir '+l.categoria+(l.descricao?' — '+l.descricao:'')+'?'))return;await fetch('/despesas/'+id,{method:'DELETE'});_dre.lanc=_dre.lanc.filter(x=>x.id!==id);dreRender();}
-async function dreCopiar(de){const r=await fetch('/despesas/copiar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({de,para:_dre.mes})}).then(x=>x.json());if(r.erro)return alert(r.erro);alert(r.copiados+' lançamento(s) copiado(s).');dreCarregar();}
+function lancEditar(id){_lc.edit=_lc.lanc.find(l=>l.id===id)||null;lancRender();el('dre-val')?.focus();}
+async function lancExcluir(id){const l=_lc.lanc.find(x=>x.id===id);if(!l||!confirm('Excluir '+l.categoria+(l.descricao?' — '+l.descricao:'')+'?'))return;await fetch('/despesas/'+id,{method:'DELETE'});_lc.lanc=_lc.lanc.filter(x=>x.id!==id);lancRender();}
+async function lancCopiar(de){const r=await fetch('/despesas/copiar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({de,para:_lc.mes})}).then(x=>x.json());if(r.erro)return alert(r.erro);alert(r.copiados+' lançamento(s) copiado(s) para '+dreNomeMes(_lc.mes)+'.');lancCarregar();}
 // ── quadros: Hoje × Acumulado do mês (respeitam os filtros de empresa e marketplace) ──
 let _amRes=null;
 async function amResumoCarregar(){
