@@ -195,6 +195,12 @@ body{background:#f0f2f5;color:#111}
 .pm-tip::after{content:'';position:absolute;left:22px;top:100%;border:7px solid transparent;border-top-color:#1c1d21}
 .pm-hoje .pm-tip{left:auto;right:0}.pm-hoje .pm-tip::after{left:auto;right:22px}
 .pm-hastip:hover .pm-tip,.pm-hastip:focus .pm-tip{display:block}
+/* tooltip flutuante: renderizado no <body> para não ser cortado pelo overflow da tabela */
+body.pm-tipjs .pm-hastip:hover .pm-tip,body.pm-tipjs .pm-hastip:focus .pm-tip{display:none}
+#pm-tip-float{display:none;position:fixed;bottom:auto;right:auto;z-index:10000;pointer-events:none}
+#pm-tip-float.on{display:block}
+#pm-tip-float::after{left:var(--pm-seta,22px);right:auto;transform:translateX(-50%)}
+#pm-tip-float.abaixo::after{top:auto;bottom:100%;border-top-color:transparent;border-bottom-color:#1c1d21}
 .pm-tip-t{display:block;text-align:center;font-size:13px;margin-bottom:8px}
 .pm-tip-l{display:flex;justify-content:space-between;gap:10px;padding:2px 0}
 .pm-tip-l b{font-weight:600}
@@ -4323,5 +4329,33 @@ function amExportar(){
   XLSX.writeFile(wb,'Apuracao_'+([..._amF.emp].join('-')||'todas')+(_amF.canal.size?'_'+[..._amF.canal].join('-'):'')+'_'+_am.ini+'_'+_am.fim+'.xlsx');
 }
 
+</script>
+
+<script>
+// Tooltip de margem (pm-tip) flutuante: abre acima ou abaixo conforme o espaço e nunca é cortado
+(()=>{
+  const f=document.createElement('span');f.id='pm-tip-float';f.className='pm-tip';f.setAttribute('role','tooltip');
+  document.body.appendChild(f);document.body.classList.add('pm-tipjs');
+  let alvo=null;
+  const fechar=()=>{alvo=null;f.classList.remove('on','abaixo');};
+  function abrir(el){
+    const src=el.querySelector('.pm-tip');if(!src){fechar();return;}
+    alvo=el;f.innerHTML=src.innerHTML;f.classList.remove('abaixo');f.classList.add('on');
+    const r=el.getBoundingClientRect(),t=f.getBoundingClientRect(),gap=9,m=8;
+    const acima=r.top-t.height-gap>=m;
+    let top=acima?r.top-t.height-gap:r.bottom+gap;
+    if(!acima)f.classList.add('abaixo');
+    top=Math.max(m,Math.min(top,innerHeight-t.height-m));
+    const cx=r.left+r.width/2;
+    let left=Math.max(m,Math.min(cx-t.width/2,innerWidth-t.width-m));
+    f.style.top=top+'px';f.style.left=left+'px';
+    f.style.setProperty('--pm-seta',Math.max(14,Math.min(cx-left,t.width-14))+'px');
+  }
+  const pega=e=>e.target.closest&&e.target.closest('.pm-hastip');
+  document.addEventListener('mouseover',e=>{const el=pega(e);if(el!==alvo)el?abrir(el):fechar();});
+  document.addEventListener('focusin',e=>{const el=pega(e);el?abrir(el):fechar();});
+  document.addEventListener('focusout',e=>{if(pega(e)===alvo)fechar();});
+  addEventListener('scroll',fechar,true);addEventListener('resize',fechar);
+})();
 </script>
 </body></html>
