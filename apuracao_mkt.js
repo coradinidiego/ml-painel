@@ -188,15 +188,32 @@ async function buscarShopee(empKey, ini, fim, job) {
       itens: (o.item_list || []).map(x => ({ sku: x.model_sku || x.item_sku || '', titulo: x.item_name || '', q: +x.model_quantity_purchased || 1, pu: +x.model_discounted_price || +x.model_original_price || 0 })) };
   }
   // repasse (escrow): definitivo quando o pedido está concluído; antes disso é estimado e é buscado de novo
-  const faltam = sns.filter(sn => C[sn] && !['CANCELLED', 'UNPAID'].includes(C[sn].status) && (!C[sn].esc || C[sn].esc.v !== 2 || C[sn].escStatus !== 'COMPLETED'));
+  // ajustes depois do repasse (devolução aprovada, compensação...): a carteira da Shopee aponta quais pedidos tiveram movimento além do repasse
+  const comAjuste = new Set();
+  try {
+    const agora = Math.floor(Date.now() / 1000);
+    if (agora - t1 < 120 * 86400) for (let a = t0; a <= agora; a += 14 * 86400) {
+      const b = Math.min(agora, a + 14 * 86400 - 1);
+      for (let pg = 1; pg <= 40; pg++) {
+        const d = await sp.shopeeGet('/api/v2/payment/get_wallet_transaction_list', { page_no: pg, page_size: 100, create_time_from: a, create_time_to: b });
+        const T = d.response?.transaction_list || [];
+        for (const t of T) if (t.order_sn && !/^(ESCROW_VERIFIED_ADD|WITHDRAWAL)/.test(String(t.transaction_type || ''))) comAjuste.add(t.order_sn);
+        if (!d.response?.more || !T.length) break;
+      }
+    }
+  } catch (e) { console.warn('[shopee carteira]', e.message); }
+  const faltam = sns.filter(sn => C[sn] && !['CANCELLED', 'UNPAID'].includes(C[sn].status) && (!C[sn].esc || C[sn].esc.v !== 3 || C[sn].escStatus !== 'COMPLETED' || (comAjuste.has(sn) && !C[sn].esc.ajustesVistos)));
   let k = 0;
   await paralelo(faltam, 3, async sn => {
     if (job.cancelar) return;
     try {
       const d = await sp.shopeeGet('/api/v2/payment/get_escrow_detail', { order_sn: sn }); const e = d.response?.order_income;
       if (e) { C[sn].esc = { escrow: +e.escrow_amount || 0, comissao: +e.commission_fee || 0, servico: +e.service_fee || 0, transacao: +e.seller_transaction_fee || 0, freteReal: +e.actual_shipping_fee || 0,
-        fretePago: +e.buyer_paid_shipping_fee || 0, freteRebate: +e.shopee_shipping_rebate || 0, voucher: +e.voucher_from_seller || 0, cogs: +e.cost_of_goods_sold || 0, v: 2,
+        fretePago: +e.buyer_paid_shipping_fee || 0, freteRebate: +e.shopee_shipping_rebate || 0, voucher: +e.voucher_from_seller || 0, cogs: +e.cost_of_goods_sold || 0, v: 3,
         reembolso: Math.abs(+e.seller_return_refund || 0), cogsOrig: +e.original_cost_of_goods_sold || 0,
+        ajuste: (e.order_adjustment || []).reduce((a, x) => a + (+x.amount || 0), 0) || +e.total_adjustment_amount || 0,
+        ajustes: (e.order_adjustment || []).map(x => ({ v: +x.amount || 0, motivo: x.adjustment_reason || '', data: x.date ? diaSP(x.date * 1000) : null })),
+        devolucao: (d.response?.return_order_sn_list || []).length > 0, ajustesVistos: comAjuste.has(sn),
         itens: (e.items || []).map(x => ({ sku: x.model_sku || x.item_sku || '', q: +x.quantity_purchased || 1, preco: +x.discounted_price || 0, voucher: +x.discount_from_voucher_seller || 0, titulo: x.item_name || '' })) };
         C[sn].escStatus = C[sn].status; }
     } catch (e) {}
@@ -451,12 +468,20 @@ async function calcular(empKey, ini, fim) {
     for (const sn of perShp.sns) {
       const o = C[sn]; if (!o || o.status === 'UNPAID') continue;
       if (['CANCELLED', 'IN_CANCEL'].includes(o.status)) { fora.push({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: o.status === 'IN_CANCEL' ? 'cancelando' : 'cancelado', valor: o.total }); continue; }
-      const e = o.esc;
+      const e = o.esc, aj = e?.ajuste || 0, motivoAj = (e?.ajustes || []).map(x => x.motivo).filter(Boolean).join('; ');
+      // devolução aprovada depois do repasse: a Shopee estorna o repasse (ajuste ≈ −repasse) e o produto volta → sai da apuração (resultado zero)
+      if (e && aj < -0.01 && e.escrow > 0 && e.escrow + aj <= 0.05 && (e.devolucao || /reembols|devolu|return|refund/i.test(motivoAj))) {
+        fora.push({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: 'devolvido (Shopee estornou o repasse)', valor: o.total });
+        if (e.escrow + aj < -0.01) add({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: 'devolvido', cliente: o.cliente, sku: o.itens[0]?.sku || '', descricao: 'Custo da devolução · ' + (o.itens[0]?.titulo || ''), qtd: 0, precoUn: 0, receita: 0,
+          custoUn: 0, origemCusto: '-', cmv: 0, comissao: 0, taxa: 0, frete: -(e.escrow + aj), imposto: 0, embalagem: 0, origemTaxa: 'Shopee (ajuste: ' + motivoAj + ')', _valPed: 0 });
+        continue;
+      }
       // reembolso total ao comprador (devolução / falha na entrega): sai da apuração; se a Shopee cobrou algo do vendedor, fica como custo
       if (e && e.reembolso > 0 && e.cogs <= 0.01 && e.reembolso >= (e.cogsOrig || o.total) - 0.05) {
         fora.push({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: 'reembolsado (devolução)', valor: o.total });
-        if (e.escrow < -0.01) add({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: 'reembolsado', cliente: o.cliente, sku: o.itens[0]?.sku || '', descricao: 'Custo da devolução · ' + (o.itens[0]?.titulo || ''), qtd: 0, precoUn: 0, receita: 0,
-          custoUn: 0, origemCusto: '-', cmv: 0, comissao: 0, taxa: 0, frete: -e.escrow, imposto: 0, embalagem: 0, origemTaxa: 'Shopee (repasse real)', _valPed: 0 });
+        const liq = e.escrow + aj;   // o que sobrou para o vendedor (negativo = cobrança; positivo = compensação da Shopee)
+        if (Math.abs(liq) > 0.01) add({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: 'reembolsado', cliente: o.cliente, sku: o.itens[0]?.sku || '', descricao: (liq < 0 ? 'Custo da devolução · ' : 'Compensação da Shopee · ') + (o.itens[0]?.titulo || ''), qtd: 0, precoUn: 0, receita: 0,
+          custoUn: 0, origemCusto: '-', cmv: 0, comissao: 0, taxa: 0, frete: -liq, imposto: 0, embalagem: 0, origemTaxa: 'Shopee (repasse real' + (aj ? ' + ajuste: ' + motivoAj : '') + ')', _valPed: 0 });
         continue;
       }
       // discounted_price pode vir por unidade ou pela linha: confere com o total de produtos (cost_of_goods_sold)
@@ -468,6 +493,7 @@ async function calcular(empKey, ini, fim) {
         frete = Math.max(0, e.freteReal - e.fretePago - e.freteRebate); com = e.comissao;
         taxa = Math.max(0, recTot - e.escrow - com - frete - (e.reembolso || 0));
         origem = o.status === 'COMPLETED' ? 'Shopee (repasse real)' : 'Shopee (repasse estimado)';
+        if (Math.abs(aj) > 0.01) { taxa -= aj; origem += ` · ajuste Shopee ${aj < 0 ? '-' : '+'}R$ ${Math.abs(aj).toFixed(2).replace('.', ',')}` + (motivoAj ? ` (${motivoAj})` : ''); }
       }
       itens.forEach((x, i) => {
         const prop = recTot > 0 ? x.receita / recTot : 1 / itens.length;
