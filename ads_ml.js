@@ -77,7 +77,7 @@ async function campanhas(idx, adv, dias) {
     if (L.length < 50 || (d.paging?.total != null && offset + 50 >= d.paging.total)) break;
     await delay(250);
   }
-  return R.map(c => ({ id: c.id, nome: c.name, status: c.status, orcamento: c.budget ?? null, acosAlvo: c.acos_target ?? null, estrategia: c.strategy || null,
+  return R.map(c => ({ id: c.id, nome: c.name, status: c.status, orcamento: c.budget ?? null, acosAlvo: c.acos_target ?? (c.roas_target ? Math.round(10000 / c.roas_target) / 100 : null), roasAlvo: c.roas_target ?? (c.acos_target ? Math.round(1000 / c.acos_target) / 10 : null), estrategia: c.strategy || null,
     custo: r2(c.metrics?.cost), vendas: r2(c.metrics?.total_amount), unidades: c.metrics?.units_quantity || 0, acos: c.metrics?.acos ?? null, cliques: c.metrics?.clicks || 0 }));
 }
 
@@ -222,14 +222,20 @@ function rotas(app, fontes) {
 async function alterarCampanha(idx, id, { budget, acos_target, status }) {
   const adv = await anunciante(idx), body = {};
   if (budget != null) body.budget = Number(budget);
-  if (acos_target != null) body.acos_target = Number(acos_target);
   if (status) body.status = status === 'paused' ? 'paused' : 'active';
-  return req(idx, 'put', `/marketplace/advertising/${adv.site}/product_ads/campaigns/${id}`, { data: body });
+  const url = `/marketplace/advertising/${adv.site}/product_ads/campaigns/${id}`;
+  if (acos_target == null) return req(idx, 'put', url, { data: body });
+  // o ML trocou o ACOS objetivo pelo ROAS objetivo: manda roas_target (= 100 ÷ ACOS); se a conta ainda usar ACOS, cai para acos_target
+  try { return await req(idx, 'put', url, { data: { ...body, roas_target: Math.round(1000 / Number(acos_target)) / 10 } }); }
+  catch (e) { if (e.response?.status >= 500) throw e; return req(idx, 'put', url, { data: { ...body, acos_target: Number(acos_target) } }); }
 }
 async function criarCampanha(idx, item, { nome, budget, acos_target }) {
   const adv = await anunciante(idx);
-  const c = await req(idx, 'post', `/marketplace/advertising/${adv.site}/advertisers/${adv.id}/product_ads/campaigns`,
-    { data: { name: String(nome || item).slice(0, 60), status: 'active', budget: Number(budget), strategy: 'PROFITABILITY', acos_target: Number(acos_target), channel: 'marketplace' } });
+  const url = `/marketplace/advertising/${adv.site}/advertisers/${adv.id}/product_ads/campaigns`;
+  const base = { name: String(nome || item).slice(0, 60), status: 'active', budget: Number(budget), strategy: 'PROFITABILITY', channel: 'marketplace' };
+  let c;
+  try { c = await req(idx, 'post', url, { data: { ...base, roas_target: Math.round(1000 / Number(acos_target)) / 10 } }); }
+  catch (e) { if (e.response?.status >= 500) throw e; c = await req(idx, 'post', url, { data: { ...base, acos_target: Number(acos_target) } }); }
   const cid = c?.id || c?.campaign_id; if (!cid) throw new Error('o ML não devolveu o id da campanha: ' + JSON.stringify(c).slice(0, 200));
   const a = await req(idx, 'put', `/marketplace/advertising/${adv.site}/product_ads/ads/${item}`, { params: { channel: 'marketplace' }, data: { campaign_id: Number(cid), status: 'active' } });
   return { campanha: c, anuncio: a, id: cid };

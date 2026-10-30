@@ -67,10 +67,11 @@ function avaliarVolta(idx, x) {
   if (m == null || (x.estoque ?? 1) <= 0) ok = false;
   else if (u.razao === 'semvenda') { ok = m >= 12 && org >= 3 && org >= 1.5 * (u.organicas || 0); mudou = `vendas orgânicas ${u.organicas ?? '?'} → ${org} em 15 dias`; }
   else if (u.razao === 'margem') { ok = m >= 12; mudou = `margem ${u.margem ?? '?'}% → ${m}%`; }
-  else if (u.razao === 'prejuizo') { ok = m >= 12 && m > (u.acos || 0); mudou = `margem ${m}% agora comporta o ACOS de ${u.acos ?? '?'}% que tinha`; }
+  else if (u.razao === 'prejuizo') { ok = m >= 12 && m > (u.acos || 0); mudou = `margem ${m}% agora comporta o ROAS de ${roas(u.acos)} que tinha`; }
   else { ok = m >= 12 && org >= 3; mudou = `margem ${m}% · ${org} venda(s) orgânica(s) em 15 dias`; }
   return ok ? { pode: true, saida: u, motivo: `saiu em ${u.data.split('-').reverse().join('/')} (${NOME_RAZAO[u.razao]})${mesmas >= 2 ? ' pela ' + mesmas + 'ª vez' : ''} · ${mudou} → testar de novo` } : { aguardando: true, saida: u };
 }                                     // orçamento diário sugerido para campanha nova
+const roas = a => a > 0 ? String(Math.round(1000 / a) / 10).replace('.', ',') + 'x' : '—';   // ACOS % → ROAS (100 ÷ ACOS)
 const acosAlvo = m => Math.max(2, Math.min(30, Math.floor(m / 2)));   // metade da margem, entre 2% e 30%
 
 async function pronto(idx, dias) {
@@ -99,12 +100,12 @@ function planoConta(c, Q, S) {   // Q = 15 dias, S = 7 dias
       const incoerente = x.acos != null && m != null && x.acos < m * 0.7;
       if (x.lucroAds != null && x.lucroAds < -5 && (y.lucro ?? 0) <= 0 && !incoerente) {
         const alvo = m != null ? acosAlvo(m) : null;
-        if (b.campanha?.individual && alvo && m >= 8 && (b.campanha.acosAlvo == null || b.campanha.acosAlvo > alvo)) recs.push({ ...b, tipo: 'acos', peso: -x.lucroAds, sugestao: { acos_target: alvo }, motivo: `prejuízo de R$ ${(-x.lucroAds).toFixed(2)} em 15 dias (ACOS ${x.acos ?? '—'}% × margem ${m}%)` });
-        else recs.push({ ...b, tipo: 'remover', peso: -x.lucroAds, motivo: `prejuízo de R$ ${(-x.lucroAds).toFixed(2)} em 15 dias (ACOS ${x.acos ?? '—'}% × margem ${m ?? '—'}%)` + (b.campanha && !b.campanha.individual ? ' — está numa campanha com outros anúncios, não dá para ajustar só ele' : '') });
+        if (b.campanha?.individual && alvo && m >= 8 && (b.campanha.acosAlvo == null || b.campanha.acosAlvo > alvo)) recs.push({ ...b, tipo: 'acos', peso: -x.lucroAds, sugestao: { acos_target: alvo }, motivo: `prejuízo de R$ ${(-x.lucroAds).toFixed(2)} em 15 dias (ROAS ${roas(x.acos)} · precisa de ${roas(m)} só para empatar com a margem de ${m}%)` });
+        else recs.push({ ...b, tipo: 'remover', peso: -x.lucroAds, motivo: `prejuízo de R$ ${(-x.lucroAds).toFixed(2)} em 15 dias (ROAS ${roas(x.acos)} · empate em ${roas(m)})` + (b.campanha && !b.campanha.individual ? ' — está numa campanha com outros anúncios, não dá para ajustar só ele' : '') });
         continue;
       }
       if (b.campanha?.individual && m != null && b.campanha.acosAlvo != null && b.campanha.acosAlvo > m && x.custo >= 1) {
-        recs.push({ ...b, tipo: 'acos', peso: x.custo, sugestao: { acos_target: acosAlvo(m) }, motivo: `ACOS alvo da campanha (${b.campanha.acosAlvo}%) é maior que a margem do anúncio (${m}%)` }); continue;
+        recs.push({ ...b, tipo: 'acos', peso: x.custo, sugestao: { acos_target: acosAlvo(m) }, motivo: `ROAS objetivo da campanha (${roas(b.campanha.acosAlvo)}) está abaixo do mínimo para empatar com a margem de ${m}% (${roas(m)})` }); continue;
       }
       if (x.lucroAds > 0) ok.push({ ...b, tipo: 'manter', peso: x.lucroAds });
     } else if (x.status !== 'hold' && (!x.campanha || x.status !== 'active')) {
@@ -165,7 +166,7 @@ function textoTelegram(p) {
     if (c.erro) { linhas.push(`\n<b>${c.conta}</b>: erro (${c.erro})`); continue; }
     const R = c.resumo, L = c.recs;
     linhas.push(`\n<b>${c.conta}</b> · 7 dias: ADS ${brl(R.custo7)} → vendas ${brl(R.vendas7)} · lucro depois do ADS ${brl(R.lucro7)}`);
-    const t = [['⛔ tirar do ADS', 'remover'], ['🎯 baixar ACOS alvo', 'acos'], ['💰 subir orçamento', 'orcamento'], ['➕ criar campanha', 'criar'], ['🔁 testar volta ao ADS', 'voltar']].filter(([, k]) => n(L, k)).map(([r, k]) => `${r}: ${n(L, k)}`);
+    const t = [['⛔ tirar do ADS', 'remover'], ['🎯 subir ROAS objetivo', 'acos'], ['💰 subir orçamento', 'orcamento'], ['➕ criar campanha', 'criar'], ['🔁 testar volta ao ADS', 'voltar']].filter(([, k]) => n(L, k)).map(([r, k]) => `${r}: ${n(L, k)}`);
     linhas.push(t.length ? t.join(' · ') : '✅ nada a fazer');
     for (const r of L.filter(r => r.tipo === 'remover').slice(0, 3)) linhas.push(`   • ${(r.titulo || r.item || '').slice(0, 40)} — ${r.motivo}`);
   }
