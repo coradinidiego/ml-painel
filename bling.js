@@ -277,4 +277,27 @@ async function getCustosPorSku(idx) {
   return mapa;
 }
 
-module.exports = { client, getAuthUrl, exchangeCode, refreshToken, saveTokens, getToken, getProdutosComEstoque, getDepositos, getPedidosVendas, getPedidoDetalhe, getCustosPorSku, getCanaisVenda };
+/** Composição dos produtos "com composição" (formato E) do Bling: { CODIGO_DO_KIT: [{ codigo, qtd }] } */
+async function getKits(idx) {
+  const c = client(idx), idCod = {}, kits = [];
+  for (let pagina = 1; ; pagina++) {
+    const r = await c.get('/produtos', { params: { limite: 100, pagina } });
+    const items = r.data?.data || [];
+    for (const p of items) { if (p.id && p.codigo) idCod[p.id] = p.codigo.trim(); if (p.formato === 'E' && p.codigo) kits.push(p); }
+    if (items.length < 100) break;
+    await new Promise(r => setTimeout(r, 350));
+  }
+  const mapa = {};
+  for (const k of kits) {
+    try {
+      const P = (await c.get('/produtos/' + k.id)).data?.data || {};
+      const comp = (P.estrutura?.componentes || []).map(x => ({ codigo: idCod[x.produto?.id] || x.produto?.codigo || null, qtd: parseFloat(x.quantidade) || 0 }))
+        .filter(x => x.codigo && x.qtd > 0);
+      if (comp.length) mapa[k.codigo.trim().toUpperCase()] = comp.map(x => ({ codigo: String(x.codigo).trim().toUpperCase(), qtd: x.qtd }));
+    } catch (e) { if (e.response?.status === 429) await new Promise(r => setTimeout(r, 2000)); }
+    await new Promise(r => setTimeout(r, 350));
+  }
+  return mapa;
+}
+
+module.exports = { getKits, client, getAuthUrl, exchangeCode, refreshToken, saveTokens, getToken, getProdutosComEstoque, getDepositos, getPedidosVendas, getPedidoDetalhe, getCustosPorSku, getCanaisVenda };

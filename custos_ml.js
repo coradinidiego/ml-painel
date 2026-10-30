@@ -91,6 +91,7 @@ function fixosCanal(idx, canal) {
 // ─── Custos do ERP (Bling / Tiny), cache de 6h em memória e em disco ───────
 const _erp = {};
 async function custosErp(idx) {
+  atualizarKitsBling(idx);   // composição dos kits do Bling (1x/dia, sem travar)
   const arq = path.join(DATA, 'apuracao_cache', `custos_erp_v2_${idx}.json`);
   if (!_erp[idx]) { try { _erp[idx] = JSON.parse(fs.readFileSync(arq)); } catch (e) { _erp[idx] = { ts: 0, mapa: {} }; } }
   if (!Object.keys(historico(idx)).length && Object.keys(_erp[idx].mapa || {}).length) registrarHistorico(idx, _erp[idx].mapa);
@@ -183,6 +184,15 @@ function kitOuComposicao(s, get) {
 const arqKits = idx => path.join(DATA, 'apuracao_cache', `kits_${idx}.json`);
 const _kits = {};
 function kits(idx) { if (!_kits[idx]) { try { _kits[idx] = JSON.parse(fs.readFileSync(arqKits(idx))); } catch (e) { _kits[idx] = {}; } } return _kits[idx]; }
+const _kitsRodando = {};
+function atualizarKitsBling(idx) {
+  if (idx === 2 || _kitsRodando[idx]) return;
+  let idade = Infinity; try { idade = Date.now() - fs.statSync(arqKits(idx)).mtimeMs; } catch (e) {}
+  if (idade < 24 * 3600e3) return;
+  _kitsRodando[idx] = true;
+  require('./bling').getKits(idx).then(m => { if (Object.keys(m).length) { salvarKits(idx, m); console.log('[kits Bling]', idx, Object.keys(m).length, 'kits'); } })
+    .catch(e => console.warn('[kits Bling]', idx, e.message)).finally(() => { _kitsRodando[idx] = false; });
+}
 function salvarKits(idx, mapa) { _kits[idx] = mapa; try { fs.mkdirSync(path.dirname(arqKits(idx)), { recursive: true }); fs.writeFileSync(arqKits(idx), JSON.stringify(mapa)); } catch (e) {} }
 function direto(mapa, s) { if (!mapa || !s) return null; if (mapa[s] > 0) return mapa[s]; const z = s.replace(/^0+/, ''); return mapa[z] > 0 ? mapa[z] : null; }
 function custoKit(idx, sku, mapa) {
@@ -193,14 +203,14 @@ function custoKit(idx, sku, mapa) {
     for (const c of comp) { const v = direto(mapa, K(c.codigo)); if (v == null) return null; t += v * c.qtd; }
     return t;
   }
-  const m = s.match(/^(.*)-(\d+)$/);
+  const m = idx === 2 && s.match(/^(.*)-(\d+)$/);   // padrão do SKU só no Tiny; no Bling vale a composição cadastrada
   if (m && !/^0/.test(m[2])) { const n = parseInt(m[2]); if (n >= 2 && n <= 20) { const b = direto(mapa, m[1]); if (b != null) return b * n; } }
   return null;
 }
 
 /** Custo do SKU: ERP primeiro, planilha de reserva. Retorna { v, fonte } ou null. */
 function custoComFonte(idx, sku, erp) {
-  if (idx === 2) { const k = custoKit(idx, sku, erp); if (k != null) return { v: k, fonte: 'Tiny (kit)' }; }
+  const k = custoKit(idx, sku, erp); if (k != null) return { v: k, fonte: (idx === 2 ? 'Tiny' : 'Bling') + ' (kit)' };
   const e = procurar(erp, sku); if (e != null) return { v: e, fonte: idx === 2 ? 'Tiny' : 'Bling' };
   const p = procurar(custosConta(idx), sku); if (p != null) return { v: p, fonte: 'planilha' };
   return null;
