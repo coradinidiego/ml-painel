@@ -93,7 +93,7 @@ async function importar() {
         const d = await get('/produtos/' + p.id);
         const fn = (d?.fornecedores || []).find(f => f.padrao)?.nome || d?.fornecedores?.[0]?.nome || d?.fornecedor?.nome || d?.marca?.nome || (typeof d?.marca === 'string' ? d.marca : '') || '';
         if (fn) for (const k of [K(p.codigo), K(p.gtin)].filter(Boolean)) fornMapa[k] = String(fn).trim();
-        const itensKit = Array.isArray(d?.kit) ? d.kit : [];
+        const itensKit = [d?.kit, d?.kit?.itens, d?.composicao, d?.estrutura?.componentes, d?.produtosKit].find(Array.isArray) || [];
         if (itensKit.length || String(d?.tipo || '').toUpperCase() === 'K') {
           const comp = itensKit.map(x => ({ codigo: K(x?.produto?.sku || x?.produto?.codigo || idCod[x?.produto?.id] || x?.sku || x?.codigo), qtd: num(x?.quantidade) }))
             .filter(c => c.codigo && c.qtd > 0);
@@ -149,7 +149,7 @@ module.exports = function (app) {
       const p = (r.produtos || []).map(x => x.produto).find(x => K(x.codigo) === K(req.query.sku)) || r.produtos?.[0]?.produto;
       if (!p) return res.status(404).json({ erro: 'produto não encontrado' });
       const d = await get('/produtos/' + p.id);
-      res.json({ id: p.id, codigo: p.codigo, fornecedores: d.fornecedores, marca: d.marca, custosTiny: d.custos || [], historico: historicoProduto(d), noPainel: require('./custos_ml').historico(IDX)[K(p.codigo)] || null });
+      res.json({ id: p.id, codigo: p.codigo, fornecedores: d.fornecedores, marca: d.marca, custosTiny: d.custos || [], tipo: d.tipo || null, kit: d.kit || d.composicao || null, historico: historicoProduto(d), noPainel: require('./custos_ml').historico(IDX)[K(p.codigo)] || null });
     } catch (e) { res.status(500).json({ erro: e.message }); }
   });
   // mantém o token vivo (refresh vale 1 dia) e importa 1x por dia de madrugada
@@ -157,6 +157,8 @@ module.exports = function (app) {
     const t = ler(ARQ_TOK, null); if (!t?.refresh_token) return;
     try { if (Date.now() > t.expira - 30 * 60e3) await token({ grant_type: 'refresh_token', refresh_token: t.refresh_token }); } catch (e) { ST.erro = 'renovar token: ' + (e.response?.data?.error_description || e.message); gravar(ARQ_ST, ST); }
     const h = new Date(Date.now() - 3 * 3600e3);
+    // primeira vez com a leitura de kits: importa já (não espera a madrugada) para ter a composição dos kits
+    if (!rodando && !fs.existsSync(path.join(DATA, 'apuracao_cache', 'kits_2.json')) && !ST.kitsTentado) { ST.kitsTentado = true; importar().catch(() => {}); return; }
     if (h.getUTCHours() === 2 && (!ST.ok || ST.ok.slice(0, 10) !== new Date().toISOString().slice(0, 10))) importar().catch(() => {});
   }, 20 * 60e3).unref?.();
 };

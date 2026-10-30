@@ -178,9 +178,9 @@ function kitOuComposicao(s, get) {
   return null;
 }
 // ─── Kits do Tiny: custo = soma dos componentes (produto pai × quantidade), nunca o custo do próprio kit ───
-// A composição vem do Tiny v3 (tiny3.js grava kits_<idx>.json na importação diária). Sem composição importada,
-// vale o padrão do SKU: "PAI-3" = 3 × PAI (sufixo 2..20 sem zero à esquerda). Como o custo do pai vem do
-// histórico com data (custosNaData), o kit ganha um novo custo na mesma data em que o pai muda.
+// Só pela composição cadastrada no ERP (os códigos dos componentes podem não ter relação com o do kit):
+// Tiny v3 (tiny3.js) e Bling formato E (bling.js getKits) gravam kits_<idx>.json. Como o custo dos componentes
+// vem do histórico com data (custosNaData), o kit ganha um novo custo na mesma data em que um componente muda.
 const arqKits = idx => path.join(DATA, 'apuracao_cache', `kits_${idx}.json`);
 const _kits = {};
 function kits(idx) { if (!_kits[idx]) { try { _kits[idx] = JSON.parse(fs.readFileSync(arqKits(idx))); } catch (e) { _kits[idx] = {}; } } return _kits[idx]; }
@@ -203,8 +203,6 @@ function custoKit(idx, sku, mapa) {
     for (const c of comp) { const v = direto(mapa, K(c.codigo)); if (v == null) return null; t += v * c.qtd; }
     return t;
   }
-  const m = idx === 2 && s.match(/^(.*)-(\d+)$/);   // padrão do SKU só no Tiny; no Bling vale a composição cadastrada
-  if (m && !/^0/.test(m[2])) { const n = parseInt(m[2]); if (n >= 2 && n <= 20) { const b = direto(mapa, m[1]); if (b != null) return b * n; } }
   return null;
 }
 
