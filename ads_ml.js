@@ -226,7 +226,7 @@ async function alterarCampanha(idx, id, { budget, acos_target, status }) {
   const url = `/marketplace/advertising/${adv.site}/product_ads/campaigns/${id}`;
   if (acos_target == null) return req(idx, 'put', url, { data: body });
   // o ML trocou o ACOS objetivo pelo ROAS objetivo: manda roas_target (= 100 ÷ ACOS); se a conta ainda usar ACOS, cai para acos_target
-  try { return await req(idx, 'put', url, { data: { ...body, roas_target: Math.round(1000 / Number(acos_target)) / 10 } }); }
+  try { return await req(idx, 'put', url, { data: { ...body, roas_target: Math.min(35, Math.round(1000 / Number(acos_target)) / 10) } }); }
   catch (e) { if (e.response?.status >= 500) throw e; return req(idx, 'put', url, { data: { ...body, acos_target: Number(acos_target) } }); }
 }
 async function criarCampanha(idx, item, { nome, budget, acos_target }) {
@@ -234,7 +234,7 @@ async function criarCampanha(idx, item, { nome, budget, acos_target }) {
   const url = `/marketplace/advertising/${adv.site}/advertisers/${adv.id}/product_ads/campaigns`;
   const base = { name: String(nome || item).slice(0, 60), status: 'active', budget: Number(budget), strategy: 'PROFITABILITY', channel: 'marketplace' };
   let c;
-  try { c = await req(idx, 'post', url, { data: { ...base, roas_target: Math.round(1000 / Number(acos_target)) / 10 } }); }
+  try { c = await req(idx, 'post', url, { data: { ...base, roas_target: Math.min(35, Math.round(1000 / Number(acos_target)) / 10) } }); }
   catch (e) { if (e.response?.status >= 500) throw e; c = await req(idx, 'post', url, { data: { ...base, acos_target: Number(acos_target) } }); }
   const cid = c?.id || c?.campaign_id; if (!cid) throw new Error('o ML não devolveu o id da campanha: ' + JSON.stringify(c).slice(0, 200));
   const a = await req(idx, 'put', `/marketplace/advertising/${adv.site}/product_ads/ads/${item}`, { params: { channel: 'marketplace' }, data: { campaign_id: Number(cid), status: 'active' } });

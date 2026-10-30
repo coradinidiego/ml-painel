@@ -72,7 +72,8 @@ function avaliarVolta(idx, x) {
   return ok ? { pode: true, saida: u, motivo: `saiu em ${u.data.split('-').reverse().join('/')} (${NOME_RAZAO[u.razao]})${mesmas >= 2 ? ' pela ' + mesmas + 'ª vez' : ''} · ${mudou} → testar de novo` } : { aguardando: true, saida: u };
 }                                     // orçamento diário sugerido para campanha nova
 const roas = a => a > 0 ? String(Math.round(1000 / a) / 10).replace('.', ',') + 'x' : '—';   // ACOS % → ROAS (100 ÷ ACOS)
-const acosAlvo = m => Math.max(2, Math.min(30, Math.floor(m / 2)));   // metade da margem, entre 2% e 30%
+const ACOS_MIN = 100 / 35;                                 // ROAS objetivo máximo aceito pelo ML: 35x
+const acosAlvo = m => Math.max(ACOS_MIN, Math.min(30, Math.floor(m / 2)));   // metade da margem → ROAS entre 3,3x e 35x
 
 async function pronto(idx, dias) {
   let e = A.estado(idx, dias);
@@ -113,7 +114,7 @@ function planoConta(c, Q, S) {   // Q = 15 dias, S = 7 dias
       if (x.custo > 0) registrarSaida(c.idx, x.id, null, x);
       const v = avaliarVolta(c.idx, x);
       if (v?.quarentena) { quarentena.push({ ...b, tipo: 'quarentena', faltam: v.faltam, prazo: v.prazo, saida: v.saida }); continue; }
-      if (v?.pode) { recs.push({ ...b, tipo: 'voltar', peso: (x.organicas || 0) * (x.margem?.lucro || 0), sugestao: { budget: ORC_TESTE, acos_target: Math.max(2, Math.floor(m / 3)) }, motivo: v.motivo, saida: v.saida }); continue; }
+      if (v?.pode) { recs.push({ ...b, tipo: 'voltar', peso: (x.organicas || 0) * (x.margem?.lucro || 0), sugestao: { budget: ORC_TESTE, acos_target: Math.max(ACOS_MIN, Math.floor(m / 3)) }, motivo: v.motivo, saida: v.saida }); continue; }
       if (v || x.custo > 0) continue;   // saiu e ainda não mudou nada · ou acabou de sair
       if (!((!x.campanha || x.status === 'idle') && (x.estoque ?? 1) > 0 && m != null && m >= 12 && (x.organicas || 0) >= 3)) continue;
       // (custo > 0 nos 15 dias = esteve no ADS e foi tirado: não sugere voltar)
