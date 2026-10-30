@@ -163,7 +163,7 @@ function procurar(mapa, sku) {
   const s = K(sku);
   if (mapa[s] > 0) return mapa[s];
   const semZeros = s.replace(/^0+/, ''); if (mapa[semZeros] > 0) return mapa[semZeros];
-  return kitOuComposicao(s, k => mapa[k] > 0 ? mapa[k] : null);
+  return null;   // sem adivinhar pelo código (X-3, X-01, A-B): fica sem custo para analisar
 }
 /** "SKU-3" = 3 × SKU (só sufixo 2..20 sem zero à esquerda; "-02" é variação, não kit);
  *  "A-B" com A e B cadastrados = composição (soma dos dois). */
@@ -219,7 +219,7 @@ function custoSku(idx, sku) {
   const s = K(sku);
   if (s in mapa) return mapa[s];
   const semZeros = s.replace(/^0+/, ''); if (semZeros in mapa) return mapa[semZeros];
-  return kitOuComposicao(s, k => (k in mapa) ? mapa[k] : null);
+  return null;   // sem adivinhar pelo código: fica sem custo para analisar
 }
 
 function aliquota(idx) { return require('./config_empresas').porMlIdx(idx)?.imposto ?? (idx === 2 ? 0.05 : idx === 0 ? 0.11 : 0.09); }
