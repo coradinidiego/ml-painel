@@ -132,17 +132,25 @@ async function buscarML(empKey, ini, fim, job) {
   if (!ml) return;
   const C = lerJson(arqML(empKey), { ped: {}, envio: {}, desc: {} });
   const uid = (await ml(idx, '/users/me')).id, ids = [], dias = diasEntre(ini, fim);
+  const vistos = new Set();
   for (let i = 0; i < dias.length; i++) {
+    // a paginação do ML por offset pode repetir e pular pedidos: dedup pelo id e, se faltar algum, passa de novo na ordem inversa
+    let total = null, doDia = 0;
+    for (const ordem of ['date_asc', 'date_desc']) {
+    if (ordem === 'date_desc' && (total == null || doDia >= total)) break;
     for (let off = 0; off < 5000; off += 50) {
       if (job.cancelar) throw new Error('Cancelado');
-      const r = await ml(idx, '/orders/search', { seller: uid, 'order.date_created.from': dias[i] + 'T00:00:00.000-03:00', 'order.date_created.to': dias[i] + 'T23:59:59.999-03:00', limit: 50, offset: off, sort: 'date_asc' });
+      const r = await ml(idx, '/orders/search', { seller: uid, 'order.date_created.from': dias[i] + 'T00:00:00.000-03:00', 'order.date_created.to': dias[i] + 'T23:59:59.999-03:00', limit: 50, offset: off, sort: ordem });
+      if (r.paging?.total != null) total = r.paging.total;
       for (const o of r.results || []) {
+        if (vistos.has(o.id)) continue; vistos.add(o.id); doDia++;
         C.ped[o.id] = { id: o.id, pack: o.pack_id || null, data: diaSP(o.date_created), status: o.status, ship: o.shipping?.id || null, cliente: o.buyer?.nickname || '',
           total: +o.total_amount || 0, refund: (o.payments || []).reduce((a, p) => a + (+p.transaction_amount_refunded || 0), 0), desconto: (o.tags || []).includes('order_has_discount'),
           itens: (o.order_items || []).map(x => ({ sku: x.item?.seller_sku || x.item?.seller_custom_field || '', titulo: x.item?.title || '', q: +x.quantity || 1, pu: +x.unit_price || 0, fee: +x.sale_fee || 0 })) };
         ids.push(o.id);
       }
       if ((r.results || []).length < 50) break;
+    }
     }
     job.fase = `Mercado Livre ${EMP[empKey].nome}: pedidos ${dias[i]} (${ids.length})`; job.pct = Math.max(job.pct, 80);
   }
@@ -445,8 +453,9 @@ async function calcular(empKey, ini, fim) {
   if (perML) {
     const C = lerJson(arqML(empKey), { ped: {}, envio: {}, desc: {} });
     const porEnvio = {};
-    for (const id of perML.ids) { const o = C.ped[id]; if (o?.ship && o.status !== 'cancelled') porEnvio[o.ship] = (porEnvio[o.ship] || 0) + o.total; }
-    for (const id of perML.ids) {
+    const idsML = [...new Set(perML.ids)];   // caches antigos podem ter o mesmo pedido duas vezes (paginação do ML)
+    for (const id of idsML) { const o = C.ped[id]; if (o?.ship && o.status !== 'cancelled') porEnvio[o.ship] = (porEnvio[o.ship] || 0) + o.total; }
+    for (const id of idsML) {
       const o = C.ped[id]; if (!o) continue;
       const pedido = String(o.pack || o.id);
       if (o.status === 'cancelled' || (o.refund > 0 && o.refund >= o.total - 0.01)) { fora.push({ empresa: E.nome, canal: 'Mercado Livre', data: o.data, pedido, pedidoCanal: String(o.id), situacao: o.status === 'cancelled' ? 'cancelado' : 'devolvido', valor: o.total }); continue; }
@@ -465,7 +474,7 @@ async function calcular(empKey, ini, fim) {
   const perShp = lerJson(arqCanal(empKey, 'shp', ini, fim), null);
   if (perShp) {
     const C = lerJson(arqShp(empKey), {});
-    for (const sn of perShp.sns) {
+    for (const sn of [...new Set(perShp.sns)]) {
       const o = C[sn]; if (!o || o.status === 'UNPAID') continue;
       if (['CANCELLED', 'IN_CANCEL'].includes(o.status)) { fora.push({ empresa: E.nome, canal: 'Shopee', data: o.data, pedido: sn, pedidoCanal: sn, situacao: o.status === 'IN_CANCEL' ? 'cancelando' : 'cancelado', valor: o.total }); continue; }
       const e = o.esc, aj = e?.ajuste || 0, motivoAj = (e?.ajustes || []).map(x => x.motivo).filter(Boolean).join('; ');
