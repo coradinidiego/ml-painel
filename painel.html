@@ -4012,7 +4012,7 @@ function amChips(){
   el('am-f-canal').innerHTML=todos('canal')+' '+AM_CANAIS.map(c=>chip('canal',c,c)).join(' ');
   el('am-f-prod').innerHTML=[..._amF.prod].map(s=>'<button class="am-chip on" title="remover" onclick="amTog(\'prod\',\''+amEscA(s)+'\')">'+shpEsc(s)+'<span class="x">✕</span></button>').join(' ')+(_amF.prod.size>1?' <button class="am-chip" onclick="amTog(\'prod\',null)">limpar</button>':'');
   const h=new Date(),iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),ontem=new Date(h-864e5);
-  const P=[['Hoje',iso(h),iso(h)],['Ontem',iso(ontem),iso(ontem)],['Últimos 7 dias',iso(new Date(h-7*864e5)),iso(ontem)],['Últimos 30 dias',iso(new Date(h-30*864e5)),iso(ontem)],['Este mês',iso(new Date(h.getFullYear(),h.getMonth(),1)),iso(ontem)],['Mês passado',iso(new Date(h.getFullYear(),h.getMonth()-1,1)),iso(new Date(h.getFullYear(),h.getMonth(),0))],['Este ano',iso(new Date(h.getFullYear(),0,1)),iso(ontem)]];
+  const P=[['Hoje',iso(h),iso(h)],['Ontem',iso(ontem),iso(ontem)],['Últimos 7 dias',iso(new Date(h-7*864e5)),iso(ontem)],['Últimos 30 dias',iso(new Date(h-30*864e5)),iso(ontem)],['Este mês',iso(new Date(h.getFullYear(),h.getMonth(),1)),iso(h)],['Mês passado',iso(new Date(h.getFullYear(),h.getMonth()-1,1)),iso(new Date(h.getFullYear(),h.getMonth(),0))],['Este ano',iso(new Date(h.getFullYear(),0,1)),iso(h)]];
   const ini=el('am-ini').value,fim=el('am-fim').value;
   el('am-f-per').innerHTML=P.map(([r,a,b])=>'<button class="am-chip'+(a===ini&&b===fim?' on':'')+'" onclick="amPer(\''+a+'\',\''+b+'\')">'+r+'</button>').join(' ');
 }

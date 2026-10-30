@@ -522,6 +522,27 @@ function periodosQueCobrem(emp, ini, fim) {
   let L = []; try { L = fs.readdirSync(DIR).map(f => f.match(re)).filter(Boolean).map(m => [m[1], m[2]]); } catch (e) {}
   return L.filter(([a, b]) => a <= ini && b >= fim && !(a === ini && b === fim)).sort((x, y) => (Date.parse(x[1]) - Date.parse(x[0])) - (Date.parse(y[1]) - Date.parse(y[0])));
 }
+async function comporPeriodo(emp, ini, fim) {
+  const re = new RegExp('^apmkt_ml_' + emp + '_(\\d{4}-\\d{2}-\\d{2})_(\\d{4}-\\d{2}-\\d{2})\\.json$');
+  let P = []; try { P = fs.readdirSync(DIR).map(f => f.match(re)).filter(Boolean).map(m => [m[1], m[2]]); } catch (e) {}
+  const prox = d => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
+  const out = { linhas: [], fora: [], amazonFinanceiro: null }, cache = {};
+  let cur = ini;
+  while (cur <= fim) {
+    // período já baixado que começa até "cur" e vai mais longe
+    const cands = P.filter(([a, b]) => a <= cur && b >= cur).sort((x, y) => (y[1] > x[1] ? 1 : -1));
+    let usado = null;
+    for (const [a, b] of cands) {
+      const k = a + '_' + b, r = cache[k] ||= await calcular(emp, a, b);
+      if (r.pendente) continue;
+      const ate = b < fim ? b : fim, ok = l => l.data >= cur && l.data <= ate;
+      out.linhas.push(...r.linhas.filter(ok)); out.fora.push(...r.fora.filter(ok)); usado = ate; break;
+    }
+    if (!usado) return null;   // buraco sem dados
+    cur = prox(usado);
+  }
+  return out;
+}
 router.get('/resultado', async (req, res) => {
   try {
     const [ini, fim] = periodo(req.query);
@@ -535,6 +556,8 @@ router.get('/resultado', async (req, res) => {
         const ok = l => l.data >= ini && l.data <= fim;
         r = { ...r2_, linhas: r2_.linhas.filter(ok), fora: r2_.fora.filter(ok) }; break;
       }
+      // nenhum período cobre tudo (ex.: "Este mês" = 01→ontem do automático + hoje da apuração do dia): junta os pedaços já baixados
+      if (r.pendente) { const c = await comporPeriodo(e, ini, fim); if (c) r = c; }
       if (r.pendente) pendentes.push(EMP[e].nome); else { linhas.push(...r.linhas); fora.push(...r.fora); amz[EMP[e].nome] = r.amazonFinanceiro; }
     }
     const canal = CANAIS.includes(req.query.canal) ? req.query.canal : null;
