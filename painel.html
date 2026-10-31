@@ -1384,10 +1384,16 @@ async function carregarInicio(){
     el('ini-cards').innerHTML='<div class="ini-tot"><div class="sq"><div class="v">'+T.sp+'</div><div class="l">🏷️ produtos sem promoção</div></div><div class="sq"><div class="v">'+T.pd+'</div><div class="l">💬 perguntas e mensagens pendentes</div></div><div class="sq"><div class="v">'+T.es+'</div><div class="l">📦 anúncios com estoque divergente</div></div><div class="sq"><div class="v">'+T.pv+'</div><div class="l">🔁 pós-venda para analisar ou conferir</div></div></div><div class="ini-grid">'+cards+'</div>';
     // observações do estoque (quando foi conferido, o que ficou de fora)
     el('ini-est-obs').innerHTML=r.empresas.map(e=>{const s=e.estoque;const q=s.status==='carregando'?'conferindo agora ('+(s.etapa||'')+')':s.em?'conferido às '+new Date(s.em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):s.status==='erro'?'erro: '+shpEsc(s.erro||''):'aguardando a 1ª conferência';
-      return '<br><b>'+shpEsc(e.nome)+'</b> ('+e.erp+'): '+q+(s.semSku?' · '+s.semSku+' anúncios sem SKU':'')+(s.semErp?' · '+s.semErp+' SKUs não achados no '+e.erp:'')+(s.ignorados&&s.ignorados.full?' · '+s.ignorados.full+' Full/FBA fora':'')+(s.ignorados&&s.ignorados.sheinInativo?' · '+s.ignorados.sheinInativo+' inativos na SHEIN (bloqueio/validação) fora':'')+(s.avisoSync?' · <span style="color:#E65100">⚠️ '+shpEsc(s.avisoSync)+'</span>':'')+(Object.keys(s.erros||{}).length?' · ⚠️ '+Object.entries(s.erros).map(([k,v])=>k+': '+shpEsc(v)).join('; '):'');}).join('');
+      return '<br><b>'+shpEsc(e.nome)+'</b> ('+e.erp+'): '+q+(s.semSku?' · '+s.semSku+' anúncios sem SKU':'')+(s.semErp?' · '+s.semErp+' SKUs não achados no '+e.erp:'')+(s.ignorados&&s.ignorados.full?' · '+s.ignorados.full+' Full/FBA fora':'')+(s.ignorados&&s.ignorados.sheinInativo?' · '+s.ignorados.sheinInativo+' inativos na SHEIN (bloqueio/validação) fora':'')+(s.avisoSync?' · <span style="color:#E65100">⚠️ '+shpEsc(s.avisoSync)+'</span>'+(/SUSPENSA/.test(s.avisoSync)?' <button class="btn" style="padding:2px 8px;font-size:11px" onclick="liberarSyncEstoque(\''+e.id+'\',\''+shpEsc(e.nome)+'\','+(s.total||0)+',this)">🔓 Liberar sincronização</button>':''):'')+(Object.keys(s.erros||{}).length?' · ⚠️ '+Object.entries(s.erros).map(([k,v])=>k+': '+shpEsc(v)).join('; '):'');}).join('');
     const ocup=r.empresas.some(e=>e.estoque.status==='carregando');el('ini-est-btn').disabled=ocup;el('ini-est-btn').textContent=ocup?'⏳ Conferindo…':'🔄 Conferir agora';
     _iniEst=await fetch('/inicio/estoque').then(r=>r.json());renderIniEstoque();renderPv();
   }catch(e){el('ini-cards').innerHTML='<div class="loading" style="color:#c0392b">Sem conexão com o servidor.</div>';}
+}
+async function liberarSyncEstoque(emp,nome,n,b){
+  if(!confirm('Liberar a sincronização de estoque de '+nome+'?\n\nO painel vai mandar para os sites o disponível do ERP em todos os '+(n||'')+' anúncios divergentes (até 30 por rodada).\n\nAntes, confira se o estoque do ERP está certo e se nenhum outro sistema (ex.: integração do próprio Tiny/Bling com os marketplaces) também está enviando estoque — senão um desfaz o outro.'))return;
+  b.disabled=true;b.textContent='Liberando…';
+  try{const r=await fetch('/inicio/estoque/liberar?emp='+emp,{method:'POST'}).then(x=>x.json());if(r.erro)throw new Error(r.erro);b.textContent='✓ Liberado — conferindo e atualizando (alguns minutos)';}
+  catch(e){alert('Não deu: '+e.message);b.disabled=false;b.textContent='🔓 Liberar sincronização';}
 }
 let _nfc=null,_nfSel=null;
 async function nfDevFeita(chave,feito,emp){
