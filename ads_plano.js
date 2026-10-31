@@ -130,9 +130,10 @@ const roas = a => a > 0 ? String(Math.round(1000 / a) / 10).replace('.', ',') + 
 const ACOS_MIN = 100 / 35;                                 // ROAS objetivo máximo aceito pelo ML: 35x
 const acosAlvo = m => Math.max(ACOS_MIN, Math.min(30, Math.floor(m / 2)));   // metade da margem → ROAS entre 3,3x e 35x
 
-async function pronto(idx, dias) {
+async function pronto(idx, dias, forcar) {
   let e = A.estado(idx, dias);
-  if (!e || e.status !== 'pronto' || Date.now() - Date.parse(e.em || 0) > 3 * 3600e3) e = await A.carregar(idx, dias);
+  // "Analisar agora" (manual) sempre busca de novo no ML: pausas/ajustes feitos agora há pouco têm que aparecer
+  if (forcar || !e || e.status !== 'pronto' || Date.now() - Date.parse(e.em || 0) > 3 * 3600e3) e = await A.carregar(idx, dias);
   if (e.status !== 'pronto') throw new Error(e.erro || 'ADS não carregou');
   return e;
 }
@@ -217,7 +218,7 @@ async function calcular(motivo) {
   const out = { em: new Date().toISOString(), motivo, contas: [] };
   try {
     for (const c of CONTAS) {
-      try { const Q = await pronto(c.idx, 15), S = await pronto(c.idx, 7); out.contas.push(planoConta(c, Q, S)); }
+      try { const f = motivo === 'manual', Q = await pronto(c.idx, 15, f), S = await pronto(c.idx, 7, f); out.contas.push(planoConta(c, Q, S)); }
       catch (e) { out.contas.push({ conta: c.nome, idx: c.idx, erro: e.message, recs: [], manter: [] }); }
     }
     P = out; gravar(ARQ, P);
