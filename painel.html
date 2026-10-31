@@ -1390,7 +1390,7 @@ async function carregarInicio(){
   }catch(e){el('ini-cards').innerHTML='<div class="loading" style="color:#c0392b">Sem conexão com o servidor.</div>';}
 }
 async function liberarSyncEstoque(emp,nome,n,b){
-  if(!confirm('Liberar a sincronização de estoque de '+nome+'?\n\nO painel vai mandar para os sites o disponível do ERP em todos os '+(n||'')+' anúncios divergentes (até 30 por rodada).\n\nAntes, confira se o estoque do ERP está certo e se nenhum outro sistema (ex.: integração do próprio Tiny/Bling com os marketplaces) também está enviando estoque — senão um desfaz o outro.'))return;
+  if(!confirm('Liberar a sincronização de estoque de '+nome+'?\n\nO painel vai mandar para os sites o disponível do ERP em todos os '+(n||'')+' anúncios divergentes (até 80 por rodada).\n\nAntes, confira se o estoque do ERP está certo e se nenhum outro sistema (ex.: integração do próprio Tiny/Bling com os marketplaces) também está enviando estoque — senão um desfaz o outro.'))return;
   b.disabled=true;b.textContent='Liberando…';
   try{const r=await fetch('/inicio/estoque/liberar?emp='+emp,{method:'POST'}).then(x=>x.json());if(r.erro)throw new Error(r.erro);b.textContent='✓ Liberado — conferindo e atualizando (alguns minutos)';}
   catch(e){alert('Não deu: '+e.message);b.disabled=false;b.textContent='🔓 Liberar sincronização';}
