@@ -347,7 +347,18 @@ module.exports = function montar(app, ctx) {
       if (e.erp !== 'Tiny' && erp._semDeposito) R.avisoSync = 'Sincronização automática desligada nesta empresa: o app do Bling não tem permissão de Estoques/Depósitos (precisa autorizar de novo com esse escopo).'; else delete R.avisoSync;
       const lib = (syncCfg.liberado || {})[e.id];
       if (lib && itens.length <= 40) { delete syncCfg.liberado[e.id]; gravar(ARQ_SYNC_CFG, syncCfg); }
-      if (syncCfg.on && itens.length > 40 && !lib) console.warn(`[sync] ${e.id}: ${itens.length} divergências — anormal, sincronização automática suspensa nesta rodada`);
+      if (syncCfg.on && itens.length > 40 && !lib) {
+        console.warn(`[sync] ${e.id}: ${itens.length} divergências — anormal, sincronização automática suspensa nesta rodada`);
+        R.avisoSync = `Sincronização automática SUSPENSA: ${itens.length} divergências (limite de segurança: 40). Confira o estoque no ${e.erp || 'ERP'} e libere a sincronização.`;
+        // avisa no Telegram (1x por dia por empresa), para não acumular divergência em silêncio
+        const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+        if ((syncCfg.avisado || {})[e.id] !== hoje) {
+          (syncCfg.avisado ||= {})[e.id] = hoje; gravar(ARQ_SYNC_CFG, syncCfg);
+          const porCanal = Object.entries(itens.reduce((m, x) => (m[x.canal] = (m[x.canal] || 0) + 1, m), {})).map(([c, n]) => c + ' ' + n).join(' · ');
+          const menos = itens.filter(x => x.diff < 0).length, mais = itens.filter(x => x.diff > 0).length;
+          try { require('./telegram').sendTelegram(`⚠️ <b>Estoque ${e.nome || e.id}: sincronização automática suspensa</b>\n${itens.length} anúncios com estoque diferente do ${e.erp || 'ERP'} (limite de segurança: 40)\n${porCanal}\n${menos} com MENOS no site (venda perdida) · ${mais} com MAIS no site (risco de vender sem ter)\nConfira o ${e.erp || 'ERP'} e libere no painel → Início → Estoque.`); } catch (er) {}
+        }
+      }
       // Tiny (Lufe): não há depósito do Full no Tiny — o saldo total é o que vai para os sites
       if (syncCfg.on && (itens.length <= 40 || lib) && !erp._semDeposito) { R.etapa = 'atualizando o estoque nos sites'; await sincronizarDivergencias(e, itens).catch(er => console.warn('[sync] ' + e.id, er.message)); }
       const curto = x => ({ canal: x.canal, anuncio: x.anuncio, nome: x.nome, sku: x.sku, link: x.link, nomeVar: x.nomeVar });
