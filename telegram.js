@@ -223,4 +223,20 @@ processarRespostas();
 
 console.log('Bot Telegram ativo! Verificando perguntas a cada 5 minutos.');
 
-module.exports = { verificarPerguntas, sendTelegram };
+/** Envia um arquivo (PDF etc.) para todos os chats configurados. */
+async function sendTelegramDocument(buffer, filename, caption) {
+  const out = [];
+  for (const chatId of CHAT_IDS) {
+    try {
+      const fd = new FormData();
+      fd.append('chat_id', chatId);
+      if (caption) { fd.append('caption', caption.slice(0, 1024)); fd.append('parse_mode', 'HTML'); }
+      fd.append('document', new Blob([buffer], { type: 'application/pdf' }), filename);
+      const r = await fetch('https://api.telegram.org/bot' + TOKEN + '/sendDocument', { method: 'POST', body: fd });
+      out.push(await r.json());
+    } catch (e) { out.push({ ok: false, erro: e.message }); }
+  }
+  return out;
+}
+
+module.exports = { verificarPerguntas, sendTelegram, sendTelegramDocument };

@@ -591,7 +591,13 @@ async function comporPeriodo(emp, ini, fim) {
   return out;
 }
 router.get('/resultado', async (req, res) => {
-  try {
+  try { res.json(await resultado(req.query)); }
+  catch (e) { res.status(400).json({ erro: e.message }); }
+});
+/** Resultado da apuração (o mesmo da tela): { emp: todas|zagodini|mae|lufe, ini, fim, canal? } */
+async function resultado(q) {
+  {
+    const req = { query: q };
     const [ini, fim] = periodo(req.query);
     const emps = req.query.emp === 'todas' ? Object.keys(EMP) : [req.query.emp].filter(e => EMP[e]);
     const linhas = [], pendentes = [], amz = {}, fora = [];
@@ -638,9 +644,9 @@ router.get('/resultado', async (req, res) => {
     for (const l of L) l.fornecedor = FO.fornecedor(IDXE[l.empresa], l.sku) || 'Sem fornecedor';
     const semCusto = {};
     for (const l of L) if (l.custoUn == null) { const s = semCusto[l.empresa + '|' + l.sku] ||= { empresa: l.empresa, canal: l.canal, sku: l.sku, descricao: l.descricao, qtd: 0, receita: 0 }; s.qtd += l.qtd; s.receita = r2(s.receita + l.receita); }
-    res.json({ ini, fim, pendentes, ads: adsInfo, amazonFinanceiro: amz, ...resumir(L), semCusto: Object.values(semCusto).sort((a, b) => b.receita - a.receita), foraApuracao: canal ? fora.filter(f => f.canal === canal) : fora, linhas: L });
-  } catch (e) { res.status(400).json({ erro: e.message }); }
-});
+    return ({ ini, fim, pendentes, ads: adsInfo, amazonFinanceiro: amz, ...resumir(L), semCusto: Object.values(semCusto).sort((a, b) => b.receita - a.receita), foraApuracao: canal ? fora.filter(f => f.canal === canal) : fora, linhas: L });
+  }
+}
 // diagnóstico (admin): um pedido do Bling por canal, para conferir as taxas que vêm
 // diagnóstico: movimentações da carteira Shopee (ajustes) e repasse bruto de um pedido
 router.get('/debug-shopee', async (req, res) => {
@@ -764,4 +770,4 @@ router.get('/auto', (req, res) => {
 });
 router.post('/auto/rodar', (req, res) => { rodarAuto('manual'); res.json({ ok: true }); });
 
-module.exports = { router, setFontes };
+module.exports = { router, setFontes, resultado };

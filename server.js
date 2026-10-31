@@ -2062,6 +2062,7 @@ async function mlPut(idx, path, body) { return (await axios.put(BASE + path, bod
 require('./inicio')(app, { ml, mlPut, mlReq, dadosCache, SHP, AZ_ANUNCIOS, extrairSKU, estoqueShp });
 require('./posvenda')(app, { ml, dadosCache });
 require('./apuracao_mkt').setFontes({ ml }); // apuração: ML direto da API
+require('./relatorio_diario')(app); // relatório diário (PDF no Telegram às 06:00)
 require('./nf_cancelar')(app, { ml });
 require('./turbo')(app, { dadosCache });
 require('./tiny3')(app);
