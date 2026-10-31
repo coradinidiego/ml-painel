@@ -1435,7 +1435,7 @@ app.get('/bling/pedido-numero/:idx', async (req, res) => {
 app.get('/debug/bling-raw/:idx', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   const { path: p, ...q } = req.query;
-  if (!/^\/(nfe|pedidos|situacoes|contatos|produtos|naturezas-operacoes|logisticas)/.test(String(p || ''))) return res.status(400).json({ erro: 'path não permitido' });
+  if (!/^\/(nfe|pedidos|situacoes|contatos|produtos|naturezas-operacoes|logisticas|depositos|estoques)/.test(String(p || ''))) return res.status(400).json({ erro: 'path não permitido' });
   try { const u = new URLSearchParams(); for (const [k, v] of Object.entries(q)) (Array.isArray(v) ? v : [v]).forEach(x => u.append(k, x));
     res.json((await bling.client(parseInt(req.params.idx)).get(String(p) + (u.toString() ? '?' + u : ''), { timeout: 30000 })).data); }
   catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
