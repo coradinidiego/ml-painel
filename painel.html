@@ -519,6 +519,7 @@ body.pm-tipjs .pm-hastip:hover .pm-tip,body.pm-tipjs .pm-hastip:focus .pm-tip{di
     <button class="tab" onclick="showTab('perguntas',this)">💬 Perguntas (<span id="tc-perguntas">...</span>)</button>
     <button class="tab" onclick="showTab('estoque',this);carregarEstoque()">📦 Estoque</button>
     <button class="tab" onclick="showTab('adsml',this);carregarAdsML();carregarAdsPlano()">📣 ADS</button>
+    <button class="tab" onclick="showTab('full',this);carregarFull()">🚚 Full</button>
     <button class="tab" onclick="showTab('precos',this);carregarPrecos()">💲 Preços × planilha</button>
     <button class="tab" onclick="showTab('turbo',this);carregarTurbo()">⚡ Custos × Turbo</button>
   </div>
@@ -615,6 +616,7 @@ body.pm-tipjs .pm-hastip:hover .pm-tip,body.pm-tipjs .pm-hastip:focus .pm-tip{di
     <div id="ad-resumo"></div>
     <div class="section"><div class="sec-head">📣 Anúncios <span class="cnt" id="c-adsml">-</span></div><div id="b-adsml"><div class="loading">Clique na aba para carregar...</div></div></div>
   </div>
+  <div id="tab-full" class="tab-content"><div id="fl-box"><div class="loading">Clique na aba para carregar...</div></div></div>
   <div id="tab-turbo" class="tab-content">
     <div class="sf">
       <input class="sinput" type="text" placeholder="Buscar SKU ou nome..." oninput="renderTurbo()" id="mt-q">
@@ -852,6 +854,65 @@ async function apAcao(b,idx,tipo,i){
   c.recs=c.recs.filter(x=>x!==r);renderAdsPlano();
 }
 
+
+// ══ Full: reposição, itens novos e parados (Zagodini e Com Amor de Mãe) ══
+let _fl=null,_flTimer=null,_flAba='rep',_flQ='';
+const _flPar=(()=>{const d={cob:30,prazo:10,urg:20,mg:8,minv:8};try{return {...d,...JSON.parse(localStorage.getItem('fl_par')||'{}')}}catch(e){return d}})();
+async function carregarFull(rodar){
+  clearTimeout(_flTimer);
+  if(rodar){const r=await fetch('/full/plano/rodar',{method:'POST'}).then(x=>x.json()).catch(e=>({erro:e.message}));if(r.erro){alert(r.erro);return;}}
+  try{_fl=await fetch('/full/plano').then(x=>x.json());}catch(e){el('fl-box').innerHTML='<div class="loading">Erro ao carregar.</div>';return;}
+  renderFull();
+  if(_fl.rodando||rodar)_flTimer=setTimeout(()=>{if(el('tab-full').classList.contains('active'))carregarFull();},5000);
+}
+function flParam(k,v){_flPar[k]=+v||0;try{localStorage.setItem('fl_par',JSON.stringify(_flPar))}catch(e){}renderFull();}
+function flCalc(r){
+  const dia=r.q/30,cob=dia>0?r.full/dia:null,alvo=Math.ceil(dia*(_flPar.cob+_flPar.prazo)),sug=Math.max(0,alvo-r.full-(r.transf||0));
+  const pode=r.geral==null?sug:Math.min(sug,Math.max(0,r.geral)),mg=r.rec>0?r.luc/r.rec*100:null;
+  const sit=r.full===0&&r.q>0?'ruptura':r.q===0?'semvenda':cob!=null&&cob<_flPar.urg?'urgente':sug>0?'repor':'ok';
+  return {dia,cob,alvo,sug,pode,falta:sug-pode,mg,sit};
+}
+function flCsv(nome,cab,linhas){const esc=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const t='﻿'+[cab,...linhas].map(l=>l.map(esc).join(';')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/csv'}));a.download=nome;a.click();}
+function renderFull(){
+  const box=el('fl-box');if(!box)return;const d=_fl||{},P=d.plano;
+  const brl=v=>v==null?'—':'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}),n0=v=>v==null?'—':Math.round(v).toLocaleString('pt-BR'),pc=v=>v==null?'—':(Math.round(v*10)/10).toString().replace('.',',')+'%';
+  const inp=(k,t,suf)=>'<label style="font-size:12px;color:#555;display:flex;align-items:center;gap:4px">'+t+' <input type="number" value="'+_flPar[k]+'" style="width:52px;padding:3px 5px;border:1px solid #ccc;border-radius:5px" onchange="flParam(\''+k+'\',this.value)">'+(suf||'')+'</label>';
+  let h='<div style="background:white;border:1px solid #e3e3e3;border-radius:10px;padding:12px 16px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b style="font-size:15px">🚚 Envio para o Full</b><span style="font-size:12px;color:#888">'+(P?'análise de '+new Date(P.em).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})+(P.contas?.[0]?.periodo?' · vendas de '+P.contas[0].periodo.ini.split('-').reverse().join('/')+' a '+P.contas[0].periodo.fim.split('-').reverse().join('/'):''):'ainda sem análise')+(d.rodando?' · <b style="color:#e65100">'+shpEsc(d.fase||'rodando')+'…</b>':'')+(d.erro?' · <b style="color:#c62828">erro: '+shpEsc(d.erro)+'</b>':'')+'</span><button class="btn" style="margin-left:auto;padding:4px 10px;font-size:12px" onclick="carregarFull(1)"'+(d.rodando?' disabled':'')+'>↺ Rodar análise</button></div>';
+  h+='<div style="display:flex;gap:14px;flex-wrap:wrap;margin:10px 0 4px">'+inp('cob','Cobrir','dias de venda')+inp('prazo','+','dias até o Full receber')+inp('urg','Repor já se cobertura &lt;','dias')+inp('mg','Margem mín. p/ novo','%')+inp('minv','Novo: vendas mín. em 30d','')+'</div>';
+  if(!P){box.innerHTML=h+'<div class="loading">Clique em Rodar análise (leva 2 a 4 minutos).</div></div>';return;}
+  const C=P.contas.find(c=>c.idx===ci);
+  if(!C){box.innerHTML=h+'<div class="loading">Esta conta não usa o Full. Troque para Zagodini ou Com Amor de Mãe.</div></div>';return;}
+  const R=C.reposicao.map(r=>({...r,...flCalc(r)})),ativos=R.filter(r=>r.q>0||r.full===0),par=R.filter(r=>r.q===0&&r.full>0);
+  const N=C.novos.filter(r=>r.q>=_flPar.minv).map(r=>{const dia=r.q/30,mg=r.rec>0?r.luc/r.rec*100:null,env=Math.ceil(dia*_flPar.cob),env2=r.geral==null?env:Math.min(env,Math.max(0,r.geral));return {...r,dia,mg,env:env2,ok:mg!=null&&mg>=_flPar.mg&&(r.geral==null||r.geral>0)};}).sort((a,b)=>b.luc-a.luc);
+  const soma=(L,k)=>L.reduce((a,x)=>a+(x[k]||0),0),q=_flQ.toLowerCase(),f=L=>q?L.filter(r=>(r.sku+' '+r.nome+' '+(r.anuncios||[]).join(' ')).toLowerCase().includes(q)):L;
+  const card=(t,v,c)=>'<div style="flex:1;min-width:150px;border:1px solid #eee;border-radius:8px;padding:8px 10px"><div style="font-size:11px;color:#777">'+t+'</div><div style="font-size:18px;font-weight:700;color:'+(c||'#222')+'">'+v+'</div></div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">'+card('Ruptura (zerado no Full e vendendo)',ativos.filter(r=>r.sit==='ruptura').length,'#c62828')+card('Repor já',ativos.filter(r=>r.sit==='urgente').length,'#e65100')+card('Unidades para enviar',n0(soma(ativos,'sug')))+card('Dá para enviar hoje (Geral)',n0(soma(ativos,'pode')),'#2e7d32')+card('Falta comprar',n0(soma(ativos,'falta')),soma(ativos,'falta')>0?'#c62828':'#222')+card('Novos com potencial',N.filter(r=>r.ok).length,'#1565c0')+card('Parados no Full',par.length+' SKUs · '+n0(soma(par,'full'))+' un.')+'</div>';
+  const tab=(k,t)=>'<button class="btn" style="padding:4px 10px;font-size:12px;'+(_flAba===k?'background:#5B2C6F;color:#fff':'')+'" onclick="_flAba=\''+k+'\';renderFull()">'+t+'</button>';
+  h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0">'+tab('rep','🔁 Reposição ('+ativos.length+')')+tab('novos','⭐ Novos para o Full ('+N.length+')')+tab('par','⏸️ Parados no Full ('+par.length+')')+'<input class="sinput" style="margin-left:auto;max-width:260px" placeholder="Buscar SKU, nome ou MLB..." value="'+shpEsc(_flQ)+'" oninput="_flQ=this.value;clearTimeout(window._flQT);window._flQT=setTimeout(renderFull,300)"><button class="btn" style="padding:4px 10px;font-size:12px" onclick="flExportar()">⬇ CSV</button></div>';
+  const SIT={ruptura:['RUPTURA','#c62828'],urgente:['Repor já','#e65100'],repor:['Repor','#1565c0'],ok:['OK','#2e7d32'],semvenda:['Zerado e sem venda','#888']},ord={ruptura:0,urgente:1,repor:2,ok:3,semvenda:4};
+  const nm=r=>'<div style="display:flex;gap:8px;align-items:center">'+(r.thumb?'<img src="'+shpEsc(r.thumb)+'" style="width:30px;height:30px;object-fit:cover;border-radius:4px">':'')+'<div><div style="font-weight:600;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+shpEsc(r.nome||'')+'</div><small style="color:#888">'+shpEsc(r.sku)+(r.anuncios?' · '+r.anuncios.join(' · '):'')+(r.semSku?' · <b style="color:#c62828">variação sem SKU</b>':'')+'</small></div></div>';
+  if(_flAba==='rep'){
+    const L=f(ativos).sort((a,b)=>ord[a.sit]-ord[b.sit]||(a.cob??9e9)-(b.cob??9e9)||b.q-a.q);window._flRows=L;
+    h+='<div class="gwrap"><table class="gtab" style="border:none;font-size:12px"><tr><th class="l">Produto</th><th>Vendas 30d</th><th>Venda/dia</th><th>No Full</th><th>Em transf.</th><th>Cobertura</th><th>Enviar</th><th>Geral (Bling)</th><th>Pode enviar</th><th>Falta comprar</th><th>Lucro 30d</th><th>Margem</th><th>Situação</th></tr>'+
+      L.map(r=>'<tr><td class="l">'+nm(r)+'</td><td>'+r.q+'</td><td>'+(Math.round(r.dia*10)/10).toString().replace('.',',')+'</td><td>'+r.full+'</td><td>'+(r.transf||'—')+'</td><td>'+(r.cob==null?'—':Math.round(r.cob)+' d')+'</td><td><b>'+r.sug+'</b></td><td>'+n0(r.geral)+'</td><td><b style="color:#2e7d32">'+r.pode+'</b></td><td style="color:'+(r.falta>0?'#c62828':'inherit')+'">'+(r.falta||'—')+'</td><td>'+brl(r.luc)+'</td><td style="color:'+(r.mg!=null&&r.mg<5?'#c62828':'inherit')+';font-weight:'+(r.mg!=null&&r.mg<5?700:400)+'">'+pc(r.mg)+'</td><td><b style="color:'+SIT[r.sit][1]+'">'+SIT[r.sit][0]+'</b></td></tr>').join('')+'</table></div>';
+  }else if(_flAba==='novos'){
+    const L=f(N);window._flRows=L;
+    h+='<div class="gwrap"><table class="gtab" style="border:none;font-size:12px"><tr><th class="l">Produto (hoje fora do Full)</th><th>Vendas 30d</th><th>Venda/dia</th><th>Faturamento</th><th>Lucro 30d</th><th>ADS</th><th>Margem</th><th>Geral (Bling)</th><th>1º envio</th><th class="l">Leitura</th></tr>'+
+      L.map(r=>'<tr><td class="l">'+nm(r)+'</td><td>'+r.q+'</td><td>'+(Math.round(r.dia*10)/10).toString().replace('.',',')+'</td><td>'+brl(r.rec)+'</td><td>'+brl(r.luc)+'</td><td>'+(r.ads?brl(r.ads):'—')+'</td><td style="color:'+(r.mg!=null&&r.mg<_flPar.mg?'#c62828':'inherit')+'">'+pc(r.mg)+'</td><td>'+n0(r.geral)+'</td><td><b>'+r.env+'</b></td><td class="l">'+(r.mg==null||r.mg<_flPar.mg?'<span style="color:#c62828">Margem baixa: revisar preço antes</span>':r.geral!=null&&r.geral<=0?'Sem estoque no Geral: comprar antes':r.q>=30?'<b style="color:#2e7d32">Mandar: venda forte fora do Full</b>':'<span style="color:#2e7d32">Mandar lote pequeno para testar</span>')+'</td></tr>').join('')+'</table></div>';
+  }else{
+    const L=f(par).sort((a,b)=>b.full-a.full);window._flRows=L;
+    h+='<div style="font-size:12px;color:#666;margin:4px 0 6px">Estoque no Full sem nenhuma venda no Mercado Livre nos últimos 30 dias. O ML cobra armazenagem de estoque antigo: avalie promoção, ADS ou retirada.</div><div class="gwrap"><table class="gtab" style="border:none;font-size:12px"><tr><th class="l">Produto</th><th>No Full</th><th>Em transf.</th><th>Geral (Bling)</th></tr>'+
+      L.map(r=>'<tr><td class="l">'+nm(r)+'</td><td><b>'+r.full+'</b></td><td>'+(r.transf||'—')+'</td><td>'+n0(r.geral)+'</td></tr>').join('')+'</table></div>';
+  }
+  h+='<div style="font-size:11px;color:#888;margin-top:8px">Enviar = venda/dia × (dias de cobertura + dias até o Full receber) − estoque no Full − em transferência. "Pode enviar" é limitado pelo depósito Geral do Bling. Vendas = todos os anúncios do SKU no ML nos últimos 30 dias. Envios já criados no ML que ainda não chegaram ao Full não aparecem — desconte-os.</div></div>';
+  box.innerHTML=h;
+}
+function flExportar(){
+  const L=window._flRows||[],emp=(_fl?.plano?.contas||[]).find(c=>c.idx===ci)?.nome||'';
+  if(_flAba==='rep')flCsv('full_reposicao_'+emp+'.csv',['SKU','Produto','Anúncios','Vendas 30d','No Full','Em transferência','Cobertura (dias)','Enviar','Geral Bling','Pode enviar','Falta comprar','Lucro 30d','Margem %','Situação'],L.map(r=>[r.sku,r.nome,(r.anuncios||[]).join(' '),r.q,r.full,r.transf||0,r.cob==null?'':Math.round(r.cob),r.sug,r.geral??'',r.pode,r.falta,String(r.luc).replace('.',','),r.mg==null?'':String(Math.round(r.mg*10)/10).replace('.',','),r.sit]));
+  else if(_flAba==='novos')flCsv('full_novos_'+emp+'.csv',['SKU','Produto','Vendas 30d','Faturamento','Lucro 30d','Margem %','Geral Bling','1º envio'],L.map(r=>[r.sku,r.nome,r.q,String(r.rec).replace('.',','),String(r.luc).replace('.',','),r.mg==null?'':String(Math.round(r.mg*10)/10).replace('.',','),r.geral??'',r.env]));
+  else flCsv('full_parados_'+emp+'.csv',['SKU','Produto','Anúncios','No Full','Geral Bling'],L.map(r=>[r.sku,r.nome,(r.anuncios||[]).join(' '),r.full,r.geral??'']));
+}
 // ══ Promoções × Itens (cada promoção com os anúncios que podem entrar) ══
 let _ppSel=null,_ppSt='candidate',_ppMin='',_ppQ='',_ppMarc=new Set();
 function pmVista(v){el('pm-itens').style.display=v==='itens'?'':'none';el('pm-promos').style.display=v==='promos'?'':'none';el('pm-v-itens').classList.toggle('on',v==='itens');el('pm-v-promos').classList.toggle('on',v==='promos');if(v==='promos')ppRender();}
@@ -1195,6 +1256,7 @@ function trocarConta(idx,btn){
   _precos=null; if(el('tab-precos').classList.contains('active'))setTimeout(()=>carregarPrecos(),0);
   _pm=null; if(el('tab-promos').classList.contains('active'))setTimeout(()=>carregarPromosML(),0);
   _ad=null; if(el('tab-adsml').classList.contains('active'))setTimeout(()=>{carregarAdsML();renderAdsPlano();},0);
+  if(el('tab-full')&&el('tab-full').classList.contains('active'))setTimeout(renderFull,0);
   set('c-estoque','-');
   document.querySelectorAll('.conta-tab').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');

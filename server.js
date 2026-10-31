@@ -2061,6 +2061,7 @@ async function mlReq(idx, method, path, body, headers = {}) { const r = await ax
 async function mlPut(idx, path, body) { return (await axios.put(BASE + path, body, { headers: { Authorization: 'Bearer ' + getToken(idx) } })).data; }
 require('./inicio')(app, { ml, mlPut, mlReq, dadosCache, SHP, AZ_ANUNCIOS, extrairSKU, estoqueShp });
 require('./posvenda')(app, { ml, dadosCache });
+require('./full')(app, { ml }); // envio para o Full: reposição, novos e parados
 require('./apuracao_mkt').setFontes({ ml }); // apuração: ML direto da API
 require('./relatorio_diario')(app); // relatório diário (PDF no Telegram às 06:00)
 require('./nf_cancelar')(app, { ml });
