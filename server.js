@@ -1441,6 +1441,11 @@ app.get('/debug/bling-raw/:idx', async (req, res) => {
   catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
 // Diagnóstico (admin, só leitura): Tiny API v2. /debug/tiny-raw?metodo=notas.fiscais.pesquisa.php&situacao=6
+app.get('/debug/shein-pedido', async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  try { const d = await require('./shein').api(String(req.query.loja || 'mae'), '/open-api/order/order-detail', { orderNoList: [String(req.query.num || '')] }); res.json(d); }
+  catch (e) { res.status(500).json({ erro: e.message }); }
+});
 app.get('/debug/tiny-raw', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   const { metodo, ...q } = req.query;
