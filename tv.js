@@ -471,9 +471,9 @@ async function ajustarShein(emp, linhas) {
     // prazo que vale: entrega à transportadora (requestHandoverTime) em qualquer etapa; o requestDeliveryTime vence
     // ~24h após o pagamento mas não é atraso de verdade (Diego, 26/10)
     const lim = P.prazoEntrega || P.prazoEnvio;
-    // "Data e hora requeridas para coleta" da SHEIN (requestHandoverTime): vencida = atrasado; hoje = corte de hoje;
-    // dia seguinte em diante = pode adiantar, mas não entra no corte de hoje
-    if (lim) { l.limiteColeta = lim; l.prazo = Date.parse(lim) < agora ? 'atrasado' : diaSP(lim) <= hoje ? 'hoje' : 'futuro'; }
+    // "Data e hora requeridas para coleta" da SHEIN (requestHandoverTime): vencida = atrasado. Prazo para outro dia
+    // continua na etapa (a TV não mostra "próximos dias"), só não entra no corte de hoje (pendenteCorte usa limiteColeta)
+    if (lim) { l.limiteColeta = lim; l.prazo = Date.parse(lim) < agora ? 'atrasado' : 'hoje'; }
     l.sheinApi = true;
     return true;
   });
