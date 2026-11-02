@@ -374,7 +374,9 @@ function pendenteCorte(l, hoje) {
     const d = snDia(l.num) || l.dataPedido; return !!d && d < hoje;   // sem a hora do pagamento: só os de dias anteriores
   }
   if (l.canal === 'Shein') {
-    if (l.criado) return l.criado < Date.parse(`${hoje}T${CORTE.SheinPedido}:00-03:00`) / 1000;   // pago até 12h (API da SHEIN) sai hoje
+    // com a data de coleta da SHEIN (requestHandoverTime), é ela que decide: entra no corte se vence hoje ou já venceu
+    if (l.limiteColeta) return new Date(l.limiteColeta).toLocaleDateString('sv-SE', { timeZone: TZ }) <= hoje;
+    if (l.criado) return l.criado < Date.parse(`${hoje}T${CORTE.SheinPedido}:00-03:00`) / 1000;   // sem a data: pago até 12h sai hoje
     return !!l.dataPedido && l.dataPedido < hoje;  // sem a API: Bling/Tiny só trazem a data do pedido, sem hora
   }
   return false;
@@ -466,7 +468,9 @@ async function ajustarShein(emp, linhas) {
     // prazo que vale: entrega à transportadora (requestHandoverTime) em qualquer etapa; o requestDeliveryTime vence
     // ~24h após o pagamento mas não é atraso de verdade (Diego, 26/10)
     const lim = P.prazoEntrega || P.prazoEnvio;
-    if (lim) l.prazo = Date.parse(lim) < agora ? 'atrasado' : 'hoje';
+    // "Data e hora requeridas para coleta" da SHEIN (requestHandoverTime): vencida = atrasado; hoje = corte de hoje;
+    // dia seguinte em diante = pode adiantar, mas não entra no corte de hoje
+    if (lim) { l.limiteColeta = lim; l.prazo = Date.parse(lim) < agora ? 'atrasado' : diaSP(lim) <= hoje ? 'hoje' : 'futuro'; }
     l.sheinApi = true;
     return true;
   });
