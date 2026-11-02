@@ -53,6 +53,7 @@ async function montar(D) {
     return o;
   };
   const margem = o => (o.receita - (o.devolucao || 0)) ? o.lucro / (o.receita - (o.devolucao || 0)) * 100 : null;
+  const margemSem = o => (o.receita - (o.devolucao || 0)) ? (o.lucro + (o.ads || 0)) / (o.receita - (o.devolucao || 0)) * 100 : null;   // antes do ADS = o preço
   const empMes = porEmp(mes), empAnt = porEmp(ant), empOntem = porEmp(ontem);
   const empresas = [...new Set([...Object.keys(empMes), ...Object.keys(empAnt)])].sort((a, b) => (empMes[b]?.receita || 0) - (empMes[a]?.receita || 0));
   const gAnt = Object.fromEntries((ant.grupos || []).map(g => [g.empresa + '|' + g.canal, g]));
@@ -81,7 +82,7 @@ async function montar(D) {
   return {
     D, y, m, d, diasMes, mesIni, antIni, antFim, sem,
     ontem: ontem.total, semana: semana.total, mes: mes.total, ant: ant.total,
-    margem, empresas, empMes, empAnt, empOntem, grupos: mes.grupos || [], gAnt,
+    margem, margemSem, empresas, empMes, empAnt, empOntem, grupos: mes.grupos || [], gAnt,
     sMes, sAnt, top, piores, dev, canc, semCusto: mes.semCusto || [], recML,
     pendentes: [...new Set([...(ontem.pendentes || []), ...(mes.pendentes || [])])], estimados,
     autoOk: auto?.ok?.fim === D,
@@ -119,7 +120,7 @@ function gerarPDF(R) {
       [`Lucro ${brl0(o.lucro)} · margem ${pct(R.margem(o))}`], [`${o.pedidos} pedidos`],
       [`vs ${DIA[new Date(R.sem + 'T12:00:00Z').getUTCDay()]} anterior: fat. ${dtxt(delta(o.receita, s.receita))} · lucro ${dtxt(delta(o.lucro, s.lucro))}`, cor(delta(o.lucro, s.lucro))]]);
     card(X0 + cw + 8, cw, 'Mês até ontem', brl0(mm.receita), [
-      [`Lucro ${brl0(mm.lucro)} · margem ${pct(R.margem(mm))}`], [`${mm.pedidos} pedidos · ADS ${brl0(mm.ads)}`],
+      [`Lucro ${brl0(mm.lucro)} · margem ${pct(R.margem(mm))}`], [`sem ADS ${pct(R.margemSem(mm))} · ADS ${brl0(mm.ads)}`],
       [`vs mês anterior: fat. ${dtxt(delta(mm.receita, a.receita))} · lucro ${dtxt(delta(mm.lucro, a.lucro))}`, cor(delta(mm.lucro, a.lucro))]]);
     const pf = mm.receita / R.d * R.diasMes, pl = mm.lucro / R.d * R.diasMes;
     card(X0 + 2 * (cw + 8), cw, 'Projeção do mês', brl0(pf), [
@@ -153,16 +154,16 @@ function gerarPDF(R) {
     };
 
     // por empresa (mês)
-    const colsE = [{ t: 'Empresa', w: 150 }, { t: 'Faturamento', w: 90, a: 'right' }, { t: 'Lucro', w: 80, a: 'right' }, { t: 'Margem', w: 55, a: 'right' }, { t: 'Fat. vs ant.', w: 75, a: 'right' }, { t: 'Lucro vs ant.', w: 80, a: 'right' }, { t: 'Ontem (fat.)', w: 80, a: 'right' }];
+    const colsE = [{ t: 'Empresa', w: 150 }, { t: 'Faturamento', w: 90, a: 'right' }, { t: 'Lucro', w: 75, a: 'right' }, { t: 's/ ADS', w: 62, a: 'right' }, { t: 'c/ ADS', w: 62, a: 'right' }, { t: 'Fat. vs ant.', w: 70, a: 'right' }, { t: 'Lucro vs ant.', w: 80, a: 'right' }, { t: 'Ontem (fat.)', w: 80, a: 'right' }];
     const linE = R.empresas.map(e => { const x = R.empMes[e] || { receita: 0, lucro: 0 }, p = R.empAnt[e] || {}; const dl = delta(x.lucro, p.lucro);
-      return [NOME_EMP[e] || e, brl0(x.receita), brl0(x.lucro), pct(R.margem(x)), { t: dtxt(delta(x.receita, p.receita)), c: cor(delta(x.receita, p.receita)) }, { t: dtxt(dl), c: cor(dl) }, brl0((R.empOntem[e] || {}).receita)]; });
-    const tot = [ 'Total', brl0(mm.receita), brl0(mm.lucro), pct(R.margem(mm)), { t: dtxt(delta(mm.receita, a.receita)), c: cor(delta(mm.receita, a.receita)) }, { t: dtxt(delta(mm.lucro, a.lucro)), c: cor(delta(mm.lucro, a.lucro)) }, brl0(o.receita) ]; tot._total = true;
+      return [NOME_EMP[e] || e, brl0(x.receita), brl0(x.lucro), pct(R.margemSem(x)), pct(R.margem(x)), { t: dtxt(delta(x.receita, p.receita)), c: cor(delta(x.receita, p.receita)) }, { t: dtxt(dl), c: cor(dl) }, brl0((R.empOntem[e] || {}).receita)]; });
+    const tot = [ 'Total', brl0(mm.receita), brl0(mm.lucro), pct(R.margemSem(mm)), pct(R.margem(mm)), { t: dtxt(delta(mm.receita, a.receita)), c: cor(delta(mm.receita, a.receita)) }, { t: dtxt(delta(mm.lucro, a.lucro)), c: cor(delta(mm.lucro, a.lucro)) }, brl0(o.receita) ]; tot._total = true;
     tabela('Por empresa — mês até ontem', colsE, [...linE, tot]);
 
     // empresa × marketplace
-    const colsC = [{ t: 'Empresa', w: 110 }, { t: 'Marketplace', w: 90 }, { t: 'Pedidos', w: 50, a: 'right' }, { t: 'Faturamento', w: 85, a: 'right' }, { t: 'Lucro', w: 75, a: 'right' }, { t: 'Margem', w: 50, a: 'right' }, { t: 'ADS', w: 60, a: 'right' }, { t: 'Lucro vs ant.', w: 70, a: 'right' }];
+    const colsC = [{ t: 'Empresa', w: 110 }, { t: 'Marketplace', w: 90 }, { t: 'Pedidos', w: 50, a: 'right' }, { t: 'Faturamento', w: 85, a: 'right' }, { t: 'Lucro', w: 70, a: 'right' }, { t: 's/ ADS', w: 50, a: 'right' }, { t: 'c/ ADS', w: 50, a: 'right' }, { t: 'ADS', w: 55, a: 'right' }, { t: 'Lucro vs ant.', w: 70, a: 'right' }];
     const linC = R.grupos.filter(g => g.receita > 0 || g.lucro).map(g => { const p = R.gAnt[g.empresa + '|' + g.canal]; const dl = p ? delta(g.lucro, p.lucro) : null; const mg = R.margem(g);
-      return [NOME_EMP[g.empresa] || g.empresa, g.canal, g.pedidos, brl0(g.receita), { t: brl0(g.lucro), c: g.lucro < 0 ? C.verm : null }, { t: pct(mg), c: mg != null && mg < 5 ? C.verm : null }, g.ads ? brl0(g.ads) : '—', { t: dtxt(dl), c: cor(dl) }]; });
+      return [NOME_EMP[g.empresa] || g.empresa, g.canal, g.pedidos, brl0(g.receita), { t: brl0(g.lucro), c: g.lucro < 0 ? C.verm : null }, { t: pct(R.margemSem(g)), c: (R.margemSem(g) ?? 99) < 8 ? C.verm : null }, { t: pct(mg), c: mg != null && mg < 5 ? C.verm : null }, g.ads ? brl0(g.ads) : '—', { t: dtxt(dl), c: cor(dl) }]; });
     tabela('Por empresa e marketplace — mês até ontem', colsC, linC);
 
     // ── página 2 ──
@@ -216,7 +217,7 @@ function legenda(R) {
     `Faturamento ${brl0(o.receita)} · lucro ${brl0(o.lucro)} (${pct(R.margem(o))}) · ${o.pedidos} pedidos\n` +
     `vs semana passada: lucro ${dtxt(delta(o.lucro, R.semana.lucro))}\n\n` +
     `<b>${MES[R.m - 1][0].toUpperCase() + MES[R.m - 1].slice(1)} até dia ${R.d}</b>\n` +
-    `Faturamento ${brl0(m.receita)} (${dtxt(delta(m.receita, a.receita))}) · lucro ${brl0(m.lucro)} (${dtxt(delta(m.lucro, a.lucro))}) · margem ${pct(R.margem(m))}\n` +
+    `Faturamento ${brl0(m.receita)} (${dtxt(delta(m.receita, a.receita))}) · lucro ${brl0(m.lucro)} (${dtxt(delta(m.lucro, a.lucro))}) · margem ${pct(R.margem(m))} (sem ADS ${pct(R.margemSem(m))})\n` +
     `Projeção do mês: ${brl0(m.receita / R.d * R.diasMes)} · lucro ${brl0(m.lucro / R.d * R.diasMes)}\n` +
     R.empresas.map(e => { const x = R.empMes[e] || {}; return `• ${NOME_EMP[e] || e}: ${brl0(x.receita)} · lucro ${brl0(x.lucro)} (${pct(R.margem(x))})`; }).join('\n');
 }
