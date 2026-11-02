@@ -152,7 +152,7 @@ const FLUXO_VERIFICADO = { Shein: /^GSH/i, Shopee: /^\d{6}[A-Z0-9]{8}$/i, Amazon
 const SIT = { emAberto: 6, atendido: 9, verificado: 24 };
 
 // Status dos pedidos direto na Shopee (só lojas com a Shopee conectada no painel). Cache de 3 min por pedido.
-const _stShp = {}, _criadoShp = {}, _carrierShp = {}, _coletadoShp = {};   // order_sn -> status / create_time (segundos)
+const _stShp = {}, _criadoShp = {}, _carrierShp = {}, _coletadoShp = {}, _limShp = {};   // _limShp: ship_by_date da Shopee (prazo real de envio, já com feriados)   // order_sn -> status / create_time (segundos)
 async function statusShopee(empId, sns) {
   let sp;
   try { sp = require('./shopee').loja(empId); } catch (e) { return null; }
@@ -161,8 +161,8 @@ async function statusShopee(empId, sns) {
   for (const sn of sns) { const c = _stShp[sn]; if (c && agora - c.ts < 3 * 60e3) out[sn] = c.st; else faltam.push(sn); }
   try {
     for (let i = 0; i < faltam.length; i += 50) {
-      const d = await sp.shopeeGet('/api/v2/order/get_order_detail', { order_sn_list: faltam.slice(i, i + 50).join(','), response_optional_fields: 'shipping_carrier,pickup_done_time,pay_time' });
-      for (const o of d.response?.order_list || []) { out[o.order_sn] = o.order_status; _stShp[o.order_sn] = { st: o.order_status, ts: agora }; if (o.pay_time || o.create_time) _criadoShp[o.order_sn] = o.pay_time || o.create_time; /* prazo da Shopee conta a partir do pagamento */ if (o.shipping_carrier) _carrierShp[o.order_sn] = o.shipping_carrier; if (o.pickup_done_time) _coletadoShp[o.order_sn] = o.pickup_done_time; }
+      const d = await sp.shopeeGet('/api/v2/order/get_order_detail', { order_sn_list: faltam.slice(i, i + 50).join(','), response_optional_fields: 'shipping_carrier,pickup_done_time,pay_time,ship_by_date' });
+      for (const o of d.response?.order_list || []) { out[o.order_sn] = o.order_status; _stShp[o.order_sn] = { st: o.order_status, ts: agora }; if (o.ship_by_date > 0) _limShp[o.order_sn] = o.ship_by_date; if (o.pay_time || o.create_time) _criadoShp[o.order_sn] = o.pay_time || o.create_time; /* prazo da Shopee conta a partir do pagamento */ if (o.shipping_carrier) _carrierShp[o.order_sn] = o.shipping_carrier; if (o.pickup_done_time) _coletadoShp[o.order_sn] = o.pickup_done_time; }
     }
   } catch (e) { console.warn('[tv] status Shopee', empId, e.message); if (!Object.keys(out).length) return null; }
   return out;
@@ -185,7 +185,7 @@ async function coletarFluxoBling(emp, canal, canais, hoje, janela) {
   const linhas = [];
   // pedido já pago entra no trabalho do dia (não vai para "próximos dias"); atrasado se passou da data prevista
   const pz = p => { const d = (p.dataPrevista || '').slice(0, 10); return d && d > '2000-01-01' && d < hoje ? 'atrasado' : 'hoje'; };
-  const add = (tipo, l) => { for (const p of l) { const num = String(p.numeroLoja || ''); linhas.push({ tipo, canal, prazo: tipo === 'empacotado' ? 'hoje' : pz(p), num, criado: canal === 'Shopee' ? _criadoShp[num] : undefined, direta: canal === 'Shopee' && /entrega direta|direct/i.test(_carrierShp[num] || ''), dataPedido: (p.data || '').slice(0, 10) }); } };
+  const add = (tipo, l) => { for (const p of l) { const num = String(p.numeroLoja || ''); linhas.push({ tipo, canal, prazo: tipo === 'empacotado' ? 'hoje' : pz(p), num, criado: canal === 'Shopee' ? _criadoShp[num] : undefined, limiteEnvio: canal === 'Shopee' ? _limShp[num] : undefined, direta: canal === 'Shopee' && /entrega direta|direct/i.test(_carrierShp[num] || ''), dataPedido: (p.data || '').slice(0, 10) }); } };
   for (const idLoja of ids) {
     const emAberto = await blingListar(emp.idx, [SIT.emAberto], { ...janela, idLoja });
     if (canal === 'Shopee') await statusShopee(emp.id, emAberto.map(p => String(p.numeroLoja || '')).filter(Boolean)); // hora da compra (corte das 12h)
@@ -307,7 +307,7 @@ async function coletarTiny(cfg, hoje) {
   // Shopee da Lufe conectada no painel: hora da compra (corte das 12h) e Entrega Direta direto da Shopee
   const shp = linhas.filter(l => l.canal === 'Shopee' && l.num);
   if (shp.length && await statusShopee('lufe', [...new Set(shp.map(l => l.num))])) {
-    for (const l of shp) { l.criado = _criadoShp[l.num]; l.direta = /entrega direta|direct/i.test(_carrierShp[l.num] || ''); }
+    for (const l of shp) { l.criado = _criadoShp[l.num]; l.limiteEnvio = _limShp[l.num]; l.direta = /entrega direta|direct/i.test(_carrierShp[l.num] || ''); }
   }
   return linhas;
 }
@@ -370,7 +370,9 @@ function pendenteCorte(l, hoje) {
   if (l.tipo !== 'emitirNF' && l.tipo !== 'aEmpacotar') return false;
   if (l.canal === 'Mercado Livre' || l.canal === 'Amazon') return l.prazo === 'hoje' || l.prazo === 'atrasado';
   if (l.canal === 'Shopee') {
-    if (l.criado) return limiteShopee(l.criado) <= hoje;
+    // prazo de envio informado pela Shopee no pedido (ship_by_date) — já considera feriado/fim de semana
+    if (l.limiteEnvio) return new Date(l.limiteEnvio * 1000).toLocaleDateString('sv-SE', { timeZone: TZ }) <= hoje;
+    if (l.criado) return limiteShopee(l.criado) <= hoje;   // sem o prazo da Shopee: tabela oficial pela hora do pagamento
     const d = snDia(l.num) || l.dataPedido; return !!d && d < hoje;   // sem a hora do pagamento: só os de dias anteriores
   }
   if (l.canal === 'Shein') {
@@ -413,7 +415,8 @@ function cortes(empresas) {
 // ─── Agregação ─────────────────────────────────────────────────────────────
 const zerado = () => ({ emitirNF: 0, aEmpacotar: 0, empacotado: 0, enviado: 0, atrasados: 0, atrasoTotal: 0, futuros: 0, corte: 0, proprio: 0 });
 function agregar(emp, linhas) {
-  const canais = {}, hoje = hojeIso();
+  const canais = {}, hoje = hojeIso(), agoraS = Date.now() / 1000;
+  for (const l of linhas) if (l.canal === 'Shopee' && l.limiteEnvio && l.limiteEnvio < agoraS && ['emitirNF', 'aEmpacotar', 'empacotado'].includes(l.tipo)) l.prazo = 'atrasado';
   for (const c of emp.canais) canais[c] = { canal: c, ...zerado() };
   for (const l of linhas) {
     if (!MARKETPLACES.includes(l.canal)) continue;   // venda física / balcão / sem marketplace: fora da TV
