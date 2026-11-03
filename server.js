@@ -1469,11 +1469,11 @@ app.get('/tiny/anexo', async (req, res) => {   // proxy das imagens do Tiny (S3)
   const u = String(req.query.u || ''); if (!/^https:\/\/s3\.amazonaws\.com\/tiny-anexos-us\//.test(u)) return res.status(400).end();
   try { const r = await require('axios').get(u, { responseType: 'arraybuffer', timeout: 30000 }); res.type(r.headers['content-type'] || 'image/png').send(Buffer.from(r.data)); } catch (e) { res.status(502).end(); }
 });
-app.post('/fotos', express.json({ limit: '20mb' }), (req, res) => {
+app.post('/fotos/:nome', express.raw({ type: ['image/jpeg', 'image/png'], limit: '20mb' }), (req, res) => {   // corpo = a imagem (Content-Type image/jpeg|png)
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
-  const nome = String(req.body?.nome || ''), m = String(req.body?.dataUrl || '').match(/^data:image\/(jpeg|png);base64,(.+)$/);
-  if (!/^[\w.-]+\.(jpg|png)$/.test(nome) || !m) return res.status(400).json({ erro: 'nome ou imagem inválidos' });
-  require('fs').mkdirSync(DIR_FOTOS, { recursive: true }); require('fs').writeFileSync(require('path').join(DIR_FOTOS, nome), Buffer.from(m[2], 'base64'));
+  const nome = String(req.params.nome || '');
+  if (!/^[\w.-]+\.(jpg|png)$/.test(nome) || !Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ erro: 'nome ou imagem inválidos' });
+  require('fs').mkdirSync(DIR_FOTOS, { recursive: true }); require('fs').writeFileSync(require('path').join(DIR_FOTOS, nome), req.body);
   res.json({ ok: true, url: 'https://' + req.get('host') + '/fotos/' + nome });
 });
 app.get('/fotos/:nome', (req, res) => {
