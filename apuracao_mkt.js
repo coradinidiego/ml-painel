@@ -386,8 +386,11 @@ async function calcular(empKey, ini, fim) {
       const frLiq = F.freteCliente != null ? Math.max(0, F.frete - F.freteCliente) : F.frete;
       return { comissao: F.com * p, taxa: F.tarifas * p, frete: frLiq * p, origem: 'Amazon (real)' };
     }
+    // sem lançamento ainda: comissão do histórico + tarifa fixa da faixa de preço; abaixo de R$ 79 o frete é do cliente
+    // (o histórico de "frete" inclui a etiqueta que a Amazon cobra e o cliente repõe — usar ele dobrava o custo)
     const fixo = precoUn < 30 ? 4.5 : precoUn < 50 ? 6.5 : precoUn < 79 ? 6.75 : 0;
-    return { comissao: valItem * pct, taxa: (h?.outrasUn ?? fixo) * qtd, frete: (h?.freteUn ?? 0) * qtd, origem: 'estimada (sem lançamento ainda)' };
+    const frete = valPed < 79 ? 0 : (h?.freteUn ?? 0) * qtd;
+    return { comissao: valItem * pct, taxa: (h?.outrasUn > 0 ? h.outrasUn : fixo) * qtd, frete, origem: 'estimada (sem lançamento ainda' + (valPed < 79 ? ', frete pago pelo cliente' : '') + ')' };
   };
 
   if (E.erp === 'bling') {
