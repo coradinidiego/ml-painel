@@ -2099,6 +2099,16 @@ require('./full')(app, { ml }); // envio para o Full: reposição, novos e parad
 require('./apuracao_mkt').setFontes({ ml }); // apuração: ML direto da API
 require('./relatorio_diario')(app); // relatório diário (PDF no Telegram às 06:00)
 require('./full_agenda')(app);       // reserva da Coleta do Full pelo Telegram (extensão Monitor Full)
+// Alterar anúncio do ML (admin, a pedido): status/excluir, categoria, atributos, nome da família. PUT /items/{id}
+app.post('/ml/item-alterar/:idx/:id', express.json(), async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const idx = parseInt(req.params.idx), id = String(req.params.id); if (!/^MLB\d+$/.test(id)) return res.status(400).json({ erro: 'id' });
+  const ok = ['status', 'deleted', 'category_id', 'attributes', 'family_name', 'title', 'pictures'], body = {};
+  for (const k of ok) if (req.body?.[k] !== undefined) body[k] = req.body[k];
+  if (!Object.keys(body).length) return res.status(400).json({ erro: 'nada para alterar' });
+  try { res.json({ ok: true, item: (await mlReq(idx, 'put', '/items/' + id, body)).data }); }
+  catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
+});
 require('./nf_cancelar')(app, { ml });
 require('./turbo')(app, { dadosCache });
 require('./tiny3')(app);
