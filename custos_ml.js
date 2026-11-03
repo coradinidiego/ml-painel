@@ -100,7 +100,7 @@ async function custosErp(idx) {
   try {
     if (idx === 2) {
       // Tiny: mapeia pelo código e pelo GTIN/EAN (os anúncios da Lufe no ML usam o EAN como SKU)
-      const tiny = require('./tiny');
+      const tiny = require('./tiny'), codigos = new Set(), porGtin = {};
       for (let pagina = 1, total = 1; pagina <= total && pagina <= 50; pagina++) {
         const ret = await tiny.chamar('produtos.pesquisa.php', { pesquisa: '', pagina });
         if (ret.vazio) break;
@@ -109,11 +109,13 @@ async function custosErp(idx) {
           const p = x.produto || {};
           const c = num(p.preco_custo) > 0 ? num(p.preco_custo) : num(p.preco_custo_medio);
           if (!(c > 0)) continue;
-          if (p.codigo) mapa[K(p.codigo)] = c;
-          if (p.gtin) mapa[K(p.gtin)] = c;
+          if (p.codigo) { mapa[K(p.codigo)] = c; codigos.add(K(p.codigo)); }
+          // GTIN só vale quando nenhum produto tem esse código (o Tiny copia o EAN do componente para o kit)
+          if (p.gtin && !(K(p.gtin) in porGtin)) porGtin[K(p.gtin)] = c;
         }
         await new Promise(r => setTimeout(r, 1100));
       }
+      for (const [g, c] of Object.entries(porGtin)) if (!codigos.has(g)) mapa[g] = c;
     } else {
       const b = await require('./bling').getCustosPorSku(idx);
       for (const [sku, c] of Object.entries(b)) if (c > 0) mapa[K(sku)] = c;
@@ -131,7 +133,14 @@ async function custosErp(idx) {
 const arqHist = idx => path.join(DATA, 'apuracao_cache', `custos_hist_${idx}.json`);
 const _hist = {}, _naData = {};
 const hojeSP = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
-function historico(idx) { if (!_hist[idx]) { try { _hist[idx] = JSON.parse(fs.readFileSync(arqHist(idx))); } catch (e) { _hist[idx] = {}; } } return _hist[idx]; }
+function historico(idx) {
+  if (!_hist[idx]) {
+    try { _hist[idx] = JSON.parse(fs.readFileSync(arqHist(idx))); } catch (e) { _hist[idx] = {}; }
+    // 03/11/2026: o custo dos kits 7898501765961-2 / 7898501760836-2 entrou no histórico dos unitários (GTIN copiado pelo Tiny)
+    if (idx === 2) for (const [k, ruim] of [['7898501765961', 41.04], ['7898501760836', 42.26]]) if (_hist[2][k]) _hist[2][k] = _hist[2][k].filter(x => Math.abs(x[1] - ruim) > 0.005);
+  }
+  return _hist[idx];
+}
 function registrarHistorico(idx, mapa) {
   const h = historico(idx), d = hojeSP(); let mud = 0;
   for (const [k, v] of Object.entries(mapa)) {

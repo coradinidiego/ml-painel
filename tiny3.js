@@ -87,22 +87,26 @@ async function importar() {
     let comHist = 0; const fornMapa = {};
     // composição dos kits: { CODIGO_OU_GTIN_DO_KIT: [{ codigo, qtd }] } (custo do kit = soma dos componentes)
     const idCod = {}; for (const p of prods) idCod[p.id] = p.codigo;
+    // chaves de cada produto: o código e, se nenhum outro produto tiver esse código, o GTIN
+    // (o Tiny copia o EAN do componente para o kit: sem isso, o unitário virava "kit de 2")
+    const codigos = new Set(prods.map(p => K(p.codigo)).filter(Boolean));
+    const chaves = p => [K(p.codigo), K(p.gtin) && (K(p.gtin) === K(p.codigo) || !codigos.has(K(p.gtin))) ? K(p.gtin) : null].filter(Boolean);
     const kitMapa = {};
     for (const p of prods) {
       try {
         const d = await get('/produtos/' + p.id);
         const fn = (d?.fornecedores || []).find(f => f.padrao)?.nome || d?.fornecedores?.[0]?.nome || d?.fornecedor?.nome || d?.marca?.nome || (typeof d?.marca === 'string' ? d.marca : '') || '';
-        if (fn) for (const k of [K(p.codigo), K(p.gtin)].filter(Boolean)) fornMapa[k] = String(fn).trim();
+        if (fn) for (const k of chaves(p)) fornMapa[k] = String(fn).trim();
         const itensKit = [d?.kit, d?.kit?.itens, d?.composicao, d?.estrutura?.componentes, d?.produtosKit].find(Array.isArray) || [];
         if (itensKit.length || String(d?.tipo || '').toUpperCase() === 'K') {
           const comp = itensKit.map(x => ({ codigo: K(x?.produto?.sku || x?.produto?.codigo || idCod[x?.produto?.id] || x?.sku || x?.codigo), qtd: num(x?.quantidade) }))
             .filter(c => c.codigo && c.qtd > 0);
-          if (comp.length) for (const k of [K(p.codigo), K(p.gtin)].filter(Boolean)) kitMapa[k] = comp;
+          if (comp.length) for (const k of chaves(p)) kitMapa[k] = comp;
         }
         const L = historicoProduto(d);
         if (L.length) {
           comHist++;
-          for (const k of [K(p.codigo), K(p.gtin)].filter(Boolean)) {
+          for (const k of chaves(p)) {
             // histórico do Tiny + anotações do painel posteriores à última data do Tiny
             const ult = L[L.length - 1][0];
             H[k] = [...L, ...(H[k] || []).filter(x => x[0] > ult)];
