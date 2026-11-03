@@ -151,6 +151,8 @@ function planoConta(c, Q, S) {   // Q = 15 dias, S = 7 dias
   for (const x of Q.itens) {
     const m = x.margem?.pct, ativo = x.campanha && x.status === 'active', b = base(x), y = b.s || {};
     if (ativo) {
+      // voltou ao ADS (pelo painel ou direto no ML, ex.: campanha própria criada): sai da quarentena
+      { const L = SAIDAS[c.idx + '|' + x.id]; if (L?.length && L[L.length - 1].tipo === 'saida') registrarVolta(c.idx, x.id); }
       if (x.custo >= 5 && !x.unidadesAds) { recs.push({ ...b, tipo: 'remover', peso: x.custo, motivo: `R$ ${x.custo.toFixed(2)} em 15 dias sem nenhuma venda pelo ADS` }); continue; }
       if (m != null && m < 5 && x.custo >= 3 && (x.lucroAds ?? 0) <= 0) { recs.push({ ...b, tipo: 'remover', peso: x.custo, motivo: `margem de ${m}% não comporta ADS (R$ ${x.custo.toFixed(2)} gastos em 15 dias)` }); continue; }
       // ACOS bem abaixo da margem mas "prejuízo": o preço que vendeu não bate com o de hoje (variação/kit) — não recomenda no escuro

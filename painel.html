@@ -798,7 +798,10 @@ function goTab(idx){const n=['inicio','perdendo','ganhando','sempromo','pergunta
 let _ap=null,_apTimer=null,_apAberta=null;
 async function carregarAdsPlano(recalc){
   clearTimeout(_apTimer);
-  try{const d=await (await fetch('/ml/ads-plano'+(recalc?'?recalcular=1':''))).json();_ap=d;renderAdsPlano();
+  try{let d=await (await fetch('/ml/ads-plano'+(recalc?'?recalcular=1':''))).json();
+    // análise com mais de 1 hora: o que você mudou no ML desde então (campanhas novas, anúncios tirados) não aparece — recalcula sozinho
+    if(!recalc&&!d.rodando&&d.plano&&Date.now()-Date.parse(d.plano.em)>3600e3){recalc=1;d=await (await fetch('/ml/ads-plano?recalcular=1')).json();d.rodando=true;}
+    _ap=d;renderAdsPlano();
     if(d.rodando||recalc)_apTimer=setTimeout(()=>{if(el('tab-adsml').classList.contains('active'))carregarAdsPlano();},6000);
   }catch(e){el('ad-plano').innerHTML='';}
 }
