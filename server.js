@@ -1454,6 +1454,14 @@ app.get('/debug/tiny-raw', async (req, res) => {
   if (!/^(notas?\.fiscais?\.(pesquisa|obter)|nota\.fiscal\.obter|pedidos\.pesquisa|pedido\.obter|produtos?\.(pesquisa|obter)[\w.]*|produto\.[\w.]*custo[\w.]*)\.php$/.test(String(metodo || ''))) return res.status(400).json({ erro: 'método não permitido' });
   try { res.json(await require('./tiny').chamar(String(metodo), q)); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
+// Cadastro no Tiny (Lufe), só admin: incluir/alterar produto (kits). body: { metodo: 'produto.incluir.php'|'produto.alterar.php', produto: {...} }
+app.post('/tiny/produto', express.json({ limit: '2mb' }), async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const metodo = String(req.body?.metodo || '');
+  if (!/^produto\.(incluir|alterar)\.php$/.test(metodo) || !req.body?.produto) return res.status(400).json({ erro: 'use metodo produto.incluir.php ou produto.alterar.php com produto' });
+  try { res.json(await require('./tiny').chamar(metodo, { produto: JSON.stringify({ produtos: [{ produto: { sequencia: '1', ...req.body.produto } }] }) })); }
+  catch (e) { res.status(500).json({ erro: e.message, detalhe: e.response?.data || null }); }
+});
 app.get('/debug/bling/:idx', async (req, res) => {
   const idx = parseInt(req.params.idx);
   const CONTAS_BLING = {
