@@ -28,12 +28,21 @@ const esc = t => String(t ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&
 const minutos = ms => Math.round((Date.now() - ms) / 60000);
 function precisaLembrete(a) { return a && a.lembretes < LEMBRETES_MAX && Date.now() - a.em >= LEMBRETE_MIN * 60000; }
 
-function sendTelegramTo(chatId, msg, replyMarkup) {
+// "&" solto (ex.: "Lufe Casa & Decoração") quebra o HTML do Telegram e a mensagem inteira é recusada
+const ampSolto = t => String(t ?? '').replace(/&(?!(amp|lt|gt|quot|#\d+|#x[0-9a-f]+);)/gi, '&amp;');
+async function sendTelegramTo(chatId, msg, replyMarkup) {
+  const r = await enviarTo(chatId, ampSolto(msg), replyMarkup, true);
+  // HTML inválido mesmo assim (ex.: "<" solto): manda como texto simples para o aviso não se perder
+  if (!r.ok && /parse entities|can't parse/i.test(r.description || '')) { console.warn('[telegram] HTML inválido, enviando como texto:', r.description); return enviarTo(chatId, String(msg).replace(/<\/?(b|i|u|s|code|pre|a)( [^>]*)?>/g, ''), replyMarkup, false); }
+  if (!r.ok) console.warn('[telegram] falhou:', r.description || r.erro || r.raw);
+  return r;
+}
+function enviarTo(chatId, msg, replyMarkup, html) {
   return new Promise((resolve) => {
     const body = JSON.stringify({
       chat_id: chatId,
       text: msg,
-      parse_mode: 'HTML',
+      ...(html ? { parse_mode: 'HTML' } : {}),
       ...(replyMarkup ? { reply_markup: replyMarkup } : {})
     });
     const req = https.request({
@@ -230,7 +239,7 @@ async function sendTelegramDocument(buffer, filename, caption) {
     try {
       const fd = new FormData();
       fd.append('chat_id', chatId);
-      if (caption) { fd.append('caption', caption.slice(0, 1024)); fd.append('parse_mode', 'HTML'); }
+      if (caption) { fd.append('caption', ampSolto(caption).slice(0, 1024)); fd.append('parse_mode', 'HTML'); }
       fd.append('document', new Blob([buffer], { type: 'application/pdf' }), filename);
       const r = await fetch('https://api.telegram.org/bot' + TOKEN + '/sendDocument', { method: 'POST', body: fd });
       out.push(await r.json());
