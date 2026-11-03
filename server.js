@@ -1462,6 +1462,25 @@ app.post('/tiny/produto', express.json({ limit: '2mb' }), async (req, res) => {
   try { res.json(await require('./tiny').chamar(metodo, { produto: JSON.stringify({ produtos: [{ produto: { sequencia: '1', ...req.body.produto } }] }) })); }
   catch (e) { res.status(500).json({ erro: e.message, detalhe: e.response?.data || null }); }
 });
+// Fotos montadas no painel (capas de kit): o Tiny/ML baixam pela URL pública /fotos/<nome>
+const DIR_FOTOS = require('path').join(require('./dados'), 'fotos');
+app.get('/tiny/anexo', async (req, res) => {   // proxy das imagens do Tiny (S3) para montar no navegador
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).end();
+  const u = String(req.query.u || ''); if (!/^https:\/\/s3\.amazonaws\.com\/tiny-anexos-us\//.test(u)) return res.status(400).end();
+  try { const r = await require('axios').get(u, { responseType: 'arraybuffer', timeout: 30000 }); res.type(r.headers['content-type'] || 'image/png').send(Buffer.from(r.data)); } catch (e) { res.status(502).end(); }
+});
+app.post('/fotos', express.json({ limit: '20mb' }), (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const nome = String(req.body?.nome || ''), m = String(req.body?.dataUrl || '').match(/^data:image\/(jpeg|png);base64,(.+)$/);
+  if (!/^[\w.-]+\.(jpg|png)$/.test(nome) || !m) return res.status(400).json({ erro: 'nome ou imagem inválidos' });
+  require('fs').mkdirSync(DIR_FOTOS, { recursive: true }); require('fs').writeFileSync(require('path').join(DIR_FOTOS, nome), Buffer.from(m[2], 'base64'));
+  res.json({ ok: true, url: 'https://' + req.get('host') + '/fotos/' + nome });
+});
+app.get('/fotos/:nome', (req, res) => {
+  const nome = String(req.params.nome); if (!/^[\w.-]+\.(jpg|png)$/.test(nome)) return res.status(400).end();
+  const f = require('path').join(DIR_FOTOS, nome); if (!require('fs').existsSync(f)) return res.status(404).end();
+  res.sendFile(f);
+});
 app.get('/debug/bling/:idx', async (req, res) => {
   const idx = parseInt(req.params.idx);
   const CONTAS_BLING = {

@@ -274,7 +274,7 @@ function montar(app) {
     const u = lerCookie(req);
     if (u) { req.usuario = u; return next(); }
     // imagens e fontes usadas na tela de login (não têm dado sensível)
-    if (req.method === 'GET' && /^\/(logo\/[\w-]+|tv\/fontes\/[\w.-]+|tv\/marca\/[\w-]+)$/.test(req.path)) { req.usuario = null; return next(); }
+    if (req.method === 'GET' && /^\/(logo\/[\w-]+|tv\/fontes\/[\w.-]+|tv\/marca\/[\w-]+|fotos\/[\w.-]+\.(jpg|png))$/.test(req.path)) { req.usuario = null; return next(); }
     if (acessoTv(req, res)) { req.usuario = null; return next(); }
     const querHtml = req.method === 'GET' && (req.headers.accept || '').includes('text/html');
     if (querHtml) return res.redirect('/login?next=' + encodeURIComponent(req.originalUrl));
