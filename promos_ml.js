@@ -100,7 +100,7 @@ async function opcoesItem(idx, uid, it, cat, erp) {
     }
     ganhar = { ptw, m, via, s2: cat.s2price || null };
   }
-  // já está em promoção (ativa ou programada para começar): não conta como "sem promoção"
+  // em promoção ativa agora (programada não conta; só vira informação no card)
   const emPromo = lista.some(p => p.status === 'started' && !IGNORAR.has(p.type));
   const prog = lista.filter(p => p.status === 'pending' && !IGNORAR.has(p.type)).sort((a, b) => Date.parse(a.start_date || 0) - Date.parse(b.start_date || 0))[0];
   const programada = prog ? { nome: prog.name || NOME_TIPO[prog.type] || prog.type, inicio: prog.start_date || null, preco: +prog.price || null } : null;
@@ -131,7 +131,7 @@ async function carregar(idx) {
         const it = todos[i++];
         try {
           const r = await opcoesItem(idx, uid, it, cat[it.id], erp);
-          const sem = semPromo.has(it.id) && !r.emPromo && !r.programada;
+          const sem = semPromo.has(it.id) && !r.emPromo;   // só promoção ATIVA conta; programada continua "sem promoção"
           if (semPromo.has(it.id) && !sem) moverParaComPromo(d, it.id);
           if (r.opcoes.length || sem) mapa.set(it.id, { id: it.id, titulo: it.title, sku: it._sku || '', thumb: it.thumbnail, link: it.permalink || ('https://produto.mercadolivre.com.br/' + it.id.replace(/^MLB/, 'MLB-')),
             semPromo: sem, catalogo: cat[it.id] ? { status: cat[it.id].status, ptw: cat[it.id].ptw || null, s2: cat[it.id].s2price || null } : null, ...r });
@@ -155,7 +155,7 @@ function moverParaComPromo(d, id) {
   if (i >= 0) d.comPromo.push(...d.semPromo.splice(i, 1));
 }
 // usado pelo server.js a cada atualização da lista: quem já está em promoção (ativa/programada) não volta para "sem promoção"
-function jaEmPromo(idx) { return new Set((ST[idx]?.itens || []).filter(x => x.emPromo || x.programada).map(x => x.id)); }
+function jaEmPromo(idx) { return new Set((ST[idx]?.itens || []).filter(x => x.emPromo).map(x => x.id)); }
 const acharItem = (idx, itemId) => { const d = F.dados()[idx]; return [...(d?.semPromo || []), ...(d?.comPromo || [])].find(y => y.id === itemId); };
 function precoEscolhido(o, preco) {
   if (preco == null || preco === '' || !o.livre) return o.preco;
