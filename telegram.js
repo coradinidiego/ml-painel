@@ -150,10 +150,29 @@ async function processarRespostas() {
     
     for (const update of updates) {
       offset = update.update_id + 1;
+      // botões ✅ Reservar / ❌ Não da Coleta do Full (só do chat autorizado)
+      const cq = update.callback_query;
+      if (cq) {
+        const fm = String(cq.data || '').match(/^FULLRES:(\d+):(sim|nao)$/);
+        let resp = 'Ok';
+        if (fm && CHAT_IDS.map(x => String(x).trim()).includes(String(cq.message?.chat?.id))) {
+          try { resp = await require('./full_agenda').responder(fm[1], fm[2]); } catch (e) { resp = 'Erro: ' + e.message; }
+          await sendTelegram(esc(resp));
+        }
+        try { await axios.post('https://api.telegram.org/bot' + TOKEN + '/answerCallbackQuery', { callback_query_id: cq.id, text: resp.slice(0, 190) }); } catch (e) {}
+        continue;
+      }
       const msg = update.message;
       if (!msg || !msg.reply_to_message) continue;
       
       const texto = msg.reply_to_message.text || '';
+      // resposta em texto ("sim"/"não") à pergunta da Coleta do Full
+      const fr = texto.match(/FULLRES:(\d+)/);
+      if (fr && msg.text && CHAT_IDS.map(x => String(x).trim()).includes(String(msg.chat?.id))) {
+        const sim = /^\s*(sim|s|ok|pode|reserva|reservar)\b/i.test(msg.text), nao = /^\s*(n[aã]o|n)\b/i.test(msg.text);
+        if (sim || nao) { try { await sendTelegram(esc(await require('./full_agenda').responder(fr[1], sim ? 'sim' : 'nao'))); } catch (e) {} }
+        continue;
+      }
       // Resposta a um chat da Shopee
       const sm = texto.match(/SCHAT:(?:([a-z]+):)?(\d+)\|TO:(\d+)/);
       if (sm && msg.text) {

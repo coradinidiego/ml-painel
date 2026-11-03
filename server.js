@@ -2098,6 +2098,7 @@ require('./posvenda')(app, { ml, dadosCache });
 require('./full')(app, { ml }); // envio para o Full: reposição, novos e parados
 require('./apuracao_mkt').setFontes({ ml }); // apuração: ML direto da API
 require('./relatorio_diario')(app); // relatório diário (PDF no Telegram às 06:00)
+require('./full_agenda')(app);       // reserva da Coleta do Full pelo Telegram (extensão Monitor Full)
 require('./nf_cancelar')(app, { ml });
 require('./turbo')(app, { dadosCache });
 require('./tiny3')(app);
