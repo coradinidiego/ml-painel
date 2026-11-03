@@ -446,6 +446,8 @@ const semPromo = [], comPromo = [];
       const foraLista = semPromo.filter(fora);
       for (const it of foraLista) semPromo.splice(semPromo.indexOf(it), 1);
       semPromo.ignorados = foraLista;
+      // o sale_price às vezes não mostra o desconto (ou a promoção é programada): a lista de promoções do item manda
+      try { const ja = require('./promos_ml').jaEmPromo(idx); for (const it of semPromo.filter(x => ja.has(x.id))) { semPromo.splice(semPromo.indexOf(it), 1); comPromo.push(it); } } catch (e) {}
     }
 
     // Lucro % no preço atual e no preço para ganhar (custo da planilha + tarifa/frete do ML + imposto)

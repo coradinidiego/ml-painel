@@ -1171,7 +1171,7 @@ function cardPromoML(x,extra){
   }).join('');
   return '<div class="pm-card"><div class="pm-head">'+(x.thumb?'<img src="'+shpEsc(x.thumb)+'">':'<div class="pm-noimg">📦</div>')+
     '<div class="pm-tit"><a href="'+shpEsc(x.link)+'" target="_blank">'+shpEsc(x.titulo)+'</a><div class="pm-meta"><span class="pm-chip">SKU '+shpEsc(x.sku||'—')+'</span><span class="pm-chip">'+x.id+'</span>'+cat+'</div></div>'+
-    '<div class="pm-hoje"><div class="pm-sub">Hoje</div><div class="pm-preco">'+pmBRL(x.precoAtual)+'</div>'+(x.ativa?'<div class="pm-sub">'+shpEsc(x.ativa.nome)+'</div>':x.semPromo?'<span class="pm-tag pm-tlaranja">sem promoção</span>':'')+'<div style="margin-top:4px">'+pmLucroHtml(x.atual)+'</div></div></div>'+
+    '<div class="pm-hoje"><div class="pm-sub">Hoje</div><div class="pm-preco">'+pmBRL(x.precoAtual)+'</div>'+(x.ativa?'<div class="pm-sub">'+shpEsc(x.ativa.nome)+'</div>':x.programada?'<span class="pm-tag pm-tazul">programada'+(x.programada.inicio?' a partir de '+new Date(x.programada.inicio).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}):'')+'</span>':x.semPromo?'<span class="pm-tag pm-tlaranja">sem promoção</span>':'')+'<div style="margin-top:4px">'+pmLucroHtml(x.atual)+'</div></div></div>'+
     (extra||'')+(x.opcoes.length?'<div class="pm-ops">'+ops+'</div>':'<div class="pm-vazio">Nenhuma promoção disponível no ML para este anúncio agora.</div>')+'</div>';
 }
 function renderSaidaML(){
