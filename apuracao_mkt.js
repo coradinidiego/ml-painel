@@ -363,7 +363,12 @@ async function calcular(empKey, ini, fim) {
       }
     }
     if (o._reembolso) { const fr = Math.min(1, o._reembolso / (o.receita || 1)); o.devolucao = o._reembolso; o.imposto *= 1 - fr; o.origemTaxa += ' · reembolso parcial'; }   // produto fica com o cliente: custo continua
-    if (o._devolucao) { const fr = Math.min(1, o._devolucao / (o.receita || 1)); o.devolucao = o._devolucao; o.cmv *= 1 - fr; o.imposto *= 1 - fr; o.origemTaxa += ' · devolução parcial'; }
+    if (o._devolucao) {
+      // ML: unidades canceladas/devolvidas — sai a receita, o custo, o imposto e a tarifa dessas unidades (o ML devolve a comissão)
+      const fr = Math.min(1, o._devolucao / (o.receita || 1)); o.devolucao = o._devolucao; o.cmv *= 1 - fr; o.imposto *= 1 - fr; o.comissao *= 1 - fr;
+      const resta = o.qtd * (1 - fr); if (o.qtd > 1 && Math.abs(resta - Math.round(resta)) < 0.05) { o.qtdOrig = o.qtd; o.qtd = Math.round(resta); }
+      o.origemTaxa += o.qtdOrig ? ` · ${o.qtdOrig - o.qtd} de ${o.qtdOrig} un. cancelada(s)` : ' · devolução parcial';
+    }
     delete o._devolucao;
     delete o._valPed;
     const lucro = o.receita - o.devolucao - o.cmv - o.comissao - o.taxa - o.frete - o.imposto - o.embalagem;
