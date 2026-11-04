@@ -5,6 +5,8 @@
  *
  *  GET  /turbo/:idx        lista
  *  POST /turbo/:idx/csv    { csv: "texto" }   importa a exportação do Turbo
+ *  POST /turbo/:idx/enviar  { itens: [{ sku, custo, imposto? }] }   grava custo/imposto de SKUs escolhidos (admin, a pedido)
+ *    API do Turbo: POST https://app.mercadoturbo.com.br/rest/produtos/sku/{sku} {custo, imposto%} · header Authentication = MT_TOKEN_<CONTA>
  */
 const fs = require('fs');
 const path = require('path');
@@ -79,4 +81,21 @@ module.exports = function (app, { dadosCache }) {
     }
     res.json({ conta: d?.nickname || '', erp: idx === 2 ? 'Tiny' : 'Bling', imposto: imp, importado: tb ? { em: tb.em, arquivo: tb.arquivo, skus: Object.keys(tb.mapa).length } : null, itens });
   } catch (e) { res.status(500).json({ erro: e.message }); } });
+  const TOKENS = { 0: 'MT_TOKEN_ZAGODINI', 1: 'MT_TOKEN_MAE', 2: 'MT_TOKEN_LUFE' };
+  app.post('/turbo/:idx/enviar', require('express').json(), async (req, res) => {
+    if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+    const idx = +req.params.idx, tok = String(process.env[TOKENS[idx]] || '').trim().replace(/^["']|["']$/g, '');
+    if (!tok) return res.status(400).json({ erro: `falta a variável ${TOKENS[idx]} no Railway` });
+    const itens = (req.body?.itens || []).filter(x => x?.sku && +x.custo > 0).slice(0, 200), out = [];
+    for (const x of itens) {
+      const body = { custo: r2(+x.custo) }; if (x.imposto != null) body.imposto = +x.imposto;
+      try {
+        const r = await require('axios').post('https://app.mercadoturbo.com.br/rest/produtos/sku/' + encodeURIComponent(x.sku), body,
+          { headers: { 'Content-Type': 'application/json', Authentication: tok }, timeout: 20000, validateStatus: () => true });
+        out.push({ sku: x.sku, ...body, http: r.status, resposta: typeof r.data === 'string' ? r.data.slice(0, 200) : JSON.stringify(r.data || '').slice(0, 200) });
+      } catch (e) { out.push({ sku: x.sku, ...body, http: 0, resposta: e.message }); }
+      await new Promise(z => setTimeout(z, 400));
+    }
+    res.json({ ok: true, enviados: out });
+  });
 };
