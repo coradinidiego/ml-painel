@@ -17,7 +17,7 @@
 const cm = require('./custos_ml');
 
 const NOME_TIPO = { SMART: 'Oferta do ML (co-participação)', PRICE_MATCHING: 'Preço competitivo', PRICE_MATCHING_MELI_ALL: 'Preço competitivo (ML banca)', MARKETPLACE_CAMPAIGN: 'Campanha do ML',
-  DEAL: 'Campanha', SELLER_CAMPAIGN: 'Campanha do vendedor', PRICE_DISCOUNT: 'Desconto próprio', LIGHTNING: 'Oferta relâmpago', DOD: 'Oferta do dia', UNHEALTHY_STOCK: 'Estoque parado', PRE_NEGOTIATED: 'Pré-negociada', VOLUME: 'Desconto por quantidade' };
+  DEAL: 'Campanha', SELLER_CAMPAIGN: 'Campanha do vendedor', PRICE_DISCOUNT: 'Desconto próprio', LIGHTNING: 'Oferta relâmpago', SMART_LIGHTNING: 'Relâmpago do ML (co-participação)', DOD: 'Oferta do dia', UNHEALTHY_STOCK: 'Estoque parado', PRE_NEGOTIATED: 'Pré-negociada', VOLUME: 'Desconto por quantidade' };
 // como entrar em cada tipo pela API
 const ENTRA = {
   SMART: o => ({ promotion_id: o.id, promotion_type: o.tipo, offer_id: o.ref }),
@@ -28,6 +28,9 @@ const ENTRA = {
   MARKETPLACE_CAMPAIGN: o => ({ promotion_id: o.id, promotion_type: o.tipo }),
   DEAL: o => ({ promotion_id: o.id, promotion_type: o.tipo, deal_price: o.preco }),
   SELLER_CAMPAIGN: o => ({ promotion_id: o.id, promotion_type: o.tipo, deal_price: o.preco }),
+  // relâmpago: reserva unidades para a oferta (stock entre o mínimo e o máximo que o ML pede)
+  SMART_LIGHTNING: o => ({ promotion_id: o.id, promotion_type: o.tipo, offer_id: o.ref, stock: o.qtd }),
+  LIGHTNING: o => ({ promotion_id: o.id, promotion_type: o.tipo, deal_price: o.preco, stock: o.qtd }),
   PRICE_DISCOUNT: o => ({ promotion_type: 'PRICE_DISCOUNT', deal_price: o.preco, start_date: new Date().toISOString().slice(0, 19), finish_date: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 19) }),
 };
 const IGNORAR = new Set(['SELLER_COUPON_CAMPAIGN', 'VOLUME']);   // cupom e "leve mais" não mudam o preço do anúncio
@@ -58,6 +61,7 @@ async function opcoesItem(idx, uid, it, cat, erp) {
     const o = { id: p.id || null, ref: p.ref_id || p.offer_id || null, tipo: p.type, tipoNome: NOME_TIPO[p.type] || p.type, nome: p.name || NOME_TIPO[p.type] || p.type,
       status: p.status, situacao: STATUS[p.status], preco: r2(preco), original: +p.original_price || null, meliPct: +p.meli_percentage || 0, rebate: reb,
       faixa: p.min_discounted_price ? [+p.min_discounted_price, +p.max_discounted_price] : null, inicio: p.start_date || null, fim: p.finish_date || null, m,
+      estoque: p.stock?.min != null ? { min: +p.stock.min, max: +p.stock.max || +p.stock.min } : null,
       podeEntrar: p.status === 'candidate' && !!ENTRA[p.type] };
     if (cat) o.catalogo = cat.status === 'winning' ? (cat.s2price ? (preco < cat.s2price ? 'continua ganhando' : 'pode perder') : 'continua ganhando') : (cat.ptw ? (preco <= cat.ptw + 0.001 ? 'passa a ganhar' : 'continua perdendo') : null);
     opcoes.push(o);
@@ -170,11 +174,16 @@ async function simular(idx, itemId, i, preco) {
   const p = precoEscolhido(o, preco);
   return { preco: p, m: await cm.margemPreco(F.ml, idx, await F.uid(idx), it, p, o.rebate || 0, await cm.custosErp(idx).catch(() => ({}))) };
 }
-async function entrar(idx, itemId, i, preco) {
+async function entrar(idx, itemId, i, preco, qtd) {
   const E = ST[idx], x = E?.itens?.find(y => y.id === itemId), o0 = x?.opcoes?.[i];
   if (!o0) throw new Error('opção não encontrada — atualize a lista');
   if (!o0.podeEntrar) throw new Error('esta promoção não dá para entrar pelo painel (' + o0.tipoNome + ')');
   const o = { ...o0, preco: precoEscolhido(o0, preco) };
+  if (o0.estoque) {   // relâmpago: unidades reservadas para a oferta
+    const it0 = acharItem(idx, itemId), disp = +(it0?.available_quantity ?? 0);
+    if (disp < o0.estoque.min) throw new Error(`a relâmpago exige pelo menos ${o0.estoque.min} unidades reservadas e o anúncio tem ${disp} em estoque`);
+    o.qtd = Math.max(o0.estoque.min, Math.min(o0.estoque.max, disp, qtd > 0 ? Math.round(qtd) : o0.estoque.min));
+  }
   const body = ENTRA[o.tipo](o);
   const r = await F.mlReq(idx, 'post', '/seller-promotions/items/' + itemId + '?app_version=v2', body);
   // recalcula só este item
@@ -184,7 +193,7 @@ async function entrar(idx, itemId, i, preco) {
     const novo = await opcoesItem(idx, await F.uid(idx), it, x.catalogo ? { status: x.catalogo.status, ptw: x.catalogo.ptw, s2price: x.catalogo.s2 } : null, await cm.custosErp(idx).catch(() => ({})));
     Object.assign(x, novo, { semPromo: false }); moverParaComPromo(d, itemId);
   }
-  return { ok: true, resposta: r.data, item: x };
+  return { ok: true, resposta: r.data, item: x, qtd: o.qtd || null };
 }
 
 function rotas(app, fontes) {
@@ -206,7 +215,7 @@ function rotas(app, fontes) {
     catch (e) { res.status(400).json({ erro: e.message }); }
   });
   app.post('/ml/promos/:idx/entrar', require('express').json(), async (req, res) => {
-    try { res.json(await entrar(parseInt(req.params.idx), String(req.body?.item || ''), parseInt(req.body?.opcao), req.body?.preco)); }
+    try { res.json(await entrar(parseInt(req.params.idx), String(req.body?.item || ''), parseInt(req.body?.opcao), req.body?.preco, +req.body?.qtd || 0)); }
     catch (e) { const d = e.response?.data; res.status(400).json({ erro: d?.message || d?.error || e.message, detalhe: d?.cause || null }); }
   });
   // atualiza a cada 6h (quando os dados do ML da conta estiverem prontos)

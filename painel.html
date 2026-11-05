@@ -1194,9 +1194,13 @@ function renderSaidaML(){
 async function entrarPromoML(item,i,btn){
   const x=_pm.itens.find(y=>y.id===item),o0=x.opcoes[i],preco=o0.livre?(_pmPreco[item+'|'+i]??o0.preco):o0.preco,o={...o0,preco};
   if(o0.livre&&_pmPreco[item+'|'+i]!=null&&_pmSim[item+'|'+i])o.m=_pmSim[item+'|'+i];
-  if(!confirm('Entrar na promoção "'+o.nome+'" com o anúncio\n'+x.titulo+'\n\nPreço: R$ '+o.preco.toFixed(2).replace('.',',')+(o.rebate?' (+ rebate ML R$ '+o.rebate.toFixed(2).replace('.',',')+')':'')+'\nLucro estimado: '+(o.m?.lucro!=null?'R$ '+o.m.lucro.toFixed(2).replace('.',',')+' ('+o.m.pct+'%)':'sem custo no ERP')+'?'))return;
+  let qtd;
+  if(o0.estoque){   // relâmpago: quantas unidades reservar para a oferta
+    const r=prompt('Relâmpago "'+o.nome+'" — '+x.titulo+'\n\nPreço: R$ '+o.preco.toFixed(2).replace('.',',')+' · Lucro estimado: '+(o.m?.lucro!=null?'R$ '+o.m.lucro.toFixed(2).replace('.',',')+' ('+o.m.pct+'%)':'sem custo no ERP')+'\n\nQuantas unidades reservar para a oferta? (o ML pede de '+o0.estoque.min+' a '+o0.estoque.max+')',String(o0.estoque.min));
+    if(r==null)return; qtd=parseInt(r); if(!(qtd>=o0.estoque.min&&qtd<=o0.estoque.max)){alert('Use um número entre '+o0.estoque.min+' e '+o0.estoque.max+'.');return;}
+  } else if(!confirm('Entrar na promoção "'+o.nome+'" com o anúncio\n'+x.titulo+'\n\nPreço: R$ '+o.preco.toFixed(2).replace('.',',')+(o.rebate?' (+ rebate ML R$ '+o.rebate.toFixed(2).replace('.',',')+')':'')+'\nLucro estimado: '+(o.m?.lucro!=null?'R$ '+o.m.lucro.toFixed(2).replace('.',',')+' ('+o.m.pct+'%)':'sem custo no ERP')+'?'))return;
   btn.disabled=true;btn.textContent='Entrando…';
-  try{const r=await (await fetch('/ml/promos/'+ci+'/entrar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item,opcao:i,preco:o0.livre?preco:undefined})})).json();
+  try{const r=await (await fetch('/ml/promos/'+ci+'/entrar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item,opcao:i,preco:o0.livre?preco:undefined,qtd})})).json();
     if(r.erro)throw new Error(r.erro+(r.detalhe?' — '+JSON.stringify(r.detalhe):''));
     Object.assign(x,r.item||{});renderPromosML();
   }catch(e){alert('O ML recusou: '+e.message);btn.disabled=false;btn.textContent='Entrar';}
