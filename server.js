@@ -1757,6 +1757,10 @@ app.get('/amazon/preparar', async (req, res) => {
     res.json({ ean, itens });
   } catch (e) { res.status(500).json({ erro: e.message }); }
 });
+app.get('/amazon/restricoes', async (req, res) => {   // ?loja&asin
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  try { res.json(await amazon.loja(String(req.query.loja || 'lufe')).restricoes(String(req.query.asin))); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
 app.get('/amazon/oferta', async (req, res) => {   // ler uma oferta existente
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   try { res.json(await amazon.loja(String(req.query.loja || 'lufe')).lerOferta(String(req.query.sku), String(req.query.asin || ''))); } catch (e) { res.status(500).json({ erro: e.message }); }
