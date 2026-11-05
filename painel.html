@@ -1178,7 +1178,10 @@ function cardPromoML(x,extra){
       '<div class="pm-op-acao">'+botao+'</div></div>';
   }).join('');
   return '<div class="pm-card"><div class="pm-head">'+(x.thumb?'<img src="'+shpEsc(x.thumb)+'">':'<div class="pm-noimg">📦</div>')+
-    '<div class="pm-tit"><a href="'+shpEsc(x.link)+'" target="_blank">'+shpEsc(x.titulo)+'</a><div class="pm-meta"><span class="pm-chip">SKU '+shpEsc(x.sku||'—')+'</span><span class="pm-chip">'+x.id+'</span>'+cat+'</div></div>'+
+    // nome → promoções do ML filtradas pelo anúncio · MLB e "catálogo" → editar o anúncio
+    '<div class="pm-tit"><a href="https://www.mercadolivre.com.br/anuncios/lista/promos?page=1&search='+x.id.replace('MLB','')+'" target="_blank" title="Abrir as promoções deste anúncio no ML">'+shpEsc(x.titulo)+'</a><div class="pm-meta"><span class="pm-chip">SKU '+shpEsc(x.sku||'—')+'</span>'+
+      '<a class="pm-chip" style="text-decoration:none;color:inherit" href="https://www.mercadolivre.com.br/anuncios/'+x.id+'/modificar" target="_blank" title="Editar o anúncio no ML">'+x.id+' ✎</a>'+
+      (cat?'<a style="text-decoration:none" href="https://www.mercadolivre.com.br/anuncios/'+x.id+'/modificar" target="_blank" title="Editar o anúncio no ML">'+cat+'</a>':'')+'</div></div>'+
     '<div class="pm-hoje"><div class="pm-sub">Hoje</div><div class="pm-preco">'+pmBRL(x.precoAtual)+'</div>'+(x.ativa?'<div class="pm-sub">'+shpEsc(x.ativa.nome)+'</div>':x.semPromo?'<span class="pm-tag pm-tlaranja">sem promoção</span>'+(x.programada?'<div class="pm-sub" style="margin-top:3px">'+shpEsc(x.programada.nome)+' programada'+(x.programada.inicio?' p/ '+new Date(x.programada.inicio).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}):'')+'</div>':''):'')+'<div style="margin-top:4px">'+pmLucroHtml(x.atual)+'</div></div></div>'+
     (extra||'')+(x.opcoes.length?'<div class="pm-ops">'+ops+'</div>':'<div class="pm-vazio">Nenhuma promoção disponível no ML para este anúncio agora.</div>')+'</div>';
 }
