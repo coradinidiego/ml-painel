@@ -1096,14 +1096,24 @@ function pmGanharFaixa(x){
   return '<div style="margin:8px 14px 2px;padding:10px 12px;border-radius:10px;background:#f3e5f5;display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13px">'+
     '<div>Hoje <b>'+pmBRL(x.precoAtual)+'</b> · margem <b>'+(a.pct!=null?pc(a.pct):'—')+'</b> · <span style="color:#c62828">perdendo</span></div><div style="font-size:18px;color:#6a1b9a">→</div>'+
     '<div>A <b>'+pmBRL(g.ptw)+'</b> você <b style="color:#2e7d32">ganha o catálogo</b> · margem <b>'+pc(g.m.pct)+'</b> ('+pmBRL(g.m.lucro)+')'+(d!=null?' <span style="color:#888">· '+(d>=0?'−':'+')+String(Math.abs(d)).replace('.',',')+' p.p.</span>':'')+'</div>'+
-    '<div style="margin-left:auto">'+(v?'<span style="font-size:12px;color:#555">via <b>'+shpEsc(v.nome)+'</b>'+(v.preco<g.ptw-0.004?' a '+pmBRL(v.preco):'')+(v.rebate?' (+ rebate)':'')+' · margem '+pc(v.m.pct)+'</span> <button class="pm-btn" onclick="pmGanhar(\''+x.id+'\',this)">Entrar e ganhar</button>':'<span style="font-size:12px;color:#c62828">nenhuma promoção chega a '+pmBRL(g.ptw)+' — ajuste o preço do anúncio</span> <a class="pm-link" href="https://www.mercadolivre.com.br/anuncios/'+x.id+'/modificar" target="_blank">Editar ↗</a>')+'</div></div>';
+    '<div style="margin-left:auto">'+(v?'<span style="font-size:12px;color:#555">via <b>'+shpEsc(v.nome)+'</b>'+(v.preco<g.ptw-0.004?' a '+pmBRL(v.preco):'')+(v.rebate?' (+ rebate)':'')+' · margem '+pc(v.m.pct)+'</span> <button class="pm-btn" onclick="pmGanhar(\''+x.id+'\',this)">'+(v.editar?'Editar e ganhar':'Entrar e ganhar')+'</button>':'<span style="font-size:12px;color:#c62828">nenhuma promoção chega a '+pmBRL(g.ptw)+' — ajuste o preço do anúncio</span> <a class="pm-link" href="https://www.mercadolivre.com.br/anuncios/'+x.id+'/modificar" target="_blank">Editar ↗</a>')+'</div></div>';
 }
 function pmCatHtml(x,o,preco){
   let t=o.catalogo; const c=x?.catalogo;
   if(c&&preco>0) t=c.status==='winning'?(c.s2?(preco<c.s2?'continua ganhando':'pode perder'):'continua ganhando'):(c.ptw?(preco<=c.ptw+0.001?'passa a ganhar':'continua perdendo'):t);
   return t?'<div class="pm-sub" style="color:'+(/ganha/.test(t)?'#2e7d32':'#c62828')+'">catálogo: '+t+'</div>':'';
 }
-function pmGanhar(id,btn){const x=_pm.itens.find(y=>y.id===id),v=x?.ganhar?.via;if(!v)return;if(v.livre){_pmPreco[id+'|'+v.opcao]=v.preco;_pmSim[id+'|'+v.opcao]=v.m;}entrarPromoML(id,v.opcao,btn);}
+function pmGanhar(id,btn){const x=_pm.itens.find(y=>y.id===id),v=x?.ganhar?.via;if(!v)return;if(v.livre){_pmPreco[id+'|'+v.opcao]=v.preco;_pmSim[id+'|'+v.opcao]=v.m;}(v.editar?editarPromoML:entrarPromoML)(id,v.opcao,btn);}
+async function editarPromoML(item,i,btn){
+  const x=_pm.itens.find(y=>y.id===item),o0=x.opcoes[i],preco=_pmPreco[item+'|'+i]??o0.preco,m=_pmSim[item+'|'+i]||o0.m;
+  if(Math.abs(preco-o0.preco)<0.005){alert('Digite o novo preço (ou o % de desconto) no campo antes de salvar.');return;}
+  if(!confirm('Mudar o preço da promoção "'+o0.nome+'" ('+(o0.status==='started'?'ativa':'programada')+')\n'+x.titulo+'\n\nDe '+pmBRL(o0.preco)+' para '+pmBRL(preco)+'\nLucro estimado: '+(m?.lucro!=null?'R$ '+m.lucro.toFixed(2).replace('.',',')+' ('+m.pct+'%)':'sem custo no ERP')+(x.catalogo?.ptw?'\nCatálogo: '+(preco<=x.catalogo.ptw+0.001?'passa a ganhar':'continua perdendo (ganha com '+pmBRL(x.catalogo.ptw)+')'):'')+'?'))return;
+  btn.disabled=true;btn.textContent='Salvando…';
+  try{const r=await (await fetch('/ml/promos/'+ci+'/editar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item,opcao:i,preco})})).json();
+    if(r.erro)throw new Error(r.erro+(r.detalhe?' — '+JSON.stringify(r.detalhe):''));
+    delete _pmPreco[item+'|'+i];delete _pmSim[item+'|'+i];Object.assign(x,r.item||{});renderPromosML();
+  }catch(e){alert('O ML recusou: '+e.message);btn.disabled=false;btn.textContent='Salvar preço';}
+}
 function pmRenderSec(k){
   const b=el('pm-sec-'+k);if(!b)return;const L=_pmL[k]||[],pm=_pmL.pm||{};
   if(!L.length){b.innerHTML='<div class="pm-vazio" style="color:#2e7d32">✓ Nada nesta lista.</div>';return;}
@@ -1168,11 +1178,11 @@ function cardPromoML(x,extra){
     const top=o.status==='candidate'&&o.m?.lucro!=null&&o.m.lucro===melhorLucro&&melhorLucro>-1e9;
     const cor=PM_COR[o.tipo]||'#90a4ae';
     const st=o.status==='started'?'<span class="pm-tag pm-tverde">ativa</span>':o.status==='pending'?'<span class="pm-tag pm-tazul">programada</span>':'';
-    const botao=o.podeEntrar?'<button class="pm-btn" onclick="entrarPromoML(\''+x.id+'\','+i+',this)">Entrar</button>':o.status==='candidate'?'<a class="pm-link" href="https://www.mercadolivre.com.br/anuncios/lista/promos?search='+x.id+'" target="_blank">pelo ML ↗</a>':'';
+    const botao=o.podeEditar?'<button class="pm-btn" style="background:#6a1b9a" onclick="editarPromoML(\''+x.id+'\','+i+',this)">Salvar preço</button>':o.podeEntrar?'<button class="pm-btn" onclick="entrarPromoML(\''+x.id+'\','+i+',this)">Entrar</button>':o.status==='candidate'?'<a class="pm-link" href="https://www.mercadolivre.com.br/anuncios/lista/promos?search='+x.id+'" target="_blank">pelo ML ↗</a>':'';
     return '<div class="pm-op'+(sobeRebate?' pm-op-rebate':'')+'" style="border-left-color:'+cor+'">'+
       '<div class="pm-op-nome"><b>'+shpEsc(o.nome)+'</b> '+st+(top?'<span class="pm-tag pm-tverde">★ melhor margem</span>':'')+(sobeRebate?'<span class="pm-tag pm-tverde">💰 lucra mais que hoje</span>':'')+
         '<div class="pm-sub"><span style="color:'+cor+'">●</span> '+shpEsc(o.tipoNome)+(o.fim?' · até '+new Date(o.fim).toLocaleDateString('pt-BR'):'')+'</div></div>'+
-      '<div class="pm-op-preco">'+(o.livre&&o.status==='candidate'?pmCampoPreco(x,o,i):'<div class="pm-preco">'+pmBRL(o.preco)+'</div>'+(o.original&&o.original>o.preco?'<div class="pm-sub">'+Math.round((1-o.preco/o.original)*100)+'% off de '+pmBRL(o.original)+'</div>':''))+'</div>'+
+      '<div class="pm-op-preco">'+(o.livre&&(o.status==='candidate'||o.podeEditar)?pmCampoPreco(x,o,i):'<div class="pm-preco">'+pmBRL(o.preco)+'</div>'+(o.original&&o.original>o.preco?'<div class="pm-sub">'+Math.round((1-o.preco/o.original)*100)+'% off de '+pmBRL(o.original)+'</div>':''))+'</div>'+
       '<div class="pm-op-reb">'+(o.rebate?'<span class="pm-tag pm-tverde">+'+pmBRL(o.rebate)+' rebate ML</span><div class="pm-sub">'+String(o.meliPct).replace('.',',')+'% bancado pelo ML</div>':'<span class="pm-sub">sem rebate</span>')+'</div>'+
       '<div class="pm-op-luc" id="pml-'+x.id+'-'+i+'">'+pmLucroHtml((_pmPreco[x.id+'|'+i]!=null&&_pmSim[x.id+'|'+i])||o.m)+pmCatHtml(x,o,_pmPreco[x.id+'|'+i]??o.preco)+'</div>'+
       '<div class="pm-op-acao">'+botao+'</div></div>';
