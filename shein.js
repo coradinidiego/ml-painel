@@ -46,10 +46,10 @@ async function chamarAssinado(openKeyId, secretKey, apiPath, body, extraHeaders 
   return r.data;
 }
 /** Chamada na loja autorizada (openKeyId/secretKey da loja) */
-async function api(loja, apiPath, body, metodo = 'POST') {
+async function api(loja, apiPath, body, metodo = 'POST', extra = {}) {
   const t = ler()[loja];
   if (!t?.openKeyId) throw new Error('Loja ' + loja + ' não autorizada na SHEIN — abra /shein/conectar?loja=' + loja);
-  try { return await chamarAssinado(t.openKeyId, t.secretKey, apiPath, body, {}, metodo); }
+  try { return await chamarAssinado(t.openKeyId, t.secretKey, apiPath, body, extra, metodo); }
   catch (e) {
     // IP do servidor fora da lista branca (o Railway pode trocar o IP de saída): avisa uma vez por IP
     const ip = String(e.resposta?.msg || '').match(/whitelist:\s*([\d.]+)/)?.[1];
@@ -90,7 +90,7 @@ router.get('/status', soAdmin, (req, res) => {
 // diagnóstico (admin): POST /shein/raw?loja=zagodini&path=/open-api/order/order-list  com body JSON
 router.post('/raw', soAdmin, express.json(), async (req, res) => {
   if (!/^\/open-api\//.test(String(req.query.path || ''))) return res.status(400).json({ erro: 'path inválido' });
-  try { res.json(await api(String(req.query.loja || 'zagodini'), String(req.query.path), req.body || {}, req.query.metodo === 'GET' ? 'GET' : 'POST')); }
+  try { res.json(await api(String(req.query.loja || 'zagodini'), String(req.query.path), req.body || {}, req.query.metodo === 'GET' ? 'GET' : 'POST', req.query.language ? { language: String(req.query.language) } : {})); }
   catch (e) { res.status(500).json({ erro: e.message, resposta: e.resposta }); }
 });
 
