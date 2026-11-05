@@ -286,9 +286,16 @@ function criar(chave) {
       { params: { marketplaceIds: MARKETPLACE_BR, issueLocale: 'pt_BR', ...(validar ? { mode: 'VALIDATION_PREVIEW' } : {}) }, timeout: 60000, headers: { 'x-amz-access-token': await accessToken(), 'Content-Type': 'application/json' }, validateStatus: () => true });
     return { http: r.status, ...r.data };
   }
+  /** PATCH parcial num SKU (ex.: reenviar preço/estoque). patches = [{op:'replace', path:'/attributes/x', value:[...]}] */
+  async function patchItem({ sku, productType, patches, validar }) {
+    const seller = await sellerId('B07HGLN8R5');
+    const r = await axios.patch(ENDPOINT + '/listings/2021-08-01/items/' + encodeURIComponent(seller) + '/' + encodeURIComponent(sku), { productType, patches },
+      { params: { marketplaceIds: MARKETPLACE_BR, issueLocale: 'pt_BR', ...(validar ? { mode: 'VALIDATION_PREVIEW' } : {}) }, timeout: 60000, headers: { 'x-amz-access-token': await accessToken(), 'Content-Type': 'application/json' }, validateStatus: () => true });
+    return { http: r.status, ...r.data };
+  }
   async function participacoes() { return (await get('/sellers/v1/marketplaceParticipations')).payload || []; }
 
-  return { chave, nome: L.nome, configurada, get, post, relatorio, tsv, ofertas, catalogo, tarifas, historicoTarifas, pedidos, pedidosCache, participacoes, atualizarEstoque, restricoes, lerOferta, criarOferta, criarItem, sellerId, MARKETPLACE_BR };
+  return { chave, nome: L.nome, configurada, get, post, relatorio, tsv, ofertas, catalogo, tarifas, historicoTarifas, pedidos, pedidosCache, participacoes, atualizarEstoque, restricoes, lerOferta, criarOferta, criarItem, patchItem, sellerId, MARKETPLACE_BR };
 }
 
 const _l = {};

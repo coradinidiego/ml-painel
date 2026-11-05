@@ -1771,6 +1771,11 @@ app.post('/amazon/item', express.json({ limit: '2mb' }), async (req, res) => {  
   const b = req.body || {}; if (!b.sku || !b.productType || !b.attributes) return res.status(400).json({ erro: 'sku, productType e attributes são obrigatórios' });
   try { res.json(await amazon.loja(String(b.loja || 'lufe')).criarItem(b)); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
+app.patch('/amazon/item', express.json({ limit: '1mb' }), async (req, res) => {   // {loja, sku, productType, patches, validar?}
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const b = req.body || {}; if (!b.sku || !b.productType || !Array.isArray(b.patches)) return res.status(400).json({ erro: 'sku, productType e patches são obrigatórios' });
+  try { res.json(await amazon.loja(String(b.loja || 'lufe')).patchItem(b)); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
 // Diagnóstico (admin): GET cru na SP-API. /debug/amazon-raw?loja=lufe&path=/orders/v0/orders&CreatedAfter=...
 app.get('/debug/amazon-raw', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
