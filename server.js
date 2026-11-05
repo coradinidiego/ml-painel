@@ -1742,6 +1742,30 @@ app.get('/debug/amazon-teste', async (req, res) => {
     res.json({ linhas: ls.length, colunas: Object.keys(ls[0] || {}), exemplo: ls.slice(0, 2), status: ls.reduce((a, l) => (a[l.status] = (a[l.status] || 0) + 1, a), {}), ofertas: of });
   } catch (e) { res.status(500).json({ erro: e.message }); }
 });
+// Amazon: preparar e criar oferta em ASIN que já existe (admin). GET /amazon/preparar?loja=lufe&ean=...  POST /amazon/oferta {loja, sku, asin, preco, qtd, validar?}
+app.get('/amazon/preparar', async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const az = amazon.loja(String(req.query.loja || 'lufe')), ean = String(req.query.ean || '').replace(/\D/g, '');
+  try {
+    const c = await az.get('/catalog/2022-04-01/items', { identifiers: ean, identifiersType: 'EAN', marketplaceIds: az.MARKETPLACE_BR, includedData: 'summaries,productTypes,images' });
+    const itens = [];
+    for (const i of c.items || []) {
+      let rest = null; try { rest = await az.restricoes(i.asin); } catch (e) { rest = { erro: e.message }; }
+      itens.push({ asin: i.asin, nome: i.summaries?.[0]?.itemName, marca: i.summaries?.[0]?.brand, productType: i.productTypes?.[0]?.productType, foto: i.images?.[0]?.images?.[0]?.link || null,
+        restricoes: (rest?.restrictions || []).map(r => ({ condicao: r.conditionType, motivos: (r.reasons || []).map(x => x.message + (x.links?.[0]?.resource ? ' (' + x.links[0].resource + ')' : '')) })), erroRest: rest?.erro || null });
+    }
+    res.json({ ean, itens });
+  } catch (e) { res.status(500).json({ erro: e.message }); }
+});
+app.get('/amazon/oferta', async (req, res) => {   // ler uma oferta existente
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  try { res.json(await amazon.loja(String(req.query.loja || 'lufe')).lerOferta(String(req.query.sku), String(req.query.asin || ''))); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
+app.post('/amazon/oferta', express.json(), async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const b = req.body || {}; if (!b.sku || !b.asin || !(+b.preco > 0) || !b.productType) return res.status(400).json({ erro: 'sku, asin, productType e preco são obrigatórios' });
+  try { res.json(await amazon.loja(String(b.loja || 'lufe')).criarOferta(b)); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
 // Diagnóstico (admin): GET cru na SP-API. /debug/amazon-raw?loja=lufe&path=/orders/v0/orders&CreatedAfter=...
 app.get('/debug/amazon-raw', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });

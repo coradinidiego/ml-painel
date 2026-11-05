@@ -254,9 +254,34 @@ function criar(chave) {
     }
   }
 
+  /** Pode vender este ASIN? (restrições: aprovação de categoria, ANVISA etc.) */
+  async function restricoes(asin) {
+    const seller = await sellerId(asin);
+    return get('/listings/2021-08-01/restrictions', { asin, sellerId: seller, marketplaceIds: MARKETPLACE_BR, conditionType: 'new_new' });
+  }
+  /** Lê uma oferta existente (para copiar o modelo de envio, por exemplo). */
+  async function lerOferta(sku, asin) {
+    const seller = await sellerId(asin);
+    return get('/listings/2021-08-01/items/' + encodeURIComponent(seller) + '/' + encodeURIComponent(sku), { marketplaceIds: MARKETPLACE_BR, includedData: 'summaries,attributes,issues' });
+  }
+  /** Cria a oferta (só oferta, em ASIN que já existe): SKU, preço, estoque e modelo de envio. */
+  async function criarOferta({ sku, asin, productType, preco, qtd, shippingGroup, validar }) {
+    const seller = await sellerId(asin);
+    const attributes = {
+      condition_type: [{ value: 'new_new', marketplace_id: MARKETPLACE_BR }],
+      merchant_suggested_asin: [{ value: asin, marketplace_id: MARKETPLACE_BR }],
+      purchasable_offer: [{ currency: 'BRL', marketplace_id: MARKETPLACE_BR, our_price: [{ schedule: [{ value_with_tax: +preco }] }] }],
+      fulfillment_availability: [{ fulfillment_channel_code: 'DEFAULT', quantity: +qtd || 0 }],
+      ...(shippingGroup ? { merchant_shipping_group: [{ value: shippingGroup, marketplace_id: MARKETPLACE_BR }] } : {}),
+    };
+    const r = await axios.put(ENDPOINT + '/listings/2021-08-01/items/' + encodeURIComponent(seller) + '/' + encodeURIComponent(sku), { productType, requirements: 'LISTING_OFFER_ONLY', attributes },
+      { params: { marketplaceIds: MARKETPLACE_BR, ...(validar ? { mode: 'VALIDATION_PREVIEW' } : {}) }, timeout: 30000, headers: { 'x-amz-access-token': await accessToken(), 'Content-Type': 'application/json' }, validateStatus: () => true });
+    return { http: r.status, ...r.data };
+  }
+
   async function participacoes() { return (await get('/sellers/v1/marketplaceParticipations')).payload || []; }
 
-  return { chave, nome: L.nome, configurada, get, post, relatorio, tsv, ofertas, catalogo, tarifas, historicoTarifas, pedidos, pedidosCache, participacoes, atualizarEstoque, MARKETPLACE_BR };
+  return { chave, nome: L.nome, configurada, get, post, relatorio, tsv, ofertas, catalogo, tarifas, historicoTarifas, pedidos, pedidosCache, participacoes, atualizarEstoque, restricoes, lerOferta, criarOferta, sellerId, MARKETPLACE_BR };
 }
 
 const _l = {};
