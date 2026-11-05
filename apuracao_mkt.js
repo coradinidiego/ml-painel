@@ -691,6 +691,21 @@ router.get('/debug-shopee', async (req, res) => {
     res.json(out);
   } catch (e) { res.status(400).json({ erro: e.message }); }
 });
+// Busca nos pedidos do Bling já baixados (admin): rastreio, SKU ou nome. /apuracao-mkt/busca?q=AMZC1.*71x&sku=8000724-U
+router.get('/busca', (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  let re; try { re = new RegExp(String(req.query.q || '.'), 'i'); } catch (e) { return res.status(400).json({ erro: 'regex inválida' }); }
+  const sku = String(req.query.sku || '').toUpperCase(), out = [];
+  for (const idx of [0, 1]) for (const p of Object.values(pedBling(idx))) {
+    const vols = (p.transporte?.volumes || []).map(v => v.codigoRastreamento || '').join(' ');
+    const txt = vols + ' ' + (p.contato?.nome || '') + ' ' + (p.numeroLoja || '');
+    if (!re.test(txt)) continue;
+    if (sku && !(p.itens || []).some(i => String(i.codigo || '').toUpperCase() === sku)) continue;
+    out.push({ idx, id: p.id, numero: p.numero, numeroLoja: p.numeroLoja, data: p.data, loja: p._loja, situacao: p.situacao?.id, total: p.total, contato: p.contato?.nome, rastreio: vols, itens: (p.itens || []).map(i => i.codigo + ' x' + i.quantidade) });
+    if (out.length >= 50) break;
+  }
+  res.json({ n: out.length, pedidos: out, base: [0, 1].map(i => Object.keys(pedBling(i)).length) });
+});
 router.get('/debug-pedido', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   const idx = parseInt(req.query.idx) || 0, cache = pedBling(idx);
