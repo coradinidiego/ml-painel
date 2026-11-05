@@ -1062,7 +1062,8 @@ function pmListas(q){
   const todos=ordenar(I.filter(x=>x.opcoes.length&&busca(x)));
   const mgMin=+(el('pm-ganhar-min')?.value??_pmGanharMin);
   const ganhar=I.filter(x=>x.ganhar?.m?.lucro!=null&&x.ganhar.ptw<x.precoAtual-0.005&&x.ganhar.m.pct>=mgMin&&busca(x)).sort((a,b)=>b.ganhar.m.pct-a.ganhar.m.pct);
-  return _pmL={sem,rebate,perdendo,ganhando,todos,ganhar,pm};
+  const prejuizo=I.filter(x=>x.atual?.lucro!=null&&x.atual.lucro<0&&busca(x)).sort((a,b)=>a.atual.lucro-b.atual.lucro);   // pior primeiro
+  return _pmL={sem,rebate,perdendo,ganhando,todos,ganhar,prejuizo,pm};
 }
 function renderPromosML(){
   if(el('pm-promos')&&el('pm-promos').style.display!=='none'){const a2=document.activeElement;if(!(a2&&a2.tagName==='INPUT'&&a2.closest&&a2.closest('#pm-promos')))ppRender();}
@@ -1075,13 +1076,14 @@ function renderPromosML(){
   const K=(v,l,c,k)=>'<div class="pm-kpi" style="border-top-color:'+c+'"'+(k?' onclick="pmAbrir(\''+k+'\')"':'')+'><div class="v">'+v+'</div><div class="l">'+l+'</div></div>';
   el('pm-kpis').innerHTML=K(L.sem.length,'⚠️ sem promoção','#E65100','sem')+K(L.rebate.length,'💰 rebate que lucra mais','#2e7d32','rebate')+
     K(L.perdendo.length+'<small>/'+nCat+'</small>','🔴 perdendo catálogo','#c62828','perdendo')+K(L.ganhar.length,'🎯 ganha o catálogo com margem ≥ '+_pmGanharMin+'%','#6a1b9a','ganhar')+K(L.ganhando.length,'🟢 ganhando catálogo','#2e7d32','ganhando')+
-    K(rec?String(Math.round(luc/rec*1000)/10).replace('.',',')+'%':'—','📈 margem média hoje','#1565c0')+K(prej,'🔻 anúncios no prejuízo','#c62828','todos')+K(sai,'⏳ saem de promoção em 7 dias','#ef6c00','saida');
+    K(rec?String(Math.round(luc/rec*1000)/10).replace('.',',')+'%':'—','📈 margem média hoje','#1565c0')+K(prej,'🔻 anúncios no prejuízo','#c62828','prejuizo')+K(sai,'⏳ saem de promoção em 7 dias','#ef6c00','saida');
   const carregando=!_pm||_pm.status!=='pronto';
   const S=(k,t,cor,n,desc)=>'<details class="pm-sec" data-k="'+k+'"'+(_pmAberto[k]?' open':'')+' ontoggle="pmToggle(this)"><summary><span class="pm-sec-t" style="border-left-color:'+cor+'">'+t+'</span><span class="cnt">'+n+'</span><small>'+desc+'</small><span class="pm-sec-seta">▾</span></summary><div class="pm-sec-b" id="pm-sec-'+k+'"></div></details>';
   el('b-promos').innerHTML=(carregando?'<div style="font-size:12px;color:#888;padding:4px 0 8px">⏳ Atualizando as opções de promoção'+(_pm?.total?' ('+_pm.feito+' de '+_pm.total+')':'')+'… o que já foi calculado aparece nas listas.</div>':'')+
     S('sem','⚠️ Sem promoção','#E65100',L.sem.length,'anúncios sem promoção ativa, com as opções para entrar')+
     S('rebate','💰 Rebate que dá mais lucro que hoje','#2e7d32',L.rebate.length,'o ML banca parte do desconto e o lucro fica maior que o atual')+
     S('ganhar','🎯 Dá para ganhar o catálogo mantendo margem','#6a1b9a',L.ganhar.length,'perdendo hoje · margem no preço que faz ganhar ≥ <select id="pm-ganhar-min" onclick="event.stopPropagation()" onchange="_pmGanharMin=+this.value;renderPromosML()" style="font-size:11px;padding:1px 4px">'+[0,5,8,10,12,15,20,25].map(v=>'<option'+(v===_pmGanharMin?' selected':'')+' value="'+v+'">'+v+'%</option>').join('')+'</select>')+
+    S('prejuizo','🔻 No prejuízo hoje','#c62828',L.prejuizo.length,'preço de hoje abaixo do custo + tarifas · o pior primeiro, com as opções para sair do prejuízo')+
     S('perdendo','🔴 Perdendo catálogo','#c62828',L.perdendo.length,'primeiro os que têm uma promoção que faz ganhar')+
     S('ganhando','🟢 Ganhando catálogo','#2e7d32',L.ganhando.length,'com o preço do 2º colocado')+
     S('todos','📋 Todos com promoções disponíveis','#607d8b',L.todos.length,'lista completa');
