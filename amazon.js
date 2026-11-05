@@ -279,9 +279,16 @@ function criar(chave) {
     return { http: r.status, ...r.data };
   }
 
+  /** Cria (ou atualiza) um produto novo completo pela Listings API: productType + atributos prontos. */
+  async function criarItem({ sku, productType, attributes, validar }) {
+    const seller = await sellerId(attributes?.merchant_suggested_asin?.[0]?.value || 'B07HGLN8R5');
+    const r = await axios.put(ENDPOINT + '/listings/2021-08-01/items/' + encodeURIComponent(seller) + '/' + encodeURIComponent(sku), { productType, requirements: 'LISTING', attributes },
+      { params: { marketplaceIds: MARKETPLACE_BR, issueLocale: 'pt_BR', ...(validar ? { mode: 'VALIDATION_PREVIEW' } : {}) }, timeout: 60000, headers: { 'x-amz-access-token': await accessToken(), 'Content-Type': 'application/json' }, validateStatus: () => true });
+    return { http: r.status, ...r.data };
+  }
   async function participacoes() { return (await get('/sellers/v1/marketplaceParticipations')).payload || []; }
 
-  return { chave, nome: L.nome, configurada, get, post, relatorio, tsv, ofertas, catalogo, tarifas, historicoTarifas, pedidos, pedidosCache, participacoes, atualizarEstoque, restricoes, lerOferta, criarOferta, sellerId, MARKETPLACE_BR };
+  return { chave, nome: L.nome, configurada, get, post, relatorio, tsv, ofertas, catalogo, tarifas, historicoTarifas, pedidos, pedidosCache, participacoes, atualizarEstoque, restricoes, lerOferta, criarOferta, criarItem, sellerId, MARKETPLACE_BR };
 }
 
 const _l = {};
