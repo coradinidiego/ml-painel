@@ -1798,6 +1798,16 @@ app.get('/debug/shopee-raw', async (req, res) => {
   try { res.json(await shopee.loja(SHP[lj] ? lj : 'zagodini').shopeeGet(String(p), ex2)); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
 
+// Admin: sobe uma foto do painel (/fotos/<nome>) no media space da Shopee → image_id. /shopee/upload-imagem?loja=lufe&nome=kit.jpg
+app.post('/shopee/upload-imagem', async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const nome = String(req.query.nome || ''), lj = String(req.query.loja || '');
+  if (!/^[\w.-]+\.(jpe?g|png)$/i.test(nome)) return res.status(400).json({ erro: 'nome inválido' });
+  try {
+    const buf = require('fs').readFileSync(require('path').join(require('./dados'), 'fotos', nome));
+    res.json(await shopee.loja(SHP[lj] ? lj : 'zagodini').uploadImagem(buf, nome));
+  } catch (e) { res.status(500).json({ erro: e.message }); }
+});
 // Admin: POST cru na API de produtos/descontos da Shopee (ex.: init_tier_variation). /debug/shopee-post?loja=lufe&path=/api/v2/product/init_tier_variation  corpo JSON
 app.post('/debug/shopee-post', express.json({ limit: '2mb' }), async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });

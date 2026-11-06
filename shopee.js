@@ -303,6 +303,14 @@ async function atualizarEstoque(itemId, modelId, qtd) {
   if (d.error || f.length) throw new Error(d.message || f[0]?.failed_reason || d.error || 'falhou');
   return d.response;
 }
+// Sobe uma imagem (Buffer) no media space da Shopee → image_id. Assinatura só de parceiro (sem loja).
+async function uploadImagem(buf, nome = 'img.jpg') {
+  const apiPath = '/api/v2/media_space/upload_image';
+  const fd = new FormData();
+  fd.append('image', new Blob([buf], { type: /\.png$/i.test(nome) ? 'image/png' : 'image/jpeg' }), nome);
+  try { return checar(apiPath, (await axios.post(BASE_URL + apiPath, fd, { params: commonParams(apiPath), timeout: 60000 })).data); }
+  catch (e) { throw e.response ? erroAxios(apiPath, e) : e; }
+}
 async function replyRating(ratingId, comment) {
   return shopeePost('/api/v2/product/reply_comment', { comment_list: [{ comment_id: Number(ratingId), comment }] });
 }
@@ -311,7 +319,7 @@ async function replyRating(ratingId, comment) {
 return { CHAVE, nome: L.nome, ml: L.ml, PARTNER_ID, appProprio, REDIRECT_URL, SANDBOX, BASE_URL, 
   getAuthUrl, getToken, refreshToken,
   saveTokens, getTokens,
-  listarProdutos, listarPedidos, listarAvaliacoes, replyRating, shopeeGet, shopeePost,
+  listarProdutos, listarPedidos, listarAvaliacoes, replyRating, shopeeGet, shopeePost, uploadImagem,
   promocoesPorItem, variacoes, responderAvaliacoesLote, impulsionados, impulsionar, atualizarEstoque, listarConversas, mensagens, enviarMensagem,
 };
 }
