@@ -1798,6 +1798,14 @@ app.get('/debug/shopee-raw', async (req, res) => {
   try { res.json(await shopee.loja(SHP[lj] ? lj : 'zagodini').shopeeGet(String(p), ex2)); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
 
+// Admin: POST cru na API de produtos da Shopee (ex.: init_tier_variation). /debug/shopee-post?loja=lufe&path=/api/v2/product/init_tier_variation  corpo JSON
+app.post('/debug/shopee-post', express.json({ limit: '2mb' }), async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const p = String(req.query.path || ''), lj = String(req.query.loja || '');
+  if (!/^\/api\/v2\/product\//.test(p)) return res.status(400).json({ erro: 'path não permitido' });
+  try { res.json(await shopee.loja(SHP[lj] ? lj : 'zagodini').shopeePost(p, req.body || {})); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
+
 // Diagnóstico (admin): de onde vem o custo de um SKU. /debug/custo/2?sku=7898501766807&recarregar=1
 app.get('/debug/custo/:idx', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
