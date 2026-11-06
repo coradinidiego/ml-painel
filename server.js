@@ -2165,6 +2165,23 @@ app.post('/ml/item-alterar/:idx/:id', express.json(), async (req, res) => {
   try { res.json({ ok: true, item: (await mlReq(idx, 'put', '/items/' + id, body)).data }); }
   catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
+// Admin: cria anúncio novo no ML (corpo = item da API /items) e grava a descrição. /ml/item-criar/1  { item, descricao? }
+app.post('/ml/item-criar/:idx', express.json({ limit: '2mb' }), async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const idx = parseInt(req.params.idx), item = req.body?.item; if (!item) return res.status(400).json({ erro: 'item' });
+  try {
+    const r = (await mlReq(idx, 'post', '/items' + (req.query.validar ? '/validate' : ''), item)).data;
+    if (!req.query.validar && req.body.descricao && r?.id) { try { await mlReq(idx, 'post', '/items/' + r.id + '/description', { plain_text: String(req.body.descricao) }); } catch (e) { r._descErro = e.response?.data || e.message; } }
+    res.json({ ok: true, item: r });
+  } catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
+});
+// Admin: cria (POST) ou altera (PUT) produto no Bling v3. /bling/produto/1  { id?, produto }
+app.post('/bling/produto/:idx', express.json({ limit: '2mb' }), async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const idx = parseInt(req.params.idx), b = req.body || {}; if (!b.produto) return res.status(400).json({ erro: 'produto' });
+  try { const c = bling.client(idx); const r = b.id ? await c.put('/produtos/' + encodeURIComponent(b.id), b.produto) : await c.post('/produtos', b.produto); res.json({ ok: true, status: r.status, data: r.data }); }
+  catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
+});
 require('./nf_cancelar')(app, { ml });
 require('./turbo')(app, { dadosCache });
 require('./tiny3')(app);
