@@ -1462,6 +1462,14 @@ app.post('/tiny/produto', express.json({ limit: '2mb' }), async (req, res) => {
   try { res.json(await require('./tiny').chamar(metodo, { produto: JSON.stringify({ produtos: [{ produto: { sequencia: '1', ...req.body.produto } }] }) })); }
   catch (e) { res.status(500).json({ erro: e.message, detalhe: e.response?.data || null }); }
 });
+// Preço de venda no Tiny (Lufe), só admin. body: { precos: [{ id, preco, preco_promocional? }] }
+app.post('/tiny/precos', express.json(), async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const precos = (req.body?.precos || []).filter(p => p && p.id && +p.preco > 0).map(p => ({ id: String(p.id), preco: String(p.preco), preco_promocional: String(p.preco_promocional ?? 0) }));
+  if (!precos.length) return res.status(400).json({ erro: 'informe precos: [{id, preco}]' });
+  try { res.json(await require('./tiny').chamar('produto.atualizar.precos.php', { data: JSON.stringify({ precos }) })); }
+  catch (e) { res.status(500).json({ erro: e.message }); }
+});
 // Fotos montadas no painel (capas de kit): o Tiny/ML baixam pela URL pública /fotos/<nome>
 const DIR_FOTOS = require('path').join(require('./dados'), 'fotos');
 app.get('/tiny/anexo', async (req, res) => {   // proxy das imagens do Tiny (S3) para montar no navegador
