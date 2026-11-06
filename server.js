@@ -1466,8 +1466,10 @@ app.post('/tiny/produto', express.json({ limit: '2mb' }), async (req, res) => {
 app.post('/tiny/precos', express.json(), async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   const precos = (req.body?.precos || []).filter(p => p && p.id && +p.preco > 0).map(p => ({ id: String(p.id), preco: String(p.preco), preco_promocional: String(p.preco_promocional ?? 0) }));
-  if (!precos.length) return res.status(400).json({ erro: 'informe precos: [{id, preco}]' });
-  try { res.json(await require('./tiny').chamar('produto.atualizar.precos.php', { data: JSON.stringify({ precos }) })); }
+  if (!precos.length && !req.body?.params) return res.status(400).json({ erro: 'informe precos: [{id, preco}]' });
+  const params = req.body?.params ? Object.fromEntries(Object.entries(req.body.params).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)]))
+    : { data: JSON.stringify({ precos }) };
+  try { res.json(await require('./tiny').chamar('produto.atualizar.precos.php', params)); }
   catch (e) { res.status(500).json({ erro: e.message }); }
 });
 // Fotos montadas no painel (capas de kit): o Tiny/ML baixam pela URL pública /fotos/<nome>
