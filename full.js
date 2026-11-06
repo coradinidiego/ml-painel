@@ -102,7 +102,7 @@ async function conta(ct) {
     for (const s of d.data || []) { const k = porId[String(s.produto?.id)]; if (k) blg[k].geral = (s.depositos || []).filter(x => !ign.has(String(x.id))).reduce((a, x) => a + (+x.saldoVirtual || 0), 0); }
     await delay(400);
   }
-  const reposicao = Object.entries(sk).map(([k, s]) => { const v = vend[k] || {}; return { ...s, nome: blg[k]?.nome || s.nome, q: v.q || 0, rec: r2(v.rec), luc: r2(v.luc), geral: blg[k]?.geral ?? null }; });
+  const reposicao = Object.entries(sk).map(([k, s]) => { const v = vend[k] || {}; return { ...s, nome: blg[k]?.nome || s.nome, q: v.q || 0, rec: r2(v.rec), luc: r2(v.luc), ads: r2(v.ads), geral: blg[k]?.geral ?? null }; });
   const novos = candidatos.map(k => { const v = vend[k]; return { sku: v.sku, nome: blg[k]?.nome || v.nome, q: v.q, rec: r2(v.rec), luc: r2(v.luc), ads: r2(v.ads), geral: blg[k]?.geral ?? null }; });
   return { emp, nome, idx, periodo: { ini, fim }, pendente: (res.pendentes || []).length > 0, reposicao, novos };
 }
