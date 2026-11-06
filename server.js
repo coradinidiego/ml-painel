@@ -1466,7 +1466,7 @@ app.post('/tiny/produto', express.json({ limit: '2mb' }), async (req, res) => {
 const DIR_FOTOS = require('path').join(require('./dados'), 'fotos');
 app.get('/tiny/anexo', async (req, res) => {   // proxy das imagens do Tiny (S3) para montar no navegador
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).end();
-  const u = String(req.query.u || ''); if (!/^https:\/\/s3\.amazonaws\.com\/tiny-anexos-us\//.test(u)) return res.status(400).end();
+  const u = String(req.query.u || ''); if (!/^https:\/\/(s3\.amazonaws\.com\/tiny-anexos-us\/|orgbling\.s3\.amazonaws\.com\/|http2\.mlstatic\.com\/)/.test(u)) return res.status(400).end();
   try { const r = await require('axios').get(u, { responseType: 'arraybuffer', timeout: 30000 }); res.type(r.headers['content-type'] || 'image/png').send(Buffer.from(r.data)); } catch (e) { res.status(502).end(); }
 });
 app.post('/fotos/:nome', express.raw({ type: ['image/jpeg', 'image/png'], limit: '20mb' }), (req, res) => {   // corpo = a imagem (Content-Type image/jpeg|png)
