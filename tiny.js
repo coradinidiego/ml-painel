@@ -45,7 +45,8 @@ async function chamar(endpoint, params = {}, tentativas = 6) {
     const ret = r.data?.retorno || {};
     if (ret.status === 'OK') return ret;
     const cod = String(ret.codigo_erro || '');
-    const msg = (ret.erros || []).map(x => x.erro || JSON.stringify(x)).join('; ');
+    const msg = (ret.erros || []).map(x => x.erro || JSON.stringify(x)).join('; ')
+      || JSON.stringify(ret.registros || ret).slice(0, 800);   // incluir/alterar: erros vêm em registros[].registro.erros
     if (cod === '20') return { ...ret, vazio: true };             // consulta sem registros
     if (cod === '6' && t < tentativas - 1) {                       // API bloqueada por excesso de acessos
       const espera = 15000 * Math.pow(2, t);
