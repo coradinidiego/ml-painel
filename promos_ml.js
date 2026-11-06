@@ -252,6 +252,7 @@ function rotas(app, fontes) {
     const b = req.body || {}, item = String(b.item || ''), tipo = String(b.promotion_type || '');
     if (!/^MLB\d+$/.test(item) || !ENTRA[tipo]) return res.status(400).json({ erro: 'informe item (MLB...) e promotion_type válido' });
     const o = { id: b.promotion_id || null, tipo, ref: b.offer_id || null, preco: b.deal_price != null ? r2(+b.deal_price) : null, qtd: +b.stock || 0 };
+    if (b.sair) { try { const r = await F.mlReq(parseInt(req.params.idx), 'delete', '/seller-promotions/items/' + item + '?app_version=v2&promotion_type=' + tipo + (o.id ? '&promotion_id=' + o.id : '')); return res.json({ ok: true, resposta: r.data }); } catch (e) { const d = e.response?.data; return res.status(400).json({ erro: d?.message || d?.error || e.message, detalhe: d?.cause || null }); } }
     try { const r = await F.mlReq(parseInt(req.params.idx), b.editar ? 'put' : 'post', '/seller-promotions/items/' + item + '?app_version=v2', b.editar ? { promotion_id: o.id, promotion_type: tipo, deal_price: o.preco } : ENTRA[tipo](o)); res.json({ ok: true, resposta: r.data }); }
     catch (e) { const d = e.response?.data; res.status(400).json({ erro: d?.message || d?.error || e.message, detalhe: d?.cause || null }); }
   });
