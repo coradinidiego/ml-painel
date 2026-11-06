@@ -32,7 +32,9 @@ async function blingGet(c, url, params, tent = 0) {
 }
 
 async function conta(ct) {
-  const { idx, emp, nome } = ct, ml = F.ml;
+  const { idx, emp, nome } = ct;
+  // o ML às vezes devolve 500/403 passageiros: tenta de novo antes de desistir
+  const ml = async (i, p, q, t = 0) => { try { return await F.ml(i, p, q); } catch (e) { const st = e.response?.status; if (t < 4 && (!st || st >= 500 || st === 429 || st === 403)) { await delay(1500 * (t + 1)); return ml(i, p, q, t + 1); } e.message = p.split('?')[0] + ': ' + e.message; throw e; } };
   // 1) anúncios no Full (ativos e pausados — pausado costuma ser "sem estoque no Full")
   ST.fase = `${nome}: anúncios no Full`;
   const uid = (await ml(idx, '/users/me')).id, ids = new Set();
@@ -113,7 +115,7 @@ async function rodar() {
     const contas = [];
     for (const ct of CONTAS) contas.push(await conta(ct));
     P = { em: new Date().toISOString(), contas }; gravar(ARQ, P);
-  } catch (e) { ST.erro = (e.response?.status ? e.response.status + ' ' : '') + (e.response?.data?.error?.description || e.response?.data?.message || e.message); console.warn('[full]', ST.erro); }
+  } catch (e) { ST.erro = (ST.fase ? ST.fase + ' · ' : '') + (e.response?.status ? e.response.status + ' ' : '') + (e.response?.data?.error?.description || e.response?.data?.message || e.message); console.warn('[full]', ST.erro); }
   ST.rodando = false; ST.fase = null;
 }
 
