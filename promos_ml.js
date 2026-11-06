@@ -246,6 +246,15 @@ function rotas(app, fontes) {
     try { res.json(await entrar(parseInt(req.params.idx), String(req.body?.item || ''), parseInt(req.body?.opcao), req.body?.preco, +req.body?.qtd || 0)); }
     catch (e) { const d = e.response?.data; res.status(400).json({ erro: d?.message || d?.error || e.message, detalhe: d?.cause || null }); }
   });
+  // admin: entra direto numa promoção (anúncio novo que ainda não está na lista). body: { item, promotion_id?, promotion_type, deal_price? }
+  app.post('/ml/promos/:idx/entrar-direto', require('express').json(), async (req, res) => {
+    if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+    const b = req.body || {}, item = String(b.item || ''), tipo = String(b.promotion_type || '');
+    if (!/^MLB\d+$/.test(item) || !ENTRA[tipo]) return res.status(400).json({ erro: 'informe item (MLB...) e promotion_type válido' });
+    const o = { id: b.promotion_id || null, tipo, ref: b.offer_id || null, preco: b.deal_price != null ? r2(+b.deal_price) : null, qtd: +b.stock || 0 };
+    try { const r = await F.mlReq(parseInt(req.params.idx), 'post', '/seller-promotions/items/' + item + '?app_version=v2', ENTRA[tipo](o)); res.json({ ok: true, resposta: r.data }); }
+    catch (e) { const d = e.response?.data; res.status(400).json({ erro: d?.message || d?.error || e.message, detalhe: d?.cause || null }); }
+  });
   // atualiza a cada 6h (quando os dados do ML da conta estiverem prontos)
   setInterval(() => { for (const idx of [0, 1, 2]) if (F.dados()[idx] && ST[idx]?.status !== 'carregando') carregar(idx).catch(() => {}); }, 6 * 3600e3).unref?.();
 }
