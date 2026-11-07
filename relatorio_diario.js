@@ -209,7 +209,7 @@ function gerarPDF(R) {
     // produtos — linha 1: números; linha 2: nome, ROAS e o que pesou
     const AB = { 'Mercado Livre': 'ML', 'Shopee': 'SHP', 'Amazon': 'AMZ', 'Shein': 'SHN', 'TikTok Shop': 'TTK' };
     const n0 = v => Math.round(v || 0).toLocaleString('pt-BR');
-    const colsP = [{ t: 'Empresa', w: 50 }, { t: 'SKU', w: 76 }, { t: 'Canais (un.)', w: 62 }, { t: 'Un.', w: 22, a: 'right' }, { t: 'P. méd.', w: 40, a: 'right' }, { t: 'Faturam.', w: 46, a: 'right' },
+    const colsP = [{ t: 'Empresa', w: 44 }, { t: 'SKU', w: 66 }, { t: 'Canais (un.)', w: 84 }, { t: 'Un.', w: 22, a: 'right' }, { t: 'P. méd.', w: 40, a: 'right' }, { t: 'Faturam.', w: 46, a: 'right' },
       { t: 'Custo', w: 42, a: 'right' }, { t: 'Tarifas', w: 40, a: 'right' }, { t: 'Frete', w: 36, a: 'right' }, { t: 'Imp+emb', w: 42, a: 'right' }, { t: 'ADS', w: 34, a: 'right' }, { t: 'Lucro', w: 52, a: 'right' }, { t: 'Mg.', w: 40, a: 'right' }];
     const CURTO = { 'Com Amor de Mãe': 'CaMãe' };
     const motivo = p => {
