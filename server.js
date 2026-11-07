@@ -170,8 +170,15 @@ function extrairSKU(it) {
 async function ml(idx, path, params) {
   const token = getToken(idx);
   const url = BASE + path + (params && Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '');
-  const r = await axios.get(url, { headers: { Authorization: 'Bearer ' + token } });
-  return r.data;
+  // o ML às vezes responde 403 "Resource deprecated", 429 ou 5xx de passagem: tenta de novo antes de desistir
+  for (let t = 0; ; t++) {
+    try { const r = await axios.get(url, { headers: { Authorization: 'Bearer ' + token } }); return r.data; }
+    catch (e) {
+      const st = e.response?.status, dep = st === 403 && /deprecated/i.test(JSON.stringify(e.response?.data || ''));
+      if (t >= 4 || !(dep || st === 429 || st >= 500 || !st)) throw e;
+      await new Promise(r => setTimeout(r, 1500 * (t + 1)));
+    }
+  }
 }
 
 // Vendedores concorrentes (cache de 24h — o mesmo concorrente costuma ganhar vários catálogos)
