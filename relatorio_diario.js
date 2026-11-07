@@ -62,16 +62,22 @@ async function montar(D) {
   const serie = (r, base) => { const o = {}; for (const l of r.linhas || []) { const k = Number(String(l.data).slice(8, 10)); const x = o[k] ||= { receita: 0, lucro: 0 }; x.receita += l.receita || 0; x.lucro += l.lucro || 0; } return o; };
   const sMes = serie(mes), sAnt = serie(ant);
 
-  // produtos (mês)
+  // produtos (mês) — com a composição do resultado para entender o lucro/prejuízo
   const prod = {};
   for (const l of mes.linhas || []) {
     if (l.pedido === 'ADS' || !l.qtd) continue;
-    const k = l.empresa + '|' + l.sku, p = prod[k] ||= { empresa: l.empresa, sku: l.sku, desc: l.descricao, q: 0, receita: 0, lucro: 0 };
-    p.q += l.qtd; p.receita += l.receita; p.lucro += l.lucro;
+    const k = l.empresa + '|' + l.sku, p = prod[k] ||= { empresa: l.empresa, sku: l.sku, desc: l.descricao, q: 0, receita: 0, devolucao: 0, cmv: 0, tarifas: 0, frete: 0, imposto: 0, ads: 0, recML: 0, lucro: 0, canais: {}, semCusto: false };
+    p.q += l.qtd; p.receita += l.receita; p.lucro += l.lucro; p.devolucao += l.devolucao || 0; p.cmv += l.cmv || 0;
+    p.tarifas += (l.comissao || 0) + (l.taxa || 0); p.frete += l.frete || 0; p.imposto += (l.imposto || 0) + (l.embalagem || 0); p.ads += l.ads || 0;
+    if (l.canal === 'Mercado Livre') p.recML += l.receita;
+    if (l.custoUn == null) p.semCusto = true;
+    p.canais[l.canal] = (p.canais[l.canal] || 0) + l.qtd;
   }
+  // ADS de anúncios sem venda no mês: soma no SKU (só aparece se o SKU vendeu em outro canal)
+  for (const l of mes.linhas || []) if (l.pedido === 'ADS' && prod[l.empresa + '|' + l.sku]) { prod[l.empresa + '|' + l.sku].ads += l.ads || 0; prod[l.empresa + '|' + l.sku].lucro -= l.ads || 0; }
   const P = Object.values(prod);
-  const top = [...P].sort((a, b) => b.lucro - a.lucro).slice(0, 8);
-  const piores = P.filter(p => p.lucro < 0).sort((a, b) => a.lucro - b.lucro).slice(0, 8);
+  const top = [...P].sort((a, b) => b.lucro - a.lucro).slice(0, 10);
+  const piores = P.filter(p => p.lucro < 0).sort((a, b) => a.lucro - b.lucro).slice(0, 10);
 
   const fora = mes.foraApuracao || [];
   const dev = fora.filter(f => /devol|reembols|estorn/i.test(f.situacao || '')), canc = fora.filter(f => /cancel/i.test(f.situacao || ''));
@@ -128,25 +134,38 @@ function gerarPDF(R) {
       [`Mês anterior no mesmo dia: ${brl0(a.receita)}`, C.cinza]]);
     y += 114;
 
+    // quebra de página só quando não cabe (sem espaço em branco no meio)
+    const LIM = doc.page.height - 60;
+    const cabe = h => { if (y + h > LIM) { doc.addPage(); y = 36; return false; } return true; };
     // tabela genérica
     const tabela = (titulo, cols, linhas, opts = {}) => {
-      doc.fill(C.roxo).font('Helvetica-Bold').fontSize(11).text(titulo, X0, y); y += 16;
       const tw = cols.reduce((t, c) => t + c.w, 0), esc = W / tw;
-      let x = X0;
-      doc.rect(X0, y, W, 16).fill(C.roxo);
-      for (const c of cols) { doc.fill('#FFF').font('Helvetica-Bold').fontSize(8).text(c.t, x + 4, y + 4, { width: c.w * esc - 8, align: c.a || 'left' }); x += c.w * esc; }
-      y += 16;
+      let x;
+      const fs = opts.fs || 8;
+      const cab = () => {
+        x = X0;
+        doc.rect(X0, y, W, 16).fill(C.roxo);
+        for (const c of cols) { doc.fill('#FFF').font('Helvetica-Bold').fontSize(fs).text(c.t, x + 3, y + 4, { width: c.w * esc - 6, height: 9, align: c.a || 'left', ellipsis: true }); x += c.w * esc; }
+        y += 16;
+      };
+      cabe(16 + 16 + 30);
+      doc.fill(C.roxo).font('Helvetica-Bold').fontSize(11).text(titulo, X0, y); y += 16;
+      if (opts.sub) { doc.fill(C.cinza).font('Helvetica').fontSize(7.5).text(opts.sub, X0, y - 2, { width: W }); y = doc.y + 4; }
+      cab();
       linhas.forEach((L, i) => {
-        const h = 15, neg = L._total;
+        const h = L._det ? 25 : 15, neg = L._total;
+        if (!cabe(h)) cab();
         if (i % 2 === 1 && !neg) doc.rect(X0, y, W, h).fill('#FAFAFA');
         if (neg) doc.rect(X0, y, W, h).fill(C.claro);
         x = X0;
         cols.forEach((c, j) => {
           const v = L[j]; const txt = typeof v === 'object' && v ? v.t : v;
-          doc.fill((typeof v === 'object' && v?.c) || '#222').font(neg || (typeof v === 'object' && v?.b) ? 'Helvetica-Bold' : 'Helvetica').fontSize(8)
-            .text(String(txt ?? ''), x + 4, y + 4, { width: c.w * esc - 8, height: 9, align: c.a || 'left', ellipsis: true });
+          doc.fill((typeof v === 'object' && v?.c) || '#222').font(neg || (typeof v === 'object' && v?.b) ? 'Helvetica-Bold' : 'Helvetica').fontSize(fs)
+            .text(String(txt ?? ''), x + 3, y + 4, { width: c.w * esc - 6, height: 9, align: c.a || 'left', ellipsis: true });
           x += c.w * esc;
         });
+        if (L._det) doc.fill('#555').font('Helvetica').fontSize(7).text(L._det, X0 + 3, y + 14, { width: W - 6, height: 9, ellipsis: true });
+        if (L._det) doc.moveTo(X0, y + h).lineTo(X0 + W, y + h).strokeColor('#EEEEEE').lineWidth(0.4).stroke();
         y += h;
       });
       doc.moveTo(X0, y).lineTo(X0 + W, y).strokeColor(C.linha).lineWidth(0.5).stroke();
@@ -166,9 +185,8 @@ function gerarPDF(R) {
       return [NOME_EMP[g.empresa] || g.empresa, g.canal, g.pedidos, brl0(g.receita), { t: brl0(g.lucro), c: g.lucro < 0 ? C.verm : null }, { t: pct(R.margemSem(g)), c: (R.margemSem(g) ?? 99) < 8 ? C.verm : null }, { t: pct(mg), c: mg != null && mg < 5 ? C.verm : null }, g.ads ? brl0(g.ads) : '—', { t: dtxt(dl), c: cor(dl) }]; });
     tabela('Por empresa e marketplace — mês até ontem', colsC, linC);
 
-    // ── página 2 ──
-    doc.addPage(); y = 36;
-    // gráfico dia a dia
+    // gráfico dia a dia (segue na mesma página se couber)
+    cabe(18 + 150 + 16 + 18);
     doc.fill(C.roxo).font('Helvetica-Bold').fontSize(11).text(`Faturamento por dia — ${MES[R.m - 1]} (barras) × mês anterior (linha)`, X0, y); y += 18;
     const gx = X0 + 40, gw = W - 50, gh = 150, gy = y;
     const dias = Math.max(R.d, 1);
@@ -188,13 +206,40 @@ function gerarPDF(R) {
     y = gy + gh + 16;
     doc.fill(C.cinza).font('Helvetica').fontSize(7.5).text(`Média por dia: ${brl0(mm.receita / dias)} neste mês · ${brl0(a.receita / Math.max(1, Number(R.antFim.slice(8))))} no mês anterior.`, X0, y); y += 18;
 
-    // produtos
-    const colsP = [{ t: 'Empresa', w: 90 }, { t: 'SKU', w: 85 }, { t: 'Produto', w: 210 }, { t: 'Un.', w: 35, a: 'right' }, { t: 'Faturamento', w: 75, a: 'right' }, { t: 'Lucro', w: 70, a: 'right' }];
-    const linP = L => L.map(p => [NOME_EMP[p.empresa] || p.empresa, p.sku, p.desc || '', Math.round(p.q), brl0(p.receita), { t: brl(p.lucro), c: p.lucro < 0 ? C.verm : C.verde }]);
-    tabela('Produtos que mais deram lucro no mês', colsP, linP(R.top));
-    if (R.piores.length) tabela('Produtos com prejuízo no mês (revisar preço, custo ou ADS)', colsP, linP(R.piores));
+    // produtos — linha 1: números; linha 2: nome, ROAS e o que pesou
+    const AB = { 'Mercado Livre': 'ML', 'Shopee': 'SHP', 'Amazon': 'AMZ', 'Shein': 'SHN', 'TikTok Shop': 'TTK' };
+    const n0 = v => Math.round(v || 0).toLocaleString('pt-BR');
+    const colsP = [{ t: 'Empresa', w: 50 }, { t: 'SKU', w: 76 }, { t: 'Canais (un.)', w: 62 }, { t: 'Un.', w: 22, a: 'right' }, { t: 'P. méd.', w: 40, a: 'right' }, { t: 'Faturam.', w: 46, a: 'right' },
+      { t: 'Custo', w: 42, a: 'right' }, { t: 'Tarifas', w: 40, a: 'right' }, { t: 'Frete', w: 36, a: 'right' }, { t: 'Imp+emb', w: 42, a: 'right' }, { t: 'ADS', w: 34, a: 'right' }, { t: 'Lucro', w: 52, a: 'right' }, { t: 'Mg.', w: 40, a: 'right' }];
+    const CURTO = { 'Com Amor de Mãe': 'CaMãe' };
+    const motivo = p => {
+      const rl = p.receita - p.devolucao; if (!rl) return '';
+      const sem = p.lucro + p.ads;
+      if (p.semCusto) return 'sem custo no ERP (lucro superestimado)';
+      if (p.lucro < 0) {
+        if (p.ads && sem > 0) return `o ADS levou o lucro: sem ADS daria ${brl(sem)}`;
+        if (p.devolucao > 0.15 * p.receita) return `devoluções de ${brl0(p.devolucao)}`;
+        const peso = [['custo', p.cmv], ['tarifas', p.tarifas], ['frete', p.frete]].map(([n, v]) => [n, v / rl]).sort((a, b) => b[1] - a[1])[0];
+        return `preço baixo para os custos — maior peso: ${peso[0]} (${pct(peso[1] * 100)} do preço)` + (p.ads ? ` · ADS ${brl0(p.ads)}` : '');
+      }
+      return `lucro/un. ${brl(p.lucro / (p.q || 1))}`;
+    };
+    const linP = L => L.map(p => {
+      const rl = p.receita - p.devolucao, mg = rl ? p.lucro / rl * 100 : null;
+      const canais = Object.entries(p.canais).sort((a, b) => b[1] - a[1]).map(([c, q]) => (AB[c] || c) + ' ' + Math.round(q)).join(' · ');
+      const roas = p.ads ? ` · ROAS ${String(Math.round((p.recML || 0) / p.ads * 10) / 10).replace('.', ',')}` : '';
+      const r = [CURTO[p.empresa] || p.empresa, p.sku, canais, Math.round(p.q), n0(p.receita / (p.q || 1)), n0(p.receita),
+        { t: n0(p.cmv), c: p.semCusto ? C.verm : null }, n0(p.tarifas), n0(p.frete), n0(p.imposto), p.ads ? { t: n0(p.ads), c: p.lucro < 0 && p.lucro + p.ads > 0 ? C.verm : null } : '—',
+        { t: brl(p.lucro), c: p.lucro < 0 ? C.verm : C.verde, b: true }, { t: mg != null && Math.abs(mg) >= 100 ? Math.round(mg) + '%' : pct(mg), c: mg != null && mg < 0 ? C.verm : null }];
+      r._det = (p.desc || '') + (p.devolucao ? ` · devolução ${brl0(p.devolucao)}` : '') + roas + ' — ' + motivo(p);
+      return r;
+    });
+    const subP = 'Valores em R$ no mês. Tarifas = comissão + taxas fixas · Imp.+emb. = imposto + embalagem · ADS = Mercado Livre rateado pelas vendas do SKU · ROAS = faturamento ML ÷ ADS.';
+    tabela('Produtos que mais deram lucro no mês', colsP, linP(R.top), { fs: 7, sub: subP });
+    if (R.piores.length) tabela('Produtos com prejuízo no mês (revisar preço, custo ou ADS)', colsP, linP(R.piores), { fs: 7 });
 
     // alertas
+    cabe(60);
     doc.fill(C.roxo).font('Helvetica-Bold').fontSize(11).text('Pontos de atenção', X0, y); y += 15;
     const itens = [];
     itens.push(`ADS no mês: ${brl0(mm.ads)} = ${pct(R.recML ? mm.ads / R.recML * 100 : null)} do faturamento do Mercado Livre (${brl0(R.recML)}).`);
@@ -203,7 +248,7 @@ function gerarPDF(R) {
     if (R.estimados) itens.push(`${R.estimados} linha(s) de ontem com taxa ou repasse ainda estimado (Shopee/Amazon fecham depois) — o número do dia pode mudar um pouco.`);
     if (R.pendentes.length) itens.push(`Sem dados para: ${R.pendentes.join(', ')} — rodar a apuração no painel.`);
     if (!R.autoOk) itens.push('A apuração automática da madrugada não terminou para este período — números podem estar incompletos.');
-    for (const t of itens) { doc.fill('#222').font('Helvetica').fontSize(8.5).text('•  ' + t, X0, y, { width: W }); y = doc.y + 4; }
+    for (const t of itens) { cabe(22); doc.fill('#222').font('Helvetica').fontSize(8.5).text('•  ' + t, X0, y, { width: W }); y = doc.y + 4; }
 
     doc.page.margins.bottom = 0;
     doc.fill(C.cinza).fontSize(7).text(`Gerado pelo painel em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}. Lucro = faturamento - custo (ERP) - tarifas - frete - imposto - embalagem - ADS. Comparações com o mesmo período do mês anterior (01 a ${R.antFim.slice(8)}).`, X0, doc.page.height - 46, { width: W });
