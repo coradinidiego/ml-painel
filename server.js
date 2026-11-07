@@ -2158,6 +2158,14 @@ async function mlReq(idx, method, path, body, headers = {}) { const r = await ax
 async function mlPut(idx, path, body) { return (await axios.put(BASE + path, body, { headers: { Authorization: 'Bearer ' + getToken(idx) } })).data; }
 require('./inicio')(app, { ml, mlPut, mlReq, dadosCache, SHP, AZ_ANUNCIOS, extrairSKU, estoqueShp });
 require('./posvenda')(app, { ml, dadosCache });
+// Enviar mensagem pós-venda no ML (admin): POST /ml/mensagem/:idx {path:'/messages/packs/...', body}
+app.post('/ml/mensagem/:idx', express.json(), async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const p = String(req.body?.path || '');
+  if (!/^\/messages\/packs\/\d+\/sellers\/\d+/.test(p)) return res.status(400).json({ erro: 'path não permitido' });
+  try { const r = await mlReq(parseInt(req.params.idx), 'post', p, req.body.body); res.json({ ok: true, resposta: r.data }); }
+  catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
+});
 require('./full')(app, { ml }); // envio para o Full: reposição, novos e parados
 require('./apuracao_mkt').setFontes({ ml }); // apuração: ML direto da API
 require('./relatorio_diario')(app); // relatório diário (PDF no Telegram às 06:00)
