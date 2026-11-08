@@ -51,7 +51,11 @@ module.exports = function montar(app, ctx) {
         catch (er) { m.erroPerguntas = er.response?.status === 401 ? 'token ML expirado' : er.message; }
         try {
           const u = await ml(e.idx, '/messages/unread', { role: 'seller', tag: 'post_sale' });
-          const L = u.results || [];
+          let L = u.results || [];
+          // Assistente (IA) do ML: quando o vendedor responde "obrigado/grato", a IA responde "de nada" e a conversa
+          // volta a ficar não lida — um laço sem fim. Essas mensagens de cortesia da IA são lidas aqui e não contam.
+          const fora = await cortesiaIA(e.idx, uid, L);
+          if (fora.size) L = L.filter(x => !fora.has(x));
           m.mensagens = L.length;                                   // conversas (pedidos) com mensagem não lida
           m.mensagensQtd = L.reduce((s, x) => s + (x.count || 0), 0);
         } catch (er) { m.erroMensagens = er.response?.status === 401 ? 'token ML expirado' : (er.response?.data?.message || er.message); }
@@ -69,6 +73,29 @@ module.exports = function montar(app, ctx) {
       P.em = new Date().toISOString();
     }
   }
+  // Conversas com o assistente (IA) do ML em que só há mensagens de cortesia não lidas ("De nada!", "Por nada!",
+  // "Perfeito! Sua resposta foi enviada ao comprador.") → marca como lidas e devolve o conjunto para não contar.
+  const CORTESIA = /^(perfeito|ótimo|otimo|certo|combinado|de nada|por nada|disponha|imagina|fico feliz|que bom|obrigad|estou (à|a) disposi|estou por aqui|sua (resposta|mensagem) foi enviada|qualquer coisa)/i;
+  async function cortesiaIA(idx, uid, L) {
+    const fora = new Set();
+    for (const x of L) {
+      const pack = (String(x.resource || x.resource_id || x.pack_id || '').match(/packs\/(\d+)/) || [])[1] || (/^\d+$/.test(String(x.pack_id || '')) ? String(x.pack_id) : null);
+      if (!pack) continue;
+      try {
+        const base = `/messages/packs/${pack}/sellers/${uid}`;
+        const m = await ml(idx, base, { tag: 'post_sale', mark_as_read: 'false', limit: 20, offset: 0 });
+        if (!/ai-seller/.test(m.conversation_status?.path || '')) continue;         // só a conversa com a IA do ML
+        const naoLidas = (m.messages || []).filter(y => String(y.from?.user_id) !== String(uid) && !y.message_date?.read);
+        if (!naoLidas.length) continue;
+        const soCortesia = naoLidas.every(y => { const t = String(y.text || '').trim(); return t.length <= 140 && !t.includes('?') && CORTESIA.test(t); });
+        if (!soCortesia) continue;
+        await ml(idx, base, { tag: 'post_sale', limit: 20, offset: 0 });   // abrir sem mark_as_read=false = marca como lida
+        fora.add(x);
+      } catch (er) { /* em dúvida, continua contando como pendente */ }
+    }
+    return fora;
+  }
+
   // começa assim que o ML de cada conta carregar: tenta a cada 1 min até todas responderem, depois a cada 5 min
   let ultPend = 0;
   setInterval(() => {
