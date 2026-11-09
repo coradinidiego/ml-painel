@@ -25,7 +25,7 @@ const CONTAS = [
   { idx: 2, nome: 'Lufe Casa & Decoração', tv: 'lufe', envios: 'Lufe', emp: 'lufe', empNome: 'Lufe' },
 ];
 // limites de referência para manter a reputação verde (ML Brasil, últimos 60 dias)
-const LIMITES = { claims: 0.01, delayed_handling_time: 0.10, cancellations: 0.005 };
+const LIMITES = { claims: 0.01, delayed_handling_time: 0.06, cancellations: 0.005 };
 const RAPIDO_MIN = 20;          // "hoje" e "para fazer agora"
 const delay = ms => new Promise(r => setTimeout(r, ms));
 const r2 = v => Math.round((v || 0) * 100) / 100;
