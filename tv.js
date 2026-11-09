@@ -416,7 +416,9 @@ function cortes(empresas) {
 const zerado = () => ({ emitirNF: 0, aEmpacotar: 0, empacotado: 0, enviado: 0, atrasados: 0, atrasoTotal: 0, futuros: 0, corte: 0, proprio: 0 });
 function agregar(emp, linhas) {
   const canais = {}, hoje = hojeIso(), agoraS = Date.now() / 1000;
-  for (const l of linhas) if (l.canal === 'Shopee' && l.limiteEnvio && l.limiteEnvio < agoraS && ['emitirNF', 'aEmpacotar', 'empacotado'].includes(l.tipo)) l.prazo = 'atrasado';
+  // Shopee: quem manda é o prazo de envio da própria Shopee (ship_by_date), não a data prevista do Bling/Tiny.
+  // Ex.: Entrega Direta paga no domingo tem até segunda 23:59 — o Bling põe a previsão no domingo e marcava atrasado.
+  for (const l of linhas) if (l.canal === 'Shopee' && l.limiteEnvio && ['emitirNF', 'aEmpacotar', 'empacotado'].includes(l.tipo)) l.prazo = l.limiteEnvio < agoraS ? 'atrasado' : 'hoje';
   for (const c of emp.canais) canais[c] = { canal: c, ...zerado() };
   for (const l of linhas) {
     if (!MARKETPLACES.includes(l.canal)) continue;   // venda física / balcão / sem marketplace: fora da TV
