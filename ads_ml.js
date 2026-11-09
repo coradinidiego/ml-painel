@@ -232,7 +232,7 @@ async function alterarCampanha(idx, id, { budget, acos_target, status }) {
 async function criarCampanha(idx, item, { nome, budget, acos_target }) {
   const adv = await anunciante(idx);
   const url = `/marketplace/advertising/${adv.site}/advertisers/${adv.id}/product_ads/campaigns`;
-  const base = { name: String(nome || item).slice(0, 60), status: 'active', budget: Number(budget), strategy: 'PROFITABILITY', channel: 'marketplace' };
+  const base = { name: String(nome || item).slice(0, 60), status: 'active', budget: Number(budget), strategy: 'PROFITABILITY', channel: 'marketplace', automatic_budget: false };
   let c;
   try { c = await req(idx, 'post', url, { data: { ...base, roas_target: Math.min(35, Math.round(1000 / Number(acos_target)) / 10) } }); }
   catch (e) { if (e.response?.status >= 500) throw e; c = await req(idx, 'post', url, { data: { ...base, acos_target: Number(acos_target) } }); }

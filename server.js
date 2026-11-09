@@ -2189,6 +2189,12 @@ app.post('/ml/item-criar/:idx', express.json({ limit: '2mb' }), async (req, res)
     if (!req.query.validar && req.body.descricao && r?.id) { try { await mlReq(idx, 'post', '/items/' + r.id + '/description', { plain_text: String(req.body.descricao) }); } catch (e) { r._descErro = e.response?.data || e.message; } }
     // regra do Diego: todo anúncio novo entra com Flex ativo (desligar só com flex:false no corpo)
     if (!req.query.validar && r?.id && req.body.flex !== false) { try { await mlReq(idx, 'post', '/flex/sites/MLB/items/' + r.id + '/v2', {}); r._flex = true; } catch (e) { r._flex = e.response?.data || e.message; } }
+    // regra do Diego: todo anúncio novo ganha 1 campanha de ADS só dele — R$ 50/dia, ROAS 20 (ACOS 5), sem ajuste automático de orçamento;
+    // nome = MLB (anúncio com variação: mandar adsNome = código do pai/família). Desligar com ads:false no corpo.
+    if (!req.query.validar && r?.id && req.body.ads !== false) {
+      try { const c = await require('./ads_ml').criarCampanha(idx, r.id, { nome: req.body.adsNome || r.id, budget: 50, acos_target: 5 }); r._ads = { campanha: c.id }; }
+      catch (e) { r._ads = { erro: e.response?.data || e.message }; }
+    }
     res.json({ ok: true, item: r });
   } catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
