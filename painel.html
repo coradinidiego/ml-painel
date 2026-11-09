@@ -4354,11 +4354,16 @@ function amFornHtml(L){
 function amVerForn(f){_amItem={forn:f};amTabela();el('am-sec-itens').scrollIntoView({behavior:'smooth',block:'start'});}
 function amOrd(k){_amSort={k,d:_amSort.k===k?-_amSort.d:(['data','empresa','canal','pedido','descricao'].includes(k)?1:-1)};amTabela();}
 function amVerItem(emp,sku){_amItem=emp?{empresa:emp,sku}:null;amTabela();if(emp)el('am-sec-itens').scrollIntoView({behavior:'smooth',block:'start'});}
+// mesma data no mês anterior (31/03 → 28/02)
+function amMesAnt(d){const [a,m,dd]=d.split('-').map(Number),u=new Date(a,m-1,0).getDate(),x=new Date(a,m-2,Math.min(dd,u));return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');}
+let _amPrev=null;
 async function amVer(){
   el('am-out').innerHTML='<div class="loading">Calculando...</div>';
-  const r=await fetch('/apuracao-mkt/resultado?emp=todas&ini='+el('am-ini').value+'&fim='+el('am-fim').value).then(r=>r.json()).catch(e=>({erro:String(e)}));
+  const ini=el('am-ini').value,fim=el('am-fim').value,pi=amMesAnt(ini),pf=amMesAnt(fim);
+  const [r,rp]=await Promise.all([fetch('/apuracao-mkt/resultado?emp=todas&ini='+ini+'&fim='+fim).then(r=>r.json()).catch(e=>({erro:String(e)})),
+    fetch('/apuracao-mkt/resultado?emp=todas&ini='+pi+'&fim='+pf).then(r=>r.json()).catch(()=>null)]);
   if(r.erro){el('am-out').innerHTML='<div class="loading" style="color:#c62828">'+shpEsc(r.erro)+'</div>';return;}
-  _am=r;_amItem=null;amProdLista();amRender();
+  _amPrev=rp&&!rp.erro?rp:null;_am=r;_amItem=null;amProdLista();amRender();
 }
 function amRender(){
   const r=_am;if(!r)return;
@@ -4412,10 +4417,22 @@ function amGraficos(L,G){
   const dias=[...new Set(L.map(l=>l.data))].filter(Boolean).sort(),emps=[...new Set(L.map(l=>l.empresa))];
   const porDia={},porCan={},recDia={};L.forEach(l=>{const k=l.data+'|'+l.empresa;porDia[k]=(porDia[k]||0)+l.lucro;const c=porCan[k]||(porCan[k]={});c[l.canal]=(c[l.canal]||0)+l.lucro;recDia[l.data]=(recDia[l.data]||0)+l.receita-(l.devolucao||0);});
   const tot=dias.map(d=>emps.reduce((s,e)=>s+(porDia[d+'|'+e]||0),0));
-  amCharts.dia=new Chart(el('amc-dia'),{type:'bar',data:{labels:dias.map(d=>d.slice(8,10)+'/'+d.slice(5,7)),datasets:[...emps.map(e=>({label:e,data:dias.map(d=>Math.round((porDia[d+'|'+e]||0)*100)/100),backgroundColor:AM_COR_EMP[e]||'#888',stack:'s',borderRadius:3})),{type:'line',label:'Total',data:tot,borderColor:'#FF6F00',backgroundColor:'#FF6F00',pointRadius:3,pointHoverRadius:6,pointHitRadius:12,tension:.3,order:-1}]},
-    options:{maintainAspectRatio:false,interaction:{mode:'nearest',intersect:true},plugins:{legend:{position:'bottom',labels:{boxWidth:12}},tooltip:{callbacks:{
-      // linha: total do dia · barra: só a empresa, aberta por marketplace
-      label:c=>{const d=dias[c.dataIndex];if(c.dataset.type==='line'){const r=recDia[d]||0;return ['Total do dia: '+brl(c.raw),'Faturamento: '+brl(r)+(r?' · margem '+(c.raw/r*100).toFixed(1).replace('.',',')+'%':'')];}
+  // mês anterior: lucro do mesmo dia do mês anterior (mesmos filtros)
+  const ant={},recAnt={};(_amPrev?.linhas||[]).filter(l=>amPassa(l.empresa,l.canal)&&(!_amF.prod.size||_amF.prod.has(l.sku))).forEach(l=>{ant[l.data]=(ant[l.data]||0)+l.lucro;recAnt[l.data]=(recAnt[l.data]||0)+l.receita-(l.devolucao||0);});
+  const dAnt=dias.map(amMesAnt),totAnt=dAnt.map(d=>ant[d]!=null?Math.round(ant[d]*100)/100:null),temAnt=totAnt.some(v=>v!=null);
+  const ds=[...emps.map(e=>({label:e,data:dias.map(d=>Math.round((porDia[d+'|'+e]||0)*100)/100),backgroundColor:AM_COR_EMP[e]||'#888',stack:'s',borderRadius:3,order:2})),
+    {type:'line',label:'Total',data:tot,borderColor:'#FF6F00',backgroundColor:'#FF6F00',pointRadius:3,pointHoverRadius:6,tension:.3,stack:'t',order:0}];
+  if(temAnt)ds.push({type:'line',label:'Mês anterior',data:totAnt,borderColor:'#9aa3b2',backgroundColor:'#9aa3b2',borderDash:[6,4],borderWidth:2,pointRadius:2,pointHoverRadius:5,tension:.3,spanGaps:true,stack:'a',order:1});
+  const pcs=v=>(v>=0?'+':'')+v.toFixed(1).replace('.',',')+'%';
+  amCharts.dia=new Chart(el('amc-dia'),{type:'bar',data:{labels:dias.map(d=>d.slice(8,10)+'/'+d.slice(5,7)),datasets:ds},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{boxWidth:12}},tooltip:{
+      filter:c=>c.raw!=null&&(c.dataset.type==='line'||Math.abs(c.raw)>=0.5),
+      itemSort:(a,b)=>(a.dataset.type==='line'?(a.dataset.label==='Total'?0:1):2)-(b.dataset.type==='line'?(b.dataset.label==='Total'?0:1):2),
+      callbacks:{
+      // Total do dia (faturamento e margem) · mês anterior · cada empresa aberta por marketplace
+      label:c=>{const d=dias[c.dataIndex];
+        if(c.dataset.label==='Total'){const r=recDia[d]||0;return ['Total do dia: '+brl(c.raw),'   Faturamento: '+brl(r)+(r?' · margem '+(c.raw/r*100).toFixed(1).replace('.',',')+'%':'')];}
+        if(c.dataset.label==='Mês anterior'){const da=dAnt[c.dataIndex],ra=recAnt[da]||0,t=tot[c.dataIndex];return ['Mês anterior ('+da.slice(8,10)+'/'+da.slice(5,7)+'): '+brl(c.raw)+(c.raw?' · '+pcs((t-c.raw)/Math.abs(c.raw)*100):''),'   Faturamento: '+brl(ra)+(ra?' · margem '+(c.raw/ra*100).toFixed(1).replace('.',',')+'%':'')];}
         const pc=porCan[d+'|'+c.dataset.label]||{};return [c.dataset.label+': '+brl(c.raw),...Object.entries(pc).sort((a,b)=>b[1]-a[1]).map(([k,v])=>'   '+k+': '+brl(v))];}}}},scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,ticks:{callback:brl}}}}});
   const agg=(key,ord)=>{const m={};G.forEach(g=>{const k=g[key];const o=m[k]||(m[k]={r:0,l:0});o.r+=g.receita-(g.devolucao||0);o.l+=g.lucro;});const ks=Object.keys(m).sort((a,b)=>m[b].r-m[a].r);return {ks,m};};
   const barra=(id,key,cores)=>{const {ks,m}=agg(key);const totR=ks.reduce((s,k)=>s+m[k].r,0);amCharts[id]=new Chart(el(id),{type:'bar',data:{labels:ks.map(k=>[k+' · '+(totR?(m[k].r/totR*100).toFixed(1).replace('.',','):'0')+'% do fat.','margem '+(m[k].r?(m[k].l/m[k].r*100).toFixed(1).replace('.',','):'0')+'%']),datasets:[{label:'Faturamento',data:ks.map(k=>m[k].r),backgroundColor:ks.map(k=>(cores[k]||'#888')+'40'),borderColor:ks.map(k=>cores[k]||'#888'),borderWidth:1,borderRadius:4},{label:'Lucro',data:ks.map(k=>m[k].l),backgroundColor:ks.map(k=>cores[k]||'#888'),borderRadius:4}]},
