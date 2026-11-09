@@ -350,10 +350,29 @@ async function calcularMargens(ml, idx, uid, itens) {
   }
 }
 
+const _var = {};   // `${idx}:${itemId}` -> { em, skus: [] }  (SKUs das variações, 6 h)
+async function custoVariacoes(ml, idx, itemId, erp) {
+  if (!itemId) return null;
+  const k = idx + ':' + itemId; let c = _var[k];
+  if (!c || Date.now() - c.em > 6 * 3600e3) {
+    try {
+      const it = await ml(idx, '/items/' + itemId, { include_attributes: 'all' });
+      const skus = (it.variations || []).map(v => (v.attributes || []).find(a => a.id === 'SELLER_SKU')?.value_name || v.seller_custom_field).filter(Boolean);
+      c = _var[k] = { em: Date.now(), skus: [...new Set(skus)] };
+    } catch (e) { return null; }
+  }
+  let max = null; const ok = [];
+  for (const s of c.skus) { const f = custoComFonte(idx, s, erp); if (f && f.fonte !== 'planilha') { ok.push(s); if (!max || f.v > max.v) max = f; } }
+  return max ? { v: max.v, fonte: max.fonte + ' (variações)', skus: ok } : null;
+}
+
 /** Lucro de um anúncio do ML a um preço (com rebate do ML, se houver). Custo só do ERP (Bling/Tiny). */
 async function margemPreco(ml, idx, uid, it, preco, rebate = 0, erp) {
   if (!(preco > 0)) return { erro: 'sem preço' };
-  const cf = custoComFonte(idx, it._sku || it.seller_sku, erp || await custosErp(idx));
+  erp = erp || await custosErp(idx);
+  let cf = custoComFonte(idx, it._sku || it.seller_sku, erp);
+  // anúncio com variações: o SKU fica em cada variação (o anúncio em si não tem) → usa o maior custo entre elas
+  if (!cf || cf.fonte === 'planilha') { const v = await custoVariacoes(ml, idx, it.id, erp); if (v) { cf = v; if (!it._sku) it._sku = v.skus.join(' / '); } }
   if (!cf || cf.fonte === 'planilha') return { erro: 'sem custo no ' + (idx === 2 ? 'Tiny' : 'Bling') };
   if (!it.listing_type_id || !it.category_id) return { erro: 'sem dados do anúncio' };
   const t = await tarifaML(ml, idx, preco, it.listing_type_id, it.category_id, it.id);
