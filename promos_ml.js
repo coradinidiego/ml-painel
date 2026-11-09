@@ -228,6 +228,23 @@ function rotas(app, fontes) {
     const e = ST[idx] || { status: 'carregando' };
     res.json({ status: e.status, feito: e.feito || 0, total: e.total || 0, em: e.em || null, erro: e.erro || null, itens: e.itens || [] });
   });
+  // inclui anúncios específicos na lista (anúncio recém-criado, ou itens de família que a lista principal ainda não trouxe)
+  app.post('/ml/promos/:idx/incluir', require('express').json(), async (req, res) => {
+    const idx = parseInt(req.params.idx), ids = (req.body?.ids || []).map(String).filter(x => /^MLB\d+$/.test(x)).slice(0, 50);
+    if (!ids.length) return res.status(400).json({ erro: 'ids' });
+    const E = ST[idx] = ST[idx] || { status: 'pronto', itens: [] }; E.itens = E.itens || [];
+    const uid = await F.uid(idx), erp = await cm.custosErp(idx).catch(() => ({})), out = [];
+    for (const id of ids) {
+      try {
+        const it = await F.ml(idx, '/items/' + id, { include_attributes: 'all' });
+        it._sku = (it.attributes || []).find(a => a.id === 'SELLER_SKU')?.value_name || it.seller_custom_field || '';
+        const r = await opcoesItem(idx, uid, it, null, erp);
+        const x = { id, titulo: it.title, sku: it._sku, thumb: it.thumbnail, link: it.permalink, semPromo: !r.emPromo, catalogo: null, ...r };
+        E.itens = E.itens.filter(y => y.id !== id); E.itens.unshift(x); out.push(x);
+      } catch (e) { out.push({ id, erro: e.message }); }
+    }
+    salvar(idx); res.json({ ok: true, itens: out });
+  });
   app.post('/ml/promos/:idx/recarregar', (req, res) => {
     const idx = parseInt(req.params.idx);
     if (ST[idx]?.status !== 'carregando') carregar(idx).catch(() => {});
