@@ -87,20 +87,23 @@ async function pedidosDia(idx, dia) {
   return [...vistos.values()];
 }
 function agregar(pedidos, fechado) {
-  const D = { n: 0, fat: 0, fatF: 0, freteC: 0, canc: 0, cancV: 0, tar: 0, h: Array.from({ length: 24 }, () => [0, 0]), m: [], it: {}, sh: [], semEnvio: 0, fechado, calc: hojeSP(), em: new Date().toISOString() };
+  const D = { n: 0, fat: 0, fatF: 0, freteC: 0, canc: 0, cancV: 0, tar: 0, h: Array.from({ length: 24 }, () => [0, 0]), m: [], it: {}, sh: [], semEnvio: 0, v: 2, fechado, calc: hojeSP(), em: new Date().toISOString() };
+  // como o ML (e o Turbo): 1 venda = 1 carrinho (pack_id); um carrinho pode ter vários pedidos
+  const packs = new Set(), packsC = new Set();
   for (const o of pedidos) {
     if (o.status === 'invalid') continue;
+    const pk = String(o.pack_id || o.id);
     const tot = +o.total_amount || 0, itens = o.order_items || [];
     const item = x => { const k = x.item?.id || '?'; return (D.it[k] ||= { t: (x.item?.title || '').slice(0, 90), s: x.item?.seller_sku || x.item?.seller_custom_field || '', q: 0, v: 0, cq: 0, cv: 0 }); };
     if (o.status === 'cancelled') {
-      D.canc++; D.cancV += tot;
+      if (!packsC.has(pk)) { packsC.add(pk); D.canc++; } D.cancV += tot;
       for (const x of itens) { const I = item(x); I.cq += +x.quantity || 1; I.cv += (+x.unit_price || 0) * (+x.quantity || 1); }
       continue;
     }
     const fc = Math.max(0, (+o.paid_amount || 0) - tot);
-    D.n++; D.fat += tot; D.freteC += fc; D.fatF += tot + fc;
+    const novo = !packs.has(pk); if (novo) { packs.add(pk); D.n++; } D.fat += tot; D.freteC += fc; D.fatF += tot + fc;
     for (const x of itens) { const q = +x.quantity || 1, I = item(x); I.q += q; I.v += (+x.unit_price || 0) * q; D.tar += (+x.sale_fee || 0) * q; }
-    const mi = minutoSP(o.date_created); D.h[Math.floor(mi / 60)][0]++; D.h[Math.floor(mi / 60)][1] += tot; D.m.push([mi, r2(tot)]);
+    const mi = minutoSP(o.date_created); if (novo) D.h[Math.floor(mi / 60)][0]++; D.h[Math.floor(mi / 60)][1] += tot; D.m.push([mi, r2(tot), novo ? 1 : 0]);
     if (o.shipping?.id) D.sh.push(o.shipping.id); else D.semEnvio++;
   }
   for (const k of ['fat', 'fatF', 'freteC', 'cancV', 'tar']) D[k] = r2(D[k]);
@@ -206,7 +209,7 @@ async function diario(idx) {
   for (const d of lista) {
     k++;
     const x = D[d], idade = Math.round((Date.parse(hoje) - Date.parse(d)) / 864e5);
-    const precisa = !x || !x.fechado || (idade <= 35 && x.calc !== hoje) || (idade > 35 && x.calc < somaDias(d, 35));
+    const precisa = !x || !x.fechado || x.v !== 2 || (idade <= 35 && x.calc !== hoje) || (idade > 35 && x.calc < somaDias(d, 35));
     if (!precisa) continue;
     fase(idx, `pedidos ${d} (${k}/${lista.length})`);
     try { await calcDia(idx, d, true); } catch (e) { P.diasErro = msgErro(e) + ' em ' + d; if (e.response?.status === 401) throw e; }
@@ -338,7 +341,7 @@ function montar(idx) {
   out.hoje = bloco(() => {
     const H = D[hoje], O = D[ontem]; if (!H) throw new Error(P.hojeErro || 'ainda calculando');
     const ateMin = minutoSP(H.em);   // ontem até a mesma hora em que os pedidos de hoje foram lidos
-    const oN = O ? O.m.filter(x => x[0] <= ateMin).length : null, oF = O ? r2(soma(O.m.filter(x => x[0] <= ateMin), x => x[1])) : null;
+    const oN = O ? O.m.filter(x => x[0] <= ateMin).reduce((a, x) => a + (x[2] ?? 1), 0) : null, oF = O ? r2(soma(O.m.filter(x => x[0] <= ateMin), x => x[1])) : null;
     return { n: H.n, fat: H.fat, canc: H.canc, ateHora: String(Math.floor(ateMin / 60)).padStart(2, '0') + ':' + String(ateMin % 60).padStart(2, '0'), ontemN: oN, ontemFat: oF,
       varN: pct(H.n, oN), varFat: pct(H.fat, oF), em: H.em, ticket: H.n ? r2(H.fat / H.n) : null, ontemDia: O ? { n: O.n, fat: O.fat } : null, erro: P.hojeErro || undefined };
   });
@@ -429,7 +432,7 @@ async function rodar(idx, { forcar } = {}) {
   ST[idx] = { rodando: true, inicio: new Date().toISOString(), fase: 'iniciando' };
   try {
     await rapido(idx); salvar(idx);
-    if (forcar || partes(idx).diarioDia !== hojeSP()) { await diario(idx); salvar(idx); }
+    if (forcar || partes(idx).diarioDia !== hojeSP() || Object.values(dias(idx)).some(x => x.fechado && x.v !== 2)) { await diario(idx); salvar(idx); }
     ST[idx] = { rodando: false, fim: new Date().toISOString() };
   } catch (e) { console.warn('[dashboard]', idx, e.message); ST[idx] = { rodando: false, erro: msgErro(e), fim: new Date().toISOString() }; salvar(idx); }
 }
