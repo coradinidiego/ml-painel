@@ -512,6 +512,7 @@ body.pm-tipjs .pm-hastip:hover .pm-tip,body.pm-tipjs .pm-hastip:focus .pm-tip{di
   </div>
   <div class="tabs">
     <button class="tab active" onclick="showTab('inicio',this)">🏠 Inicio</button>
+    <button class="tab" onclick="showTab('dash',this);carregarDash()">📊 Dashboard</button>
     <button class="tab" onclick="showTab('perdendo',this)">🔴 Perdendo (<span id="tc-perdendo">...</span>)</button>
     <button class="tab" onclick="showTab('ganhando',this)">🟢 Ganhando (<span id="tc-ganhando">...</span>)</button>
     <button class="tab" onclick="showTab('atualizando',this)">🔄 Atualizando (<span id="tc-atualizando">...</span>)</button>
@@ -523,6 +524,7 @@ body.pm-tipjs .pm-hastip:hover .pm-tip,body.pm-tipjs .pm-hastip:focus .pm-tip{di
     <button class="tab" onclick="showTab('precos',this);carregarPrecos()">💲 Preços × planilha</button>
     <button class="tab" onclick="showTab('turbo',this);carregarTurbo()">⚡ Custos × Turbo</button>
   </div>
+  <div id="tab-dash" class="tab-content"><div id="dash-box"><div class="loading">Clique na aba para carregar...</div></div></div>
   <div id="tab-inicio" class="tab-content active">
     <div class="cards">
       <div class="card r" onclick="goTab(1)"><div class="icon">🔴</div><div class="num" id="card-perdendo">-</div><div class="lbl">Perdendo catalogo</div></div>
@@ -1288,6 +1290,7 @@ function trocarConta(idx,btn){
   _pm=null; if(el('tab-promos').classList.contains('active'))setTimeout(()=>carregarPromosML(),0);
   _ad=null; if(el('tab-adsml').classList.contains('active'))setTimeout(()=>{carregarAdsML();renderAdsPlano();},0);
   if(el('tab-full')&&el('tab-full').classList.contains('active'))setTimeout(renderFull,0);
+  if(el('tab-dash')&&el('tab-dash').classList.contains('active'))setTimeout(()=>carregarDash(),0);
   set('c-estoque','-');
   document.querySelectorAll('.conta-tab').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
@@ -4480,4 +4483,208 @@ function amExportar(){
   addEventListener('scroll',fechar,true);addEventListener('resize',fechar);
 })();
 </script>
+<style>
+#dash-box{--db-ln:#e8e8ec;--db-mu:#7a7f88;--db-po:#2e7d32;--db-ne:#c62828;--db-az:#1e88e5;--db-am:#f5a623}
+.db-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.db-top h2{font-size:18px;font-weight:800;margin-right:6px}
+.db-chip{border:1px solid #d6d9de;background:#fff;border-radius:18px;padding:5px 12px;font-size:12.5px;font-weight:600;cursor:pointer;color:#334}
+.db-chip.on{background:#0d1b2a;border-color:#0d1b2a;color:#fff}
+.db-calc{font-size:11.5px;color:var(--db-mu);margin-left:auto;text-align:right;line-height:1.5}
+.db-sec{background:#fff;border:1px solid #eee;border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.db-sec>h3{font-size:13.5px;font-weight:700;margin-bottom:10px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.db-sec>h3 small{font-weight:400;color:var(--db-mu);font-size:11.5px}
+.db-grid{display:grid;gap:12px}
+.db-g2{grid-template-columns:1fr 1fr}.db-g3{grid-template-columns:repeat(3,1fr)}.db-g5{grid-template-columns:repeat(5,1fr)}.db-g4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:1000px){.db-g2,.db-g3,.db-g4,.db-g5{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.db-g2,.db-g3,.db-g4,.db-g5{grid-template-columns:1fr}}
+.db-k{border:1px solid var(--db-ln);border-radius:8px;padding:10px 12px;position:relative;overflow:hidden}
+.db-k .l{font-size:11px;color:var(--db-mu);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+.db-k .v{font-size:22px;font-weight:800;margin:2px 0}
+.db-k .s{font-size:11.5px;color:var(--db-mu);line-height:1.45}
+.db-k.fz{padding-left:16px}.db-k.fz::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c,#1e88e5)}
+.db-up{color:var(--db-po);font-weight:700}.db-dn{color:var(--db-ne);font-weight:700}
+.db-erro{font-size:12.5px;color:#999;padding:10px 0}
+.db-rep{display:flex;gap:6px;margin:6px 0 10px}.db-rep span{flex:1;height:10px;border-radius:3px;opacity:.25}.db-rep span.on{opacity:1;outline:2px solid #333;outline-offset:1px}
+.db-bar{height:8px;background:#f0f0f0;border-radius:4px;overflow:hidden;margin:4px 0 2px}.db-bar div{height:100%;border-radius:4px}
+.db-row{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:4px 0;border-bottom:1px solid #f4f4f4}.db-row:last-child{border-bottom:none}
+.db-stack{display:flex;height:26px;border-radius:6px;overflow:hidden;margin:8px 0}.db-stack div{height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden}
+.db-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:12px}.db-leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.db-tabs{display:flex;gap:6px;margin-bottom:8px}
+.db-tab{border:1px solid #ddd;background:#fff;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}.db-tab.on{background:#FFE600;border-color:#e6cf00;font-weight:700}
+.db-svg{width:100%;height:auto;display:block}
+.db-tbl{width:100%;border-collapse:collapse;font-size:12.5px}.db-tbl th{font-size:11px;color:var(--db-mu);font-weight:600;text-align:right;padding:6px;border-bottom:1px solid #eee;text-transform:uppercase}
+.db-tbl td{padding:6px;text-align:right;border-bottom:1px solid #f4f4f4}.db-tbl .l{text-align:left}
+.db-cas{display:grid;grid-template-columns:200px 1fr 110px 60px;gap:6px 10px;align-items:center;font-size:12.5px}
+.db-cas .b{height:18px;position:relative;background:#f6f6f6;border-radius:3px}.db-cas .b div{position:absolute;top:0;bottom:0;border-radius:3px}
+@media(max-width:600px){.db-cas{grid-template-columns:120px 1fr 90px}.db-cas .p{display:none}}
+.db-top5 li{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:4px 0;border-bottom:1px solid #f4f4f4;list-style:none}
+.db-top5 li span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
+<script>
+let _db=null,_dbTimer=null,_dbAba='semana',_dbAbaEv='vis';
+const dbF=v=>v==null?'—':'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const dbF0=v=>v==null?'—':'R$ '+Math.round(v).toLocaleString('pt-BR');
+const dbN=v=>v==null?'—':Number(v).toLocaleString('pt-BR');
+const dbP=(v,d=1)=>v==null?'—':Number(v).toLocaleString('pt-BR',{maximumFractionDigits:d})+'%';
+const dbVar=(v,pp)=>v==null?'<span style="color:#aaa">—</span>':'<span class="'+(v>=0?'db-up':'db-dn')+'">'+(v>=0?'▲ +':'▼ ')+Number(v).toLocaleString('pt-BR',{maximumFractionDigits:1})+(pp?' p.p.':'%')+'</span>';
+const dbDt=iso=>iso?new Date(iso).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+const dbBr=d=>d?d.slice(8,10)+'/'+d.slice(5,7):'';
+const dbMes=m=>{const n=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];return n[Number(m.slice(5,7))-1]+'/'+m.slice(2,4);};
+async function carregarDash(atualizar){
+  clearTimeout(_dbTimer);const conta=ci;
+  if(!_db||_db.idx!==conta)el('dash-box').innerHTML='<div class="loading">Carregando o dashboard…</div>';
+  try{
+    if(atualizar)await fetch('/dashboard/'+conta+'/atualizar'+(atualizar===2?'?completo=1':''),{method:'POST'});
+    const r=await fetch('/dashboard/'+conta).then(x=>x.json());
+    if(ci!==conta)return;
+    if(r.erro){el('dash-box').innerHTML='<div class="loading">'+shpEsc(r.erro)+'</div>';return;}
+    _db=r;renderDash();
+    if(atualizar||r.status?.rodando)_dbTimer=setTimeout(()=>{if(ci===conta&&el('tab-dash').classList.contains('active'))carregarDash();},atualizar?3000:10000);
+  }catch(e){el('dash-box').innerHTML='<div class="loading">Erro: '+shpEsc(e.message)+'</div>';}
+}
+function dbSec(tit,sub,corpo){return '<div class="db-sec"><h3>'+tit+(sub?' <small>'+sub+'</small>':'')+'</h3>'+corpo+'</div>';}
+function dbErro(b){return '<div class="db-erro">Sem dados: '+shpEsc(b?.erro||'ainda calculando')+'</div>';}
+function dbK(l,v,s,c,cls){return '<div class="db-k '+(cls||'')+'" '+(c?'style="--c:'+c+'"':'')+'><div class="l">'+l+'</div><div class="v">'+v+'</div><div class="s">'+(s||'')+'</div></div>';}
+// gráfico de linhas simples em SVG: series=[{nome,cor,valores,tracejado,eixo:'d'}], rotulos=[...]
+function dbChart(series,rotulos,o={}){
+  const W=760,H=o.h||220,pl=58,pr=o.dual?58:14,pt=12,pb=26,n=rotulos.length;
+  const ext=e=>{const v=series.filter(s=>(s.eixo||'e')===e).flatMap(s=>s.valores).filter(x=>x!=null);return v.length?Math.max(...v):0;};
+  const mx={e:ext('e')||1,d:ext('d')||1};
+  const nice=m=>{const p=Math.pow(10,Math.floor(Math.log10(m)));const f=m/p;return (f<=1?1:f<=2?2:f<=5?5:10)*p;};
+  mx.e=nice(mx.e);mx.d=nice(mx.d);
+  const x=i=>pl+(n<=1?0:i*(W-pl-pr)/(n-1)),y=(v,e)=>pt+(H-pt-pb)*(1-v/mx[e||'e']);
+  const fm=o.fmt||(v=>Math.round(v).toLocaleString('pt-BR'));
+  let g='';
+  for(let k=0;k<=4;k++){const v=mx.e*k/4,yy=y(v);g+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+yy+'" y2="'+yy+'" stroke="#eee"/><text x="'+(pl-6)+'" y="'+(yy+4)+'" font-size="10" text-anchor="end" fill="#888">'+fm(v)+'</text>';
+    if(o.dual){const v2=mx.d*k/4;g+='<text x="'+(W-pr+6)+'" y="'+(yy+4)+'" font-size="10" fill="#888">'+(o.fmtD||fm)(v2)+'</text>';}}
+  const passo=Math.max(1,Math.ceil(n/12));
+  rotulos.forEach((r,i)=>{if(i%passo===0||i===n-1)g+='<text x="'+x(i)+'" y="'+(H-8)+'" font-size="10" text-anchor="middle" fill="#888">'+r+'</text>';});
+  for(const s of series){
+    let d='',pts='';s.valores.forEach((v,i)=>{if(v==null)return;d+=(d&&s.valores[i-1]!=null?'L':'M')+x(i).toFixed(1)+' '+y(v,s.eixo).toFixed(1);
+      pts+='<circle cx="'+x(i)+'" cy="'+y(v,s.eixo)+'" r="'+(n>40?1.6:2.6)+'" fill="'+s.cor+'"><title>'+s.nome+' · '+rotulos[i]+': '+((s.eixo==='d'&&o.fmtD)||o.fmtT||fm)(v)+'</title></circle>';});
+    g+='<path d="'+d+'" fill="none" stroke="'+s.cor+'" stroke-width="2.2" '+(s.tracejado?'stroke-dasharray="5 4"':'')+'/>'+pts;}
+  const leg='<div class="db-leg" style="margin-top:4px">'+series.map(s=>'<span><i style="background:'+s.cor+'"></i>'+s.nome+'</span>').join('')+'</div>';
+  return '<svg class="db-svg" viewBox="0 0 '+W+' '+H+'" role="img">'+g+'</svg>'+leg;
+}
+function renderDash(){
+  const r=_db;if(!r)return;let h='';
+  const st=r.status;
+  h+='<div class="db-top"><h2>📊 Dashboard</h2>'+CONTAS.map((c,i)=>'<button class="db-chip'+(i===ci?' on':'')+'" onclick="trocarConta('+i+',el(\'cb-'+i+'\'))">'+c.nome+'</button>').join('')+
+    '<button class="btn" onclick="carregarDash(1)" title="Busca de novo hoje, para fazer agora e reputação">↺ Atualizar</button><button class="btn" onclick="if(confirm(\'Recalcular também os dias fechados, visitas, perguntas e a apuração? Pode levar alguns minutos.\'))carregarDash(2)">⟳ Recalcular tudo</button>'+
+    '<div class="db-calc">'+(st?.rodando?'<b style="color:#e65100">⏳ calculando: '+shpEsc(st.fase||'')+'</b><br>':st?.erro?'<b style="color:#c62828">último cálculo com erro: '+shpEsc(st.erro)+'</b><br>':'')+
+    'Hoje / para fazer agora: '+dbDt(r.calc.rapido)+'<br>Dias fechados calculados em '+dbDt(r.calc.diario)+' · apuração '+dbDt(r.calc.apuracao)+'</div></div>';
+  // 1. cartão da conta
+  {const c=r.cartao;let b='';
+    if(c.erro&&!c.nivel)b=dbErro(c);else{
+      const niv=['1_red','2_orange','3_yellow','4_light_green','5_green'],cor=['#e53935','#fb8c00','#fdd835','#9ccc65','#2e7d32'];
+      const med={platinum:'MercadoLíder Platinum',gold:'MercadoLíder Gold',silver:'MercadoLíder'}[c.medalha]||'Sem medalha';
+      const met=(rot,m)=>{const v=(m?.rate||0)*100,lim=(m?.limite||0)*100,p=lim?Math.min(100,v/lim*100):0,cr=p>=100?'#c62828':p>=70?'#f5a623':'#2e7d32';
+        return '<div style="margin:6px 0"><div class="db-row" style="border:none;padding:0"><span>'+rot+'</span><span><b>'+dbP(v,2)+'</b> <small style="color:#888">de '+dbP(lim,2)+' · '+dbN(m?.value)+' vendas</small></span></div><div class="db-bar"><div style="width:'+Math.max(2,p)+'%;background:'+cr+'"></div></div></div>';};
+      const A=c.anuncios||{};
+      b='<div class="db-grid db-g3"><div><div style="font-weight:700">'+shpEsc(c.nick||r.conta)+' · <span style="color:#555">'+med+'</span></div><div class="db-rep">'+niv.map((n,i)=>'<span class="'+(c.nivel===n?'on':'')+'" style="background:'+cor[i]+'"></span>').join('')+'</div>'+
+        met('Reclamações',c.metricas?.claims)+met('Despachos com atraso',c.metricas?.delayed_handling_time)+met('Cancelamentos',c.metricas?.cancellations)+
+        '<div style="font-size:11px;color:#999">Últimos '+shpEsc(c.vendas60?.period||'60 dias').replace('days','dias')+' · '+dbN(c.vendas60?.completed)+' vendas concluídas · limite = referência do ML para manter o verde</div></div>'+
+        dbK('Anúncios ativos',dbN(A.ativos),'Premium: <b>'+dbN(A.premium)+'</b> · Clássico: <b>'+dbN(A.classico)+'</b>')+
+        dbK('Vendas (histórico)',dbN(c.vendasTotais),'Concluídas: <b>'+dbN(c.concluidas)+'</b><br>Canceladas: <b>'+dbN(c.canceladas)+'</b>'+(c.vendasTotais?' ('+dbP(c.canceladas/c.vendasTotais*100)+')':''))+'</div>'+(c.erro?'<div class="db-erro">Última leitura falhou: '+shpEsc(c.erro)+'</div>':'');}
+    h+=dbSec('🏪 '+shpEsc(r.conta),'reputação e anúncios',b);}
+  // 2. para fazer agora
+  {const f=r.fazer;let b='';
+    if(f.erro&&f.etiquetas==null)b=dbErro(f);else{const R=f.reclamacoes||{};
+      b='<div class="db-grid db-g5">'+dbK('Etiquetas p/ imprimir',dbN(f.etiquetas),(f.emitirNF?'+ '+f.emitirNF+' aguardando NF<br>':'')+(f.aColetar?f.aColetar+' prontas aguardando coleta':''),'#1e88e5','fz')+
+        dbK('Flex pendentes',dbN(f.flex),f.flexAtrasado?'<b style="color:#c62828">'+f.flexAtrasado+' atrasada(s)</b>':'a entregar','#8e24aa','fz')+
+        dbK('Entregas a combinar',dbN(f.combinar),'vendas sem Mercado Envios (30 dias)','#757575','fz')+
+        dbK('Despachadas hoje',dbN(f.despachadas),f.atrasados?'<b style="color:#c62828">'+f.atrasados+' pacote(s) com prazo vencido</b>':'nenhum atrasado','#43a047','fz')+
+        dbK('Reclamações abertas',dbN(R.total),dbN(R.mediacoes)+' reclamação/mediação · '+dbN(R.devolucoes)+' devolução'+(R.disputa?'<br>'+R.disputa+' em disputa':''),'#e53935','fz')+'</div>'+
+        '<div style="font-size:11px;color:#999;margin-top:6px">Retrato de '+dbDt(f.em)+' (o mesmo da TV) · Full não entra: quem despacha é o ML'+(f.erro?' · última leitura falhou: '+shpEsc(f.erro):'')+'</div>';}
+    h+=dbSec('✅ Para fazer agora','',b);}
+  // 3. hoje
+  {const H=r.hoje;let b='';
+    if(H.erro&&H.n==null)b=dbErro(H);else b='<div class="db-grid db-g4">'+dbK('Vendas hoje',dbN(H.n),dbVar(H.varN)+' vs ontem até '+H.ateHora+' ('+dbN(H.ontemN)+')')+
+      dbK('Faturamento hoje',dbF(H.fat),dbVar(H.varFat)+' vs ontem até '+H.ateHora+' ('+dbF(H.ontemFat)+')')+
+      dbK('Ticket médio hoje',dbF(H.ticket),H.canc?H.canc+' cancelada(s) hoje':'')+
+      dbK('Ontem (dia inteiro)',dbF(H.ontemDia?.fat),dbN(H.ontemDia?.n)+' vendas')+'</div>';
+    h+=dbSec('⏱️ Hoje até agora',H.em?'pedidos lidos em '+dbDt(H.em):'',b);}
+  // 4. mês até ontem
+  {const M=r.mes;let b='';
+    if(M.erro)b=dbErro(M);else if(M.semDias)b='<div class="db-erro">'+M.msg+'</div>';else{const a=M.atual,p=M.anterior,t=M.mesAnterior;
+      const lin=(rot,va,vp,vt,vv,pp)=>'<tr><td class="l">'+rot+'</td><td><b>'+va+'</b></td><td>'+vp+'</td><td>'+dbVar(vv,pp)+'</td><td style="color:#888">'+vt+'</td></tr>';
+      b='<div class="db-grid db-g4" style="margin-bottom:10px">'+dbK('Faturamento',dbF(a.fat),dbVar(M.var.fat)+' · fecha em ~<b>'+dbF0(M.ritmo)+'</b><br>com frete do comprador: '+dbF(a.fatF))+
+        dbK('Vendas',dbN(a.n),dbVar(M.var.n)+'<br>canceladas: '+dbN(a.canc)+' ('+dbP(a.n+a.canc?a.canc/(a.n+a.canc)*100:0)+') · '+dbF(a.cancV))+
+        dbK('Ticket médio',dbF(a.ticket),dbVar(M.var.ticket))+
+        dbK('Visitas · conversão',dbN(a.visitas)+' · '+dbP(a.conv,2),dbVar(M.var.visitas)+' visitas · '+dbVar(M.var.conv,1)+' conversão'+(M.visitasErro?'<br><span style="color:#c62828">'+shpEsc(M.visitasErro)+'</span>':''))+'</div>'+
+        '<div class="gwrap"><table class="db-tbl"><tr><th class="l"></th><th>01 a '+dbBr(a.fim)+'</th><th>01 a '+dbBr(p.fim)+'</th><th>Variação</th><th>'+dbMes(t.ini)+' inteiro</th></tr>'+
+        lin('Faturamento',dbF(a.fat),dbF(p.fat),dbF(t.fat),M.var.fat)+lin('Faturamento com frete do comprador',dbF(a.fatF),dbF(p.fatF),dbF(t.fatF),M.var.fatF)+
+        lin('Vendas',dbN(a.n),dbN(p.n),dbN(t.n),M.var.n)+lin('Canceladas',dbN(a.canc)+' · '+dbF(a.cancV),dbN(p.canc)+' · '+dbF(p.cancV),dbN(t.canc)+' · '+dbF(t.cancV),M.var.canc)+
+        lin('Ticket médio',dbF(a.ticket),dbF(p.ticket),dbF(t.ticket),M.var.ticket)+lin('Visitas',dbN(a.visitas),dbN(p.visitas),dbN(t.visitas),M.var.visitas)+
+        lin('Conversão',dbP(a.conv,2),dbP(p.conv,2),dbP(t.conv,2),M.var.conv,1)+'</table></div>'+
+        (a.diasComDados<a.dias||p.diasComDados<p.dias?'<div class="db-erro">⚠️ Faltam dias nos pedidos ('+a.diasComDados+'/'+a.dias+' e '+p.diasComDados+'/'+p.dias+') — ainda calculando.</div>':'');}
+    h+=dbSec('📅 Mês até ontem','dias fechados · comparado com o mesmo período do mês anterior',b);}
+  // 5. como entregou
+  {const E=r.entrega;let b='';
+    if(E.erro)b=dbErro(E);else{const T=E.total||1,C=[['fulfillment','Full','#00a650'],['cross_docking','Coleta','#3483fa'],['self_service','Flex','#8e24aa'],['outros','Outros','#9e9e9e'],['semInfo','Sem info','#d0d0d0']].filter(x=>E[x[0]]);
+      b='<div class="db-stack">'+C.map(([k,n,c])=>'<div style="width:'+(E[k]/T*100)+'%;background:'+c+'" title="'+n+': '+E[k]+'">'+(E[k]/T>.07?n+' '+dbP(E[k]/T*100,0):'')+'</div>').join('')+'</div>'+
+        '<div class="db-leg">'+C.map(([k,n,c])=>'<span><i style="background:'+c+'"></i>'+n+': <b>'+dbP(E[k]/T*100)+'</b> ('+dbN(E[k])+')</span>').join('')+'</div>'+
+        (E.frete?'<div class="db-grid db-g3" style="margin-top:12px">'+dbK('Frete pago pelo vendedor',dbF(E.frete.total),'01 a '+dbBr(E.frete.ate))+dbK('Média por venda',dbF(E.frete.porVenda),'')+dbK('% do faturamento',dbP(E.frete.pctFat),'')+'</div>':'<div class="db-erro">Frete do vendedor: '+shpEsc(E.freteMsg||'sem dados')+'</div>')+
+        (E.logErro?'<div class="db-erro">'+shpEsc(E.logErro)+'</div>':'');}
+    h+=dbSec('🚚 Como você entregou',E.ate?'vendas do mês até hoje, por envio':'',b);}
+  // 6. evolução das vendas
+  {const G=r.grafico;let b='';
+    if(G.erro)b=dbErro(G);else{
+      const abas=[['semana','Semana × anterior'],['mes','Mês × mês anterior'],['hora','Hoje por hora']];
+      b='<div class="db-tabs">'+abas.map(([k,n])=>'<button class="db-tab'+(_dbAba===k?' on':'')+'" onclick="_dbAba=\''+k+'\';renderDash()">'+n+'</button>').join('')+'</div>';
+      const fm=v=>v>=1000?(v/1000).toLocaleString('pt-BR',{maximumFractionDigits:1})+' mil':Math.round(v).toLocaleString('pt-BR');
+      if(_dbAba==='semana'){const ds=['seg','ter','qua','qui','sex','sáb','dom'];
+        b+=dbChart([{nome:G.semanaPassada?'Semana passada':'Esta semana',cor:'#3483fa',valores:G.semana.map(x=>x.atual)},{nome:G.semanaPassada?'Semana retrasada':'Semana passada',cor:'#aab',tracejado:1,valores:G.semana.map(x=>x.ant)}],G.semana.map((x,i)=>ds[i]+' '+dbBr(x.d)),{fmt:fm,fmtT:dbF});}
+      else if(_dbAba==='mes')b+=dbChart([{nome:'Este mês',cor:'#3483fa',valores:G.mes.map(x=>x.atual)},{nome:'Mês anterior',cor:'#aab',tracejado:1,valores:G.mes.map(x=>x.ant)}],G.mes.map(x=>String(x.dia)),{fmt:fm,fmtT:dbF});
+      else b+=dbChart([{nome:'Hoje (acumulado)',cor:'#3483fa',valores:G.hora.map(x=>x.atual)},{nome:'Ontem (acumulado)',cor:'#aab',tracejado:1,valores:G.hora.map(x=>x.ant)}],G.hora.map(x=>x.h+'h'),{fmt:fm,fmtT:dbF});}
+    h+=dbSec('📈 Evolução das vendas','faturamento',b);}
+  // 7. atenção / margem
+  {const A=r.atencao;let b='';
+    if(A.erro)b=dbErro(A);else{const O=A.ontem,M=A.mes;
+      b='<div class="db-grid db-g3">'+(O?dbK('Vendas de ontem com margem negativa',dbN(O.negativos)+' <small style="font-size:13px;color:#888">de '+dbN(O.pedidos)+'</small>','R$ perdido: <b class="db-dn">'+dbF(O.perdido)+'</b>'+(O.semCusto?'<br>'+O.semCusto+' venda(s) sem custo (fora da conta)':''),'#e53935','fz'):dbK('Vendas de ontem com margem negativa','—','apuração de ontem ainda não disponível','#e53935','fz'))+
+        (M?dbK('Vendas do mês com custo e imposto',dbP(M.pctComCusto),dbN(M.pedidos-M.semCusto)+' de '+dbN(M.pedidos)+' vendas · '+dbP(M.pctReceitaComCusto)+' do faturamento<br>imposto '+dbP(M.aliquota)+' em todas','#f5a623','fz')+
+          dbK('Margem do mês (ML)',dbP(M.margem),'lucro '+dbF(M.lucro)+' · '+dbBr(M.ini)+' a '+dbBr(M.fim)+' (depois do ADS)',M.margem<0?'#c62828':'#2e7d32','fz'):'<div class="db-erro" style="grid-column:span 2">'+shpEsc(A.msg||'sem apuração do mês')+'</div>')+'</div>'+
+        (O?.piores?.length?'<div style="margin-top:10px;font-size:12px;color:#555"><b>Piores de ontem:</b> '+O.piores.map(x=>'#'+shpEsc(x.pedido)+' '+shpEsc((x.desc||'').slice(0,40))+' <span class="db-dn">'+dbF(x.lucro)+'</span>').join(' · ')+'</div>':'');}
+    h+=dbSec('⚠️ Vale a sua atenção','margem e custos (da Apuração do painel)',b);}
+  // 8. evolução da conta
+  {const V=r.evolucao;let b='';
+    if(V.erro)b=dbErro(V);else{const L=V.meses;
+      const tend=(k,inv)=>{const a=L[2]?.[k],p=L[1]?.[k];if(a==null||p==null||!p)return '<span style="color:#aaa">—</span>';const v=(a-p)/Math.abs(p)*100,bom=inv?v<=0:v>=0;
+        return '<span class="'+(bom?'db-up':'db-dn')+'">'+(v>=0?'↗ +':'↘ ')+v.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%</span>';};
+      const tr=(rot,k,fm,inv)=>'<tr><td class="l">'+rot+'</td>'+L.map(m=>'<td>'+fm(m[k])+'</td>').join('')+'<td>'+tend(k,inv)+'</td></tr>';
+      b='<div class="gwrap"><table class="db-tbl"><tr><th class="l"></th>'+L.map(m=>'<th>'+dbMes(m.mes)+(m.completo?'':' *')+'</th>').join('')+'<th>Tendência</th></tr>'+
+        tr('Vendas','vendas',dbN)+tr('Faturamento','fat',dbF0)+tr('Ticket médio','ticket',dbF)+tr('Tarifas ML','tarifas',dbF0,1)+tr('Frete vendedor','frete',dbF0,1)+tr('ADS','ads',dbF0,1)+tr('Lucro (apuração)','lucro',dbF0)+tr('Margem','margem',v=>dbP(v))+
+        tr('Visitas','visitas',dbN)+tr('Conversão','conv',v=>dbP(v,2))+tr('Anúncios ativos','ativos',dbN)+'</table></div>'+
+        '<div style="font-size:11px;color:#999;margin:4px 0 10px">Margem, frete e ADS vêm da Apuração do painel ('+L.map(m=>dbMes(m.mes)+': '+m.apuracao).join(' · ')+'). '+(L.some(m=>!m.completo)?'* mês com dias ainda sendo baixados. ':'')+'Anúncios ativos por mês: snapshot diário gravado desde '+(V.snapshotDesde?dbBr(V.snapshotDesde)+'/'+V.snapshotDesde.slice(0,4):'hoje')+'.</div>';
+      b+='<div class="db-tabs"><button class="db-tab'+(_dbAbaEv==='vis'?' on':'')+'" onclick="_dbAbaEv=\'vis\';renderDash()">Visitas × vendas</button><button class="db-tab'+(_dbAbaEv==='at'?' on':'')+'" onclick="_dbAbaEv=\'at\';renderDash()">Anúncios ativos × vendas</button></div>';
+      if(_dbAbaEv==='vis')b+=dbChart([{nome:'Visitas (eixo esq.)',cor:'#f5a623',valores:V.visDia.map(x=>x.vis)},{nome:'Vendas (eixo dir.)',cor:'#3483fa',eixo:'d',valores:V.visDia.map(x=>x.vendas)}],V.visDia.map(x=>dbBr(x.d)),{dual:1,h:200});
+      else b+=V.ativosDia.length>1?dbChart([{nome:'Anúncios ativos (eixo esq.)',cor:'#00a650',valores:V.ativosDia.map(x=>x.ativos)},{nome:'Vendas (eixo dir.)',cor:'#3483fa',eixo:'d',valores:V.ativosDia.map(x=>x.parcial?null:x.vendas)}],V.ativosDia.map(x=>dbBr(x.d)),{dual:1,h:200}):'<div class="db-erro">O histórico de anúncios ativos começou a ser gravado agora ('+dbN(V.ativosDia[0]?.ativos)+' ativos hoje) — o gráfico aparece a partir de amanhã.</div>';}
+    h+=dbSec('📊 Evolução da conta','últimos 3 meses fechados',b);}
+  // 9. cascata
+  {const C=r.cascata;let b='';
+    if(C.erro)b=dbErro(C);else{const fat=C.faturamento||1;
+      const passos=[['Faturamento',C.faturamento,'#3483fa',1],['(−) Cancelamentos/devoluções',-C.devolucao,'#e57373'],['(−) Tarifas do ML',-C.tarifas,'#e57373'],['(−) Frete do vendedor',-C.frete,'#e57373'],['(−) Impostos',-C.imposto,'#e57373'],['(−) Custo dos produtos',-C.cmv,'#e57373'],['(−) Embalagem',-C.embalagem,'#e57373'],['(−) ADS',-C.ads,'#e57373'],['= Margem de contribuição',C.margem,C.margem>=0?'#2e7d32':'#c62828',1]];
+      if(C.resultado!=null)passos.push(['(−) Despesas fixas (rateio ML)',-C.despesas.rateadoML,'#e57373'],['= Resultado',C.resultado,C.resultado>=0?'#2e7d32':'#c62828',1]);
+      let acc=0;b='<div class="db-cas">'+passos.map(([n,v,c,tot])=>{let ini,w;if(tot){ini=Math.min(0,v);w=Math.abs(v);acc=v;}else{ini=acc+v;w=-v;acc+=v;}
+        return '<div style="'+(tot?'font-weight:700':'')+'">'+n+'</div><div class="b"><div style="left:'+Math.max(0,ini/fat*100)+'%;width:'+Math.max(.3,w/fat*100)+'%;background:'+c+'"></div></div><div style="text-align:right;'+(tot?'font-weight:700':'')+'">'+dbF(v)+'</div><div class="p" style="color:#888;text-align:right">'+dbP(v/fat*100)+'</div>';}).join('')+'</div>'+
+        '<div style="font-size:11px;color:#999;margin-top:8px">Da Apuração do painel (Mercado Livre desta conta). '+(C.pedidosSemCusto?C.pedidosSemCusto+' de '+C.pedidos+' vendas sem custo no ERP (custo zero na conta). ':'')+
+        (C.despesas?.lancadas?'Despesas fixas da empresa '+dbF(C.despesas.empresa)+', rateadas pela participação do ML ('+dbP(C.despesas.partML)+').':'Sem despesas fixas lançadas no mês (DRE na aba Apuração → Lançamentos).')+'</div>';}
+    h+=dbSec('🧾 Do faturamento à margem',C.mes?dbMes(C.mes):'',b);}
+  // 10. destaques
+  {const T=r.destaques;let b='';
+    if(T.erro)b=dbErro(T);else{const li=(L,f)=>L.length?'<ul class="db-top5">'+L.map((x,i)=>'<li><span title="'+shpEsc(x.t)+'">'+(i+1)+'. <a href="https://produto.mercadolivre.com.br/'+shpEsc(String(x.id).replace(/^MLB/,'MLB-'))+'" target="_blank" style="color:inherit">'+shpEsc(x.t)+'</a></span><b style="white-space:nowrap">'+f(x)+'</b></li>').join('')+'</ul>':'<div class="db-erro">nenhum</div>';
+      b='<div class="db-grid db-g3"><div><div style="font-weight:700;font-size:12.5px;margin-bottom:4px">💰 Mais faturaram</div>'+li(T.faturaram,x=>dbF0(x.v))+'</div><div><div style="font-weight:700;font-size:12.5px;margin-bottom:4px">📦 Mais vendidos</div>'+li(T.vendidos,x=>dbN(x.q)+' un.')+'</div><div><div style="font-weight:700;font-size:12.5px;margin-bottom:4px">❌ Mais cancelamentos</div>'+li(T.cancelamentos,x=>dbN(x.cq)+' un. · '+dbF0(x.cv))+'</div></div>';}
+    h+=dbSec('🏆 Destaques do mês anterior',T.mes?dbMes(T.mes):'',b);}
+  // 11. perguntas
+  {const Q=r.perguntas;let b='';
+    if(Q.erro)b=dbErro(Q);else{const hr=v=>v==null?'—':v<1?Math.round(v*60)+' min':v.toLocaleString('pt-BR',{maximumFractionDigits:1})+' h';
+      b='<div class="db-grid db-g4">'+dbK('Sem resposta agora',dbN(Q.semResposta),Q.semRespostaErro?shpEsc(Q.semRespostaErro):'',Q.semResposta?'#e53935':'#43a047','fz')+
+        dbK('Respondidas no mês',dbN(Q.atual?.respondidas),Q.atual?'de '+dbN(Q.atual.recebidas)+' recebidas':'')+
+        dbK('Tempo médio de resposta',hr(Q.atual?.mediaHoras),'mês passado: '+hr(Q.anterior?.mediaHoras))+
+        dbK('Mês passado',dbN(Q.anterior?.respondidas),Q.anterior?'respondidas de '+dbN(Q.anterior.recebidas)+' recebidas':'')+'</div>';}
+    h+=dbSec('💬 Perguntas','',b);}
+  el('dash-box').innerHTML=h;
+}
+</script>
+
 </body></html>

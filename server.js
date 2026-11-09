@@ -1544,7 +1544,7 @@ app.post('/ml/item/:idx/:item/mercado-envios', async (req, res) => {
 app.get('/debug/ml-raw/:idx', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   const p = String(req.query.path || '');
-  if (!/^\/(items|products|users|shipments|orders|sites|seller-promotions|marketplace|post-purchase|packs|inventories|stock|billing|fulfillment|warehouse|categories|highlights|trends|messages)[\/?]/.test(p)) return res.status(400).json({ erro: 'path não permitido' });
+  if (!/^\/(items|products|users|shipments|orders|sites|seller-promotions|marketplace|post-purchase|packs|inventories|stock|billing|fulfillment|warehouse|categories|highlights|trends|messages|questions)[\/?]/.test(p)) return res.status(400).json({ erro: 'path não permitido' });
   try { res.json(await ml(parseInt(req.params.idx), p)); }
   catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
@@ -2218,6 +2218,7 @@ require('./tiny3')(app);
 require('./fornecedores').iniciar(); require('./fornecedores').rotas(app); // fornecedor por SKU (apuração por fornecedor)
 require('./nfe_shein')(app); // NF-e automática dos pedidos SHEIN no Bling
 require('./despesas')(app); // despesas fixas → DRE e ponto de equilíbrio
+require('./dashboard_ml')(app, { ml }); // Dashboard por conta do ML (só leitura)
 
 // Só as telas são públicas para quem está logado — nunca a pasta inteira (.env, tokens...)
 app.get('/', (req, res) => res.redirect('/painel.html'));

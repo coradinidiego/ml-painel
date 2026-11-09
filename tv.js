@@ -511,7 +511,7 @@ async function coletarEmpresa(emp, cfg, hoje, erros, aoParcial) {
     emp.erp === 'tiny' ? coletarTiny(cfg, hoje) : coletarBling(emp, cfg, hoje),
   ]);
   const atual = { ...ant, coletaMl };
-  if (rMl.status === 'fulfilled') Object.assign(atual, { ml: rMl.value, okMl: true });
+  if (rMl.status === 'fulfilled') Object.assign(atual, { ml: rMl.value, okMl: true, mlEm: Date.now() });
   else { erros[`${emp.nome} · Mercado Livre`] = rMl.reason?.response?.status === 401 ? 'token do ML expirado' : (rMl.reason?.message || 'erro'); console.warn('[tv] ML', emp.id, rMl.reason?.message); }
   if (rErp.status === 'fulfilled') {
     let erp = rErp.value.filter(l => l.canal !== 'Mercado Livre');
@@ -670,4 +670,6 @@ router.get('/diagnostico', (req, res) => {
   ${Object.keys(ESTADO.erros || {}).length ? `<p style="color:#c62828">Erros: ${esc(Object.entries(ESTADO.erros).map(([k, v]) => k + ': ' + v).join(' | '))}</p>` : ''}${blocos}`);
 });
 
-module.exports = { router, canalDe, agregar, prazo };
+// último retrato do ML por empresa (usado pelo Dashboard para não buscar de novo): { linhas, em }
+const ultimoMl = id => ULTIMAS[id]?.mlEm ? { linhas: ULTIMAS[id].ml, em: ULTIMAS[id].mlEm } : null;
+module.exports = { router, canalDe, agregar, prazo, ultimoMl };
