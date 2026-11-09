@@ -229,8 +229,8 @@ async function diario(idx) {
       V.mesAntMesmoPeriodo = await vis(mA + '-01', mA + '-' + String(diaA).padStart(2, '0'));
     } else { V.mesAteOntem = null; V.mesAntMesmoPeriodo = null; }
     // diário dos últimos 60 dias (a API agrupa por dia UTC)
-    const tw = await get(idx, `/users/${seller}/items_visits/time_window`, { last: 60, unit: 'day' });
-    V.dia = Object.fromEntries((tw.results || []).map(r => [String(r.date).slice(0, 10), r.total]));
+    try { const tw = await get(idx, `/users/${seller}/items_visits/time_window`, { last: 60, unit: 'day' });
+      V.dia = Object.fromEntries((tw.results || []).map(r => [String(r.date).slice(0, 10), r.total])); V.diaErro = null; } catch (e) { V.diaErro = msgErro(e); }
     V.em = new Date().toISOString(); V.erro = null;
   } catch (e) { P.visitas = { ...(P.visitas || { meses: {} }), erro: msgErro(e) }; }
   // perguntas do mês e do mês passado
