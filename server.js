@@ -2187,6 +2187,8 @@ app.post('/ml/item-criar/:idx', express.json({ limit: '2mb' }), async (req, res)
   try {
     const r = (await mlReq(idx, 'post', '/items' + (req.query.validar ? '/validate' : ''), item)).data;
     if (!req.query.validar && req.body.descricao && r?.id) { try { await mlReq(idx, 'post', '/items/' + r.id + '/description', { plain_text: String(req.body.descricao) }); } catch (e) { r._descErro = e.response?.data || e.message; } }
+    // regra do Diego: todo anúncio novo entra com Flex ativo (desligar só com flex:false no corpo)
+    if (!req.query.validar && r?.id && req.body.flex !== false) { try { await mlReq(idx, 'post', '/flex/sites/MLB/items/' + r.id + '/v2', {}); r._flex = true; } catch (e) { r._flex = e.response?.data || e.message; } }
     res.json({ ok: true, item: r });
   } catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
