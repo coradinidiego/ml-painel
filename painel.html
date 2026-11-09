@@ -4426,8 +4426,8 @@ function amGraficos(L,G){
   const pcs=v=>(v>=0?'+':'')+v.toFixed(1).replace('.',',')+'%';
   amCharts.dia=new Chart(el('amc-dia'),{type:'bar',data:{labels:dias.map(d=>d.slice(8,10)+'/'+d.slice(5,7)),datasets:ds},
     options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{boxWidth:12}},tooltip:{
-      filter:c=>c.raw!=null&&(c.dataset.type==='line'||Math.abs(c.raw)>=0.5),
-      itemSort:(a,b)=>(a.dataset.type==='line'?(a.dataset.label==='Total'?0:1):2)-(b.dataset.type==='line'?(b.dataset.label==='Total'?0:1):2),
+      filter:c=>c.raw!=null&&(ds[c.datasetIndex]?.type==='line'||Math.abs(c.raw)>=0.5),
+      itemSort:(a,b)=>{const o=x=>{const d=ds[x.datasetIndex]||{};return d.label==='Total'?0:d.label==='Mês anterior'?1:2;};return o(a)-o(b);},
       callbacks:{
       // Total do dia (faturamento e margem) · mês anterior · cada empresa aberta por marketplace
       label:c=>{const d=dias[c.dataIndex];
