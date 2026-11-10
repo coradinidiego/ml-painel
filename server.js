@@ -2174,7 +2174,7 @@ app.post('/ml/up-estoque/:idx', express.json(), async (req, res) => {
   try {
     let ver = null; try { ver = (await mlReq(idx, 'get', '/user-products/' + up + '/stock')).headers['x-version']; } catch (e) { if (e.response?.status !== 404) throw e; }
     const loja = String(req.body?.store_id || '');   // vendedor multi-depósito: estoque no depósito (store_id); senão, selling_address
-    const r = loja ? await mlReq(idx, 'put', '/user-products/' + up + '/stock/type/seller_warehouse', { locations: [{ store_id: loja, quantity: q }] }, ver ? { 'x-version': ver } : {})
+    const r = loja ? await mlReq(idx, 'put', '/user-products/' + up + '/stock/type/seller_warehouse', { locations: [{ store_id: loja, network_node_id: String(req.body?.network_node_id || ''), quantity: q }] }, ver ? { 'x-version': ver } : {})
                    : await mlReq(idx, 'put', '/user-products/' + up + '/stock/type/selling_address', { quantity: q }, ver ? { 'x-version': ver } : {});
     res.json({ ok: true, resposta: r.data });
   } catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
