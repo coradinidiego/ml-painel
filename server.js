@@ -1544,7 +1544,7 @@ app.post('/ml/item/:idx/:item/mercado-envios', async (req, res) => {
 app.get('/debug/ml-raw/:idx', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   const p = String(req.query.path || '');
-  if (!/^\/(items|products|users|shipments|orders|sites|seller-promotions|marketplace|post-purchase|packs|inventories|stock|billing|fulfillment|warehouse|categories|highlights|trends|messages|questions)[\/?]/.test(p)) return res.status(400).json({ erro: 'path não permitido' });
+  if (!/^\/(items|products|users|shipments|orders|sites|seller-promotions|marketplace|post-purchase|packs|inventories|stock|billing|fulfillment|warehouse|categories|highlights|trends|messages|questions|user-products)[\/?]/.test(p)) return res.status(400).json({ erro: 'path não permitido' });
   try { res.json(await ml(parseInt(req.params.idx), p)); }
   catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
@@ -2165,6 +2165,17 @@ app.post('/ml/mensagem/:idx', express.json(), async (req, res) => {
   if (!/^\/messages\/packs\/\d+\/sellers\/\d+/.test(p)) return res.status(400).json({ erro: 'path não permitido' });
   try { const r = await mlReq(parseInt(req.params.idx), 'post', p, req.body.body); res.json({ ok: true, resposta: r.data }); }
   catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
+});
+// Admin: estoque de anúncio "user product" (vendedor multi-depósito, onde available_quantity é ignorado). POST /ml/up-estoque/0 {up:'MLBU..', quantidade}
+app.post('/ml/up-estoque/:idx', express.json(), async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const idx = parseInt(req.params.idx), up = String(req.body?.up || ''), q = parseInt(req.body?.quantidade);
+  if (!/^MLBU\d+$/.test(up) || !(q >= 0)) return res.status(400).json({ erro: 'up/quantidade' });
+  try {
+    const g = await mlReq(idx, 'get', '/user-products/' + up + '/stock');
+    const r = await mlReq(idx, 'put', '/user-products/' + up + '/stock/type/selling_address', { quantity: q }, { 'x-version': g.headers['x-version'] });
+    res.json({ ok: true, resposta: r.data });
+  } catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
 require('./full')(app, { ml }); // envio para o Full: reposição, novos e parados
 require('./apuracao_mkt').setFontes({ ml }); // apuração: ML direto da API
