@@ -115,14 +115,29 @@ async function verificarPerguntas() {
 const STATUS_SHP = { UNPAID: 'aguardando pagamento', READY_TO_SHIP: 'a enviar', PROCESSED: 'processado (a enviar)', SHIPPED: 'enviado', TO_CONFIRM_RECEIVE: 'entregue (aguardando confirmação)', COMPLETED: 'concluído', IN_CANCEL: 'em cancelamento', CANCELLED: 'cancelado', TO_RETURN: 'em devolução', INVOICE_PENDING: 'aguardando NF' };
 const corta = (t, n) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 const hhmm = ms => new Date(ms).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-const cacheItemShp = {};
+const TIPO_SHP = { image_with_text: '[imagem com texto]', image: '[imagem]', video: '[vídeo]', sticker: '[figurinha]', bundle_message: '[mensagens agrupadas]', faq_liveagent: '[pediu para falar com o vendedor]' };
+const cacheItemShp = {}, cachePedShp = {};
+// pedidos dos últimos 15 dias da loja (cache de 10 min), para achar o pedido do cliente quando o chat não traz o cartão
+async function pedidosLojaShp(sp) {
+  const c = cachePedShp[sp.CHAVE];
+  if (c && Date.now() - c.em < 10 * 60000) return c.lista;
+  const lista = await sp.listarPedidos(15);
+  cachePedShp[sp.CHAVE] = { em: Date.now(), lista };
+  return lista;
+}
 async function contextoChatShopee(sp, c) {
   let msgs = [];
-  try { msgs = await sp.mensagens(c.id, 50); } catch (e) { return ''; }
-  if (!msgs.length) return '';
+  try { msgs = await sp.mensagens(c.id, 50); } catch (e) {}
   const partes = [];
   // pedido e produto mais recentes citados na conversa (cartões que a Shopee anexa)
-  const pedido = [...msgs].reverse().find(m => m.pedido)?.pedido;
+  let pedido = [...msgs].reverse().find(m => m.pedido)?.pedido;
+  // a API da Shopee não devolve o histórico de algumas conversas: procura o pedido mais recente do cliente
+  if (!pedido) {
+    try {
+      const ped = (await pedidosLojaShp(sp)).find(o => String(o.buyer_user_id) === String(c.cliente_id) || (o.buyer_username && o.buyer_username === c.cliente));
+      if (ped) pedido = ped.order_sn;
+    } catch (e) {}
+  }
   const itemId = [...msgs].reverse().find(m => m.item)?.item;
   if (pedido) {
     try {
@@ -147,9 +162,10 @@ async function contextoChatShopee(sp, c) {
     partes.push('📦 <b>Produto:</b> ' + esc(corta(nome || ('item ' + itemId), 90)) + (nome ? ' <i>(' + itemId + ')</i>' : ''));
   }
   // últimas mensagens de texto/imagem (ignora cartões), para entender o assunto
-  const rotulo = { image: '[imagem]', video: '[vídeo]', sticker: '[figurinha]', return_refund_card: '[pedido de devolução]' };
+  const rotulo = { ...TIPO_SHP, return_refund_card: '[pedido de devolução]' };
   const hist = msgs.filter(m => m.texto || rotulo[m.tipo]).slice(-8);
-  if (hist.length) {
+  if (!msgs.length) partes.push('<i>(a Shopee não liberou o histórico deste chat — abra no app para ver as mensagens)</i>');
+  else if (hist.length) {
     partes.push('🗨️ <b>Conversa:</b>\n' + hist.map(m => {
       const quem = String(m.de) === String(c.cliente_id) ? '👤' : '🏪';
       return quem + ' <i>' + hhmm(m.quando) + '</i> ' + esc(corta(m.texto || rotulo[m.tipo], 200));
@@ -179,7 +195,7 @@ async function verificarChatShopee() {
         const ctx = await contextoChatShopee(sp, c);
         const msg = (lembrete ? '⏰ <b>Lembrete: chat Shopee sem resposta há '+minutos(c.quando)+' min - '+esc(sp.nome)+'</b>' : '🛍️ <b>Nova mensagem no chat Shopee - '+esc(sp.nome)+'</b>')+'\n\n'+
           '👤 <b>Cliente:</b> '+esc(c.cliente)+'\n'+
-          '💬 <b>Mensagem:</b> '+esc(c.texto || '['+c.tipo+']')+'\n\n'+
+          '💬 <b>Mensagem:</b> '+esc(c.texto || TIPO_SHP[c.tipo] || '['+c.tipo+']')+'\n\n'+
           (ctx ? ctx+'\n\n' : '')+
           '<i>Responda esta mensagem para enviar a resposta ao cliente na Shopee.</i>\n'+
           '🔑 <code>SCHAT:'+k+':'+c.id+'|TO:'+c.cliente_id+'</code>';

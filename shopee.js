@@ -163,7 +163,7 @@ async function listarPedidos(dias = 15) {
   for (let i = 0; i < sns.length; i += 50) {
     const d = await shopeeGet('/api/v2/order/get_order_detail', {
       order_sn_list: sns.slice(i, i + 50).join(','),
-      response_optional_fields: 'buyer_username,pay_time,item_list,total_amount,shipping_carrier,ship_by_date',
+      response_optional_fields: 'buyer_user_id,buyer_username,pay_time,item_list,total_amount,shipping_carrier,ship_by_date',
     });
     out.push(...(d.response?.order_list || []));
   }
@@ -242,7 +242,7 @@ async function listarConversas(dias = 30, max = 300) {
       out.push({
         id: String(c.conversation_id), cliente_id: c.to_id, cliente: c.to_name, avatar: c.to_avatar,
         naoLidas: c.unread_count || 0, quando: ts, tipo: c.latest_message_type, ultimaMsgId: String(c.latest_message_id || ''),
-        texto: c.latest_message_content?.text || ({ product: '[cliente abriu o chat por um produto]', item: '[cliente abriu o chat por um produto]', return_refund_card: '[pedido de devolução/reembolso]', order: '[cartão de pedido]', image: '[imagem]', sticker: '[figurinha]', video: '[vídeo]' }[c.latest_message_type] || (c.latest_message_type && c.latest_message_type !== 'text' ? '[' + c.latest_message_type + ']' : '')),
+        texto: c.latest_message_content?.text || ({ product: '[cliente abriu o chat por um produto]', item: '[cliente abriu o chat por um produto]', return_refund_card: '[pedido de devolução/reembolso]', order: '[cartão de pedido]', image: '[imagem]', image_with_text: '[imagem com texto]', sticker: '[figurinha]', video: '[vídeo]' }[c.latest_message_type] || (c.latest_message_type && c.latest_message_type !== 'text' ? '[' + c.latest_message_type + ']' : '')),
         // última mensagem é do cliente; só o "cartão do produto" (cliente abriu o chat e não escreveu) não conta
         pendente: String(c.latest_message_from_id) === String(c.to_id) && !['product', 'item', 'order', 'return_refund_card'].includes(c.latest_message_type),   // cartão de pedido sozinho = cliente só abriu o chat pelo pedido   // cartão de devolução é automático: a devolução vai pelo pós-venda
         soAbriu: String(c.latest_message_from_id) === String(c.to_id) && ['product', 'item', 'order'].includes(c.latest_message_type),
