@@ -111,6 +111,53 @@ async function verificarPerguntas() {
   }
 }
 
+// Contexto da conversa da Shopee para o aviso: últimas mensagens, produto e pedido citados no chat
+const STATUS_SHP = { UNPAID: 'aguardando pagamento', READY_TO_SHIP: 'a enviar', PROCESSED: 'processado (a enviar)', SHIPPED: 'enviado', TO_CONFIRM_RECEIVE: 'entregue (aguardando confirmação)', COMPLETED: 'concluído', IN_CANCEL: 'em cancelamento', CANCELLED: 'cancelado', TO_RETURN: 'em devolução', INVOICE_PENDING: 'aguardando NF' };
+const corta = (t, n) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+const hhmm = ms => new Date(ms).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const cacheItemShp = {};
+async function contextoChatShopee(sp, c) {
+  let msgs = [];
+  try { msgs = await sp.mensagens(c.id, 50); } catch (e) { return ''; }
+  if (!msgs.length) return '';
+  const partes = [];
+  // pedido e produto mais recentes citados na conversa (cartões que a Shopee anexa)
+  const pedido = [...msgs].reverse().find(m => m.pedido)?.pedido;
+  const itemId = [...msgs].reverse().find(m => m.item)?.item;
+  if (pedido) {
+    try {
+      const d = await sp.shopeeGet('/api/v2/order/get_order_detail', { order_sn_list: pedido, response_optional_fields: 'item_list,order_status,total_amount' });
+      const o = d.response?.order_list?.[0];
+      if (o) {
+        const itens = (o.item_list || []).map(i => (i.model_quantity_purchased || 1) + 'x ' + corta(i.item_name, 60) + (i.model_name ? ' (' + corta(i.model_name, 30) + ')' : ''));
+        partes.push('🧾 <b>Pedido:</b> ' + esc(pedido) + ' — ' + esc(STATUS_SHP[o.order_status] || o.order_status || '') + (o.total_amount != null ? ' — R$ ' + Number(o.total_amount).toFixed(2).replace('.', ',') : '') +
+          (itens.length ? '\n' + itens.map(t => '   • ' + esc(t)).join('\n') : ''));
+      } else partes.push('🧾 <b>Pedido:</b> ' + esc(pedido));
+    } catch (e) { partes.push('🧾 <b>Pedido:</b> ' + esc(pedido)); }
+  }
+  if (itemId) {
+    let nome = cacheItemShp[sp.CHAVE + ':' + itemId];
+    if (!nome) {
+      try {
+        const d = await sp.shopeeGet('/api/v2/product/get_item_base_info', { item_id_list: String(itemId) });
+        nome = d.response?.item_list?.[0]?.item_name;
+        if (nome) cacheItemShp[sp.CHAVE + ':' + itemId] = nome;
+      } catch (e) {}
+    }
+    partes.push('📦 <b>Produto:</b> ' + esc(corta(nome || ('item ' + itemId), 90)) + (nome ? ' <i>(' + itemId + ')</i>' : ''));
+  }
+  // últimas mensagens de texto/imagem (ignora cartões), para entender o assunto
+  const rotulo = { image: '[imagem]', video: '[vídeo]', sticker: '[figurinha]', return_refund_card: '[pedido de devolução]' };
+  const hist = msgs.filter(m => m.texto || rotulo[m.tipo]).slice(-8);
+  if (hist.length) {
+    partes.push('🗨️ <b>Conversa:</b>\n' + hist.map(m => {
+      const quem = String(m.de) === String(c.cliente_id) ? '👤' : '🏪';
+      return quem + ' <i>' + hhmm(m.quando) + '</i> ' + esc(corta(m.texto || rotulo[m.tipo], 200));
+    }).join('\n'));
+  }
+  return partes.join('\n\n');
+}
+
 // Chat da Shopee (todas as lojas conectadas): avisa conversas em que o cliente escreveu e ainda não respondemos
 async function verificarChatShopee() {
   let shopee;
@@ -129,9 +176,11 @@ async function verificarChatShopee() {
         const novaMsg = !a || a.msg !== c.ultimaMsgId;          // cliente mandou outra mensagem → avisa de novo
         if (!novaMsg && !precisaLembrete(a)) continue;
         const lembrete = !novaMsg;
+        const ctx = await contextoChatShopee(sp, c);
         const msg = (lembrete ? '⏰ <b>Lembrete: chat Shopee sem resposta há '+minutos(c.quando)+' min - '+esc(sp.nome)+'</b>' : '🛍️ <b>Nova mensagem no chat Shopee - '+esc(sp.nome)+'</b>')+'\n\n'+
           '👤 <b>Cliente:</b> '+esc(c.cliente)+'\n'+
           '💬 <b>Mensagem:</b> '+esc(c.texto || '['+c.tipo+']')+'\n\n'+
+          (ctx ? ctx+'\n\n' : '')+
           '<i>Responda esta mensagem para enviar a resposta ao cliente na Shopee.</i>\n'+
           '🔑 <code>SCHAT:'+k+':'+c.id+'|TO:'+c.cliente_id+'</code>';
         await sendTelegram(msg);
