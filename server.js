@@ -2166,14 +2166,16 @@ app.post('/ml/mensagem/:idx', express.json(), async (req, res) => {
   try { const r = await mlReq(parseInt(req.params.idx), 'post', p, req.body.body); res.json({ ok: true, resposta: r.data }); }
   catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
-// Admin: estoque de anúncio "user product" (vendedor multi-depósito, onde available_quantity é ignorado). POST /ml/up-estoque/0 {up:'MLBU..', quantidade}
+// Admin: estoque de anúncio "user product" (vendedor multi-depósito, onde available_quantity é ignorado). POST /ml/up-estoque/0 {up:'MLBU..', quantidade, store_id?}
 app.post('/ml/up-estoque/:idx', express.json(), async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   const idx = parseInt(req.params.idx), up = String(req.body?.up || ''), q = parseInt(req.body?.quantidade);
   if (!/^MLBU\d+$/.test(up) || !(q >= 0)) return res.status(400).json({ erro: 'up/quantidade' });
   try {
-    const g = await mlReq(idx, 'get', '/user-products/' + up + '/stock');
-    const r = await mlReq(idx, 'put', '/user-products/' + up + '/stock/type/selling_address', { quantity: q }, { 'x-version': g.headers['x-version'] });
+    let ver = null; try { ver = (await mlReq(idx, 'get', '/user-products/' + up + '/stock')).headers['x-version']; } catch (e) { if (e.response?.status !== 404) throw e; }
+    const loja = String(req.body?.store_id || '');   // vendedor multi-depósito: estoque no depósito (store_id); senão, selling_address
+    const r = loja ? await mlReq(idx, 'put', '/user-products/' + up + '/stock/type/seller_warehouse', { locations: [{ store_id: loja, quantity: q }] }, ver ? { 'x-version': ver } : {})
+                   : await mlReq(idx, 'put', '/user-products/' + up + '/stock/type/selling_address', { quantity: q }, ver ? { 'x-version': ver } : {});
     res.json({ ok: true, resposta: r.data });
   } catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
