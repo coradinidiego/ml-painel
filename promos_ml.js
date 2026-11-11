@@ -31,8 +31,10 @@ const ENTRA = {
   // relâmpago: reserva unidades para a oferta (stock entre o mínimo e o máximo que o ML pede)
   SMART_LIGHTNING: o => ({ promotion_id: o.id, promotion_type: o.tipo, offer_id: o.ref, stock: o.qtd }),
   LIGHTNING: o => ({ promotion_id: o.id, promotion_type: o.tipo, deal_price: o.preco, stock: o.qtd }),
-  PRICE_DISCOUNT: o => ({ promotion_type: 'PRICE_DISCOUNT', deal_price: o.preco, start_date: new Date().toISOString().slice(0, 19), finish_date: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 19) }),
+  PRICE_DISCOUNT: o => ({ promotion_type: 'PRICE_DISCOUNT', deal_price: o.preco, start_date: horaBR(), finish_date: horaBR(Date.now() + 30 * 864e5) }),
 };
+// data no horário de Brasília sem fuso (formato que o ML pede nas promoções): 2026-11-11T09:20:00
+const horaBR = (t = Date.now()) => new Date(t - 3 * 3600e3).toISOString().slice(0, 19);
 const EDITA = new Set(['DEAL', 'SELLER_CAMPAIGN', 'PRICE_DISCOUNT']);   // promoções com preço escolhido pelo vendedor
 const IGNORAR = new Set(['SELLER_COUPON_CAMPAIGN', 'VOLUME']);   // cupom e "leve mais" não mudam o preço do anúncio
 const STATUS = { candidate: 'disponível', pending: 'programada', started: 'ativa' };
@@ -207,7 +209,8 @@ async function editar(idx, itemId, i, preco) {
   if (!o.podeEditar) throw new Error('esta promoção não dá para editar pelo painel (' + o.tipoNome + ')');
   const p = precoEscolhido(o, preco);
   const body = o.tipo === 'PRICE_DISCOUNT'
-    ? { promotion_type: 'PRICE_DISCOUNT', deal_price: p, ...(o.inicio && o.status === 'pending' ? { start_date: String(o.inicio).slice(0, 19) } : {}), ...(o.fim ? { finish_date: String(o.fim).slice(0, 19) } : {}) }
+    // o ML exige as duas datas, no horário local (sem fuso); desconto já ativo: começa agora e mantém o fim
+    ? { promotion_type: 'PRICE_DISCOUNT', deal_price: p, start_date: o.status === 'pending' && o.inicio ? String(o.inicio).slice(0, 19) : horaBR(), finish_date: o.fim ? String(o.fim).slice(0, 19) : horaBR(Date.now() + 30 * 864e5) }
     : { promotion_id: o.id, promotion_type: o.tipo, deal_price: p };
   const r = await F.mlReq(idx, 'put', '/seller-promotions/items/' + itemId + '?app_version=v2', body);
   const d = F.dados()[idx], it = [...(d?.semPromo || []), ...(d?.comPromo || [])].find(y => y.id === itemId);
