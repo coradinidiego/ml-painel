@@ -2244,7 +2244,6 @@ require('./tiny3')(app);
 require('./fornecedores').iniciar(); require('./fornecedores').rotas(app); // fornecedor por SKU (apuração por fornecedor)
 require('./nfe_shein')(app); // NF-e automática dos pedidos SHEIN no Bling
 require('./nfe_rejeitadas')(app); // NF-e rejeitadas: corrige bairro/município pelo CEP e retransmite
-require('./nfe_shopee')(app); // Shopee: NF-e autorizada no Bling e pendente na Shopee → manda a nota e organiza o envio
 require('./despesas')(app); // despesas fixas → DRE e ponto de equilíbrio
 require('./dashboard_ml')(app, { ml }); // Dashboard por conta do ML (só leitura)
 

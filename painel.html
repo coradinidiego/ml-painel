@@ -378,7 +378,6 @@ body.pm-tipjs .pm-hastip:hover .pm-tip,body.pm-tipjs .pm-hastip:focus .pm-tip{di
   <div id="ini-pv" class="rbox" style="display:none;margin-top:14px"></div>
   <div id="ini-nfe" style="margin-top:10px"></div>
   <div id="ini-nfr" style="margin-top:10px"></div>
-  <div id="ini-nfs" style="margin-top:10px"></div>
   <p style="font-size:12px;color:#888;margin:8px 0 18px">Clique em um número para abrir a lista. Perguntas e chats são conferidos a cada 5 min; o estoque, a cada 30 min. </p>
 
   <div class="section" id="ini-est">
@@ -775,7 +774,7 @@ let _nfe=null,_nfeAberto=false;
 async function iniNfe(){_nfe=await fetch('/nfe-shein').then(r=>r.json()).catch(()=>null);renderNfe();iniNfr();}
 // ── NF-e rejeitadas (Bling): bairro vazio / município errado → corrige pelo CEP e retransmite ──
 let _nfr=null,_nfrAberto=false;
-async function iniNfr(){_nfr=await fetch('/nfe-rejeitadas').then(r=>r.json()).catch(()=>null);renderNfr();iniNfs();}
+async function iniNfr(){_nfr=await fetch('/nfe-rejeitadas').then(r=>r.json()).catch(()=>null);renderNfr();}
 function renderNfr(){
   const r=_nfr;if(!r||!el('ini-nfr'))return;const L=(r.lista||[]).filter(x=>x.id),er=(r.lista||[]).filter(x=>x.erro),H=r.hist||[],cor=L.filter(x=>x.novo),out=L.filter(x=>!x.novo);
   const br=d=>d?String(d).slice(0,10).split('-').reverse().join('/'):'';
@@ -791,24 +790,6 @@ function renderNfr(){
 async function nfrCorrigir(b,emp,id){if(!confirm('Corrigir o endereço desta nota pelo CEP e transmitir para a SEFAZ?'))return;b.disabled=true;b.textContent='Corrigindo...';const r=await fetch('/nfe-rejeitadas/corrigir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emp,id})}).then(r=>r.json()).catch(e=>({erro:e.message}));alert(r.ok?'NF-e '+(r.nota||'')+' corrigida e autorizada ✅':'Resultado: '+(r.situacao||'')+(r.erro?' — '+r.erro:''));iniNfr();}
 async function nfrModo(m){if(m==='auto'&&!confirm('Ligar a correção automática? A cada 15 min o painel corrige pelo CEP o bairro/município das NF-e rejeitadas e retransmite.'))return;await fetch('/nfe-rejeitadas/modo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modo:m})});iniNfr();}
 async function nfrAtualizar(){el('ini-nfr').style.opacity=.5;await fetch('/nfe-rejeitadas/atualizar',{method:'POST'});el('ini-nfr').style.opacity=1;iniNfr();}
-// ── NF-e Shopee (Bling): nota autorizada no Bling e pendente na Shopee → manda a nota e organiza o envio ──
-let _nfs=null,_nfsAberto=false;
-async function iniNfs(){_nfs=await fetch('/nfe-shopee').then(r=>r.json()).catch(()=>null);renderNfs();}
-function renderNfs(){
-  const r=_nfs;if(!r||!el('ini-nfs'))return;const L=(r.lista||[]).filter(x=>x.sn),er=(r.lista||[]).filter(x=>x.erroLoja),H=r.hist||[],aut=L.filter(x=>x.autorizada);
-  const fm=v=>'R$ '+(+v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}),dt=t=>t?new Date(t).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}):'';
-  let h='<div style="background:white;border:1px solid #eee;border-radius:10px;padding:10px 16px;font-size:13px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;cursor:pointer" onclick="_nfsAberto=!_nfsAberto;renderNfs()">🧾 <b>NF-e Shopee (Bling)</b> <span style="color:'+(aut.length?'#e65100':'#2e7d32')+'">'+aut.length+' nota(s) autorizada(s) sem upload na Shopee</span>'+(L.length-aut.length?' <span style="color:#888">· '+(L.length-aut.length)+' aguardando nota no Bling</span>':'')+'<span style="margin-left:auto;font-size:12px;color:#888">Modo: <b>'+(r.modo==='auto'?'automático (a cada 15 min)':'manual')+'</b> '+(_nfsAberto?'▲':'▼')+'</span></div>';
-  if(_nfsAberto){
-    h+='<div style="margin:8px 0;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="nfsModo(\''+(r.modo==='auto'?'manual':'auto')+'\')">'+(r.modo==='auto'?'⏸ Voltar para manual':'▶ Ligar envio automático')+'</button><button class="btn" onclick="nfsAtualizar()">↺ Atualizar lista</button><span style="font-size:11px;color:#888;align-self:center">Lista: '+dt(r.listadoEm)+'. Pedido Shopee “a enviar” com NF-e pendente lá e nota autorizada no Bling: manda a nota à Shopee (depois de '+(r.espera||15)+' min da emissão) e organiza o envio (coleta no horário recomendado). Só Zagodini e Com Amor de Mãe.</span></div>';
-    if(er.length)h+='<div style="color:#c62828;font-size:12px">'+er.map(x=>x.empresa+': '+shpEsc(x.erroLoja)).join('<br>')+'</div>';
-    h+=L.length?'<table class="tbl" style="width:100%;font-size:12px"><tr><th style="text-align:left">Empresa</th><th style="text-align:left">Pedido Shopee</th><th style="text-align:left">Bling</th><th>Data</th><th style="text-align:left">Cliente</th><th>Total</th><th style="text-align:left">Situação</th><th></th></tr>'+L.map(x=>'<tr><td>'+x.empresa+'</td><td>'+shpEsc(x.sn)+'</td><td>'+(x.pedido||'—')+(x.numeroNota?' · NF '+x.numeroNota:'')+'</td><td>'+dt(x.criado)+'</td><td>'+shpEsc(x.cliente||'')+'</td><td style="text-align:right">'+fm(x.total)+'</td><td style="text-align:left;color:'+(x.autorizada?'#e65100':'#888')+'">'+shpEsc(x.motivo||'')+'</td><td>'+(x.autorizada?'<button class="btn" style="padding:2px 10px;font-size:11px" onclick="nfsEnviar(this,\''+x.loja+'\',\''+x.sn+'\')">Enviar NF-e e organizar</button>':'')+'</td></tr>').join('')+'</table>':'<div style="color:#2e7d32;font-size:12px">Nenhum pedido da Shopee com NF-e pendente.</div>';
-    if(H.length)h+='<div style="margin-top:10px;font-size:12px;font-weight:600">Últimos envios</div><table class="tbl" style="width:100%;font-size:11px">'+H.slice(0,15).map(x=>'<tr><td>'+dt(x.em)+'</td><td>'+x.empresa+'</td><td>'+shpEsc(x.sn)+(x.numeroNota?' · NF '+x.numeroNota:'')+'</td><td style="color:'+(x.ok?'#2e7d32':'#c62828')+'">'+(x.ok?'✅ ':'')+shpEsc(x.situacao||'')+(x.erro?': '+shpEsc(x.erro):'')+'</td><td style="color:#999">'+shpEsc(x.por||'')+'</td></tr>').join('')+'</table>';
-  }
-  el('ini-nfs').innerHTML=h+'</div>';
-}
-async function nfsEnviar(b,loja,sn){if(!confirm('Mandar a NF-e deste pedido para a Shopee e organizar o envio (coleta)?'))return;b.disabled=true;b.textContent='Enviando...';const r=await fetch('/nfe-shopee/enviar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({loja,sn})}).then(r=>r.json()).catch(e=>({erro:e.message}));alert((r.ok?'✅ ':'')+(r.situacao||'')+(r.erro?' — '+r.erro:''));iniNfs();}
-async function nfsModo(m){if(m==='auto'&&!confirm('Ligar o envio automático? A cada 15 min o painel manda à Shopee a NF-e autorizada no Bling dos pedidos com nota pendente lá e organiza o envio.'))return;await fetch('/nfe-shopee/modo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modo:m})});iniNfs();}
-async function nfsAtualizar(){el('ini-nfs').style.opacity=.5;await fetch('/nfe-shopee/atualizar',{method:'POST'});el('ini-nfs').style.opacity=1;iniNfs();}
 function renderNfe(){
   const r=_nfe;if(!r)return;const P=r.pendentes||[],ok=P.filter(x=>x.id),er=P.filter(x=>x.erro),H=r.hist||[];
   const fm=v=>'R$ '+(+v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}),br=d=>d?String(d).slice(0,10).split('-').reverse().join('/'):'';
