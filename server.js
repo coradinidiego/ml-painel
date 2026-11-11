@@ -344,6 +344,10 @@ async function carregarConta(idx) {
         // Frete grátis do ML só vale de R$ 19 para cima (fora do Full): baixar para menos de R$ 19 tira o frete grátis
         // do seu anúncio e ele continua perdendo — o ML não considera isso no price_to_win.
         const LIM19 = 19;
+        // a v1 do price_to_win não traz os boosts do ganhador: abaixo de R$ 19 busca na v2 para saber se ele tem frete grátis
+        if (!meusB.fulfillment && ptw.price_to_win > 0 && ptw.price_to_win < LIM19 && !Object.keys(ganB).length) {
+          try { const p2 = await ml(idx, '/items/' + catIds[i] + '/price_to_win', { siteId: 'MLB', version: 'v2' }); ganB = Object.fromEntries(normB(p2.winner?.boosts).map(x => [x.id, x.on])); } catch (e5) { ganB = { free_shipping: true }; }
+        }
         if (!meusB.fulfillment && ptw.price_to_win > 0 && ptw.price_to_win < LIM19 && ganB.free_shipping) {   // (se o ganhador também não tem frete grátis, o preço ainda pode resolver)
           it.abaixo19 = true; it.preco_nao_resolve = true;
           it.vantagens_ganhador = [ptw.current_price >= LIM19 ? 'o ML pede ' + String(ptw.price_to_win.toFixed(2)).replace('.', ',') + ', mas abaixo de R$ 19 você perde o Frete grátis' : 'abaixo de R$ 19 você já perdeu o Frete grátis'].concat(ganB.fulfillment ? ['o ganhador é Full (mantém o frete grátis abaixo de R$ 19)'] : []);
