@@ -214,15 +214,8 @@ async function editar(idx, itemId, i, preco) {
     : { promotion_id: o.id, promotion_type: o.tipo, deal_price: p };
   let r;
   if (o.tipo === 'PRICE_DISCOUNT') {
-    // o ML não aceita PUT no desconto próprio: apaga e cria de novo com o preço novo (mesmo fim); se falhar, volta o anterior
-    const url = '/seller-promotions/items/' + itemId + '?app_version=v2';
-    await F.mlReq(idx, 'delete', url + '&promotion_type=PRICE_DISCOUNT');
-    await new Promise(z => setTimeout(z, 1500));
-    try { r = await F.mlReq(idx, 'post', url, body); }
-    catch (e) {
-      if (o.status === 'started' && o.preco) try { await F.mlReq(idx, 'post', url, { ...body, deal_price: o.preco }); } catch (e2) {}
-      throw e;
-    }
+    // o ML não aceita PUT no desconto próprio ("Invalid promotion type"): um novo POST substitui o preço
+    r = await F.mlReq(idx, 'post', '/seller-promotions/items/' + itemId + '?app_version=v2', body);
   } else r = await F.mlReq(idx, 'put', '/seller-promotions/items/' + itemId + '?app_version=v2', body);
   const d = F.dados()[idx], it = [...(d?.semPromo || []), ...(d?.comPromo || [])].find(y => y.id === itemId);
   if (it) {
