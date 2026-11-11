@@ -152,7 +152,9 @@ module.exports = function montar(app, ctx) {
   // Tiny: códigos/GTIN da lista de produtos (1x por dia) + saldo por produto, só dos SKUs anunciados.
   // Depois só busca o que mudou (lista.atualizacoes.estoque). Tudo guardado em disco.
   const TINY = lerJson(ARQ_TINY, { codigos: {}, codTs: 0, saldos: {}, ultimaAtualizacao: null, cheio: 0 });
-  const brDataHora = d => { const p = n => String(n).padStart(2, '0'); return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+  // horário de Brasília (o servidor roda em UTC; o Tiny entende a data como hora de Brasília)
+  const brDataHora = d0 => { const d = new Date(d0.getTime() - 3 * 3600e3), p = n => String(n).padStart(2, '0'); return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`; };
+  if (!TINY.fusoOk) { TINY.cheio = 0; TINY.fusoOk = true; }   // antes a data ia em UTC (3 h adiantada) e perdia as mudanças recentes: refaz tudo uma vez
   async function erpTiny(skusAnunciados, prog = () => {}) {
     const tiny = require('./tiny');
     if (!Object.keys(TINY.codigos).length || Date.now() - TINY.codTs > 24 * 3600e3) {
