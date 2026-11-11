@@ -2228,7 +2228,7 @@ app.post('/ml/item-criar/:idx', express.json({ limit: '2mb' }), async (req, res)
 app.post('/bling/post/:idx', express.json({ limit: '1mb' }), async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   const p = String(req.body?.path || ''); if (!/^\/produtos\//.test(p)) return res.status(400).json({ erro: 'path não permitido' });
-  try { const r = await bling.client(parseInt(req.params.idx))[req.body.metodo === 'put' ? 'put' : 'post'](p, req.body.data || {}); res.json({ ok: true, status: r.status, data: r.data }); }
+  try { const r = await bling.client(parseInt(req.params.idx))[['put', 'patch'].includes(req.body.metodo) ? req.body.metodo : 'post'](p, req.body.data || {}); res.json({ ok: true, status: r.status, data: r.data }); }
   catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
 // Admin: cria (POST) ou altera (PUT) produto no Bling v3. /bling/produto/1  { id?, produto }
