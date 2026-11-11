@@ -212,7 +212,18 @@ async function editar(idx, itemId, i, preco) {
     // o ML exige as duas datas, no horário local (sem fuso); desconto já ativo: começa agora e mantém o fim
     ? { promotion_type: 'PRICE_DISCOUNT', deal_price: p, start_date: o.status === 'pending' && o.inicio ? String(o.inicio).slice(0, 19) : horaBR(), finish_date: o.fim ? String(o.fim).slice(0, 19) : horaBR(Date.now() + 30 * 864e5) }
     : { promotion_id: o.id, promotion_type: o.tipo, deal_price: p };
-  const r = await F.mlReq(idx, 'put', '/seller-promotions/items/' + itemId + '?app_version=v2', body);
+  let r;
+  if (o.tipo === 'PRICE_DISCOUNT') {
+    // o ML não aceita PUT no desconto próprio: apaga e cria de novo com o preço novo (mesmo fim); se falhar, volta o anterior
+    const url = '/seller-promotions/items/' + itemId + '?app_version=v2';
+    await F.mlReq(idx, 'delete', url + '&promotion_type=PRICE_DISCOUNT');
+    await new Promise(z => setTimeout(z, 1500));
+    try { r = await F.mlReq(idx, 'post', url, body); }
+    catch (e) {
+      if (o.status === 'started' && o.preco) try { await F.mlReq(idx, 'post', url, { ...body, deal_price: o.preco }); } catch (e2) {}
+      throw e;
+    }
+  } else r = await F.mlReq(idx, 'put', '/seller-promotions/items/' + itemId + '?app_version=v2', body);
   const d = F.dados()[idx], it = [...(d?.semPromo || []), ...(d?.comPromo || [])].find(y => y.id === itemId);
   if (it) {
     if (o.status === 'started') it.sale_amount = p;
