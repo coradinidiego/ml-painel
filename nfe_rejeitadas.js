@@ -177,7 +177,12 @@ module.exports = function (app) {
   });
   // diagnóstico sem alterar nada: GET /nfe-rejeitadas/diagnostico?emp=mae&id=123
   app.get('/nfe-rejeitadas/diagnostico', async (req, res) => {
-    try { const E = EMP.find(e => e.id === req.query.emp); const nf = (await breq(bling.client(E.idx), 'get', '/nfe/' + req.query.id)).data?.data; res.json({ endereco: nf?.contato?.endereco, ...(await diagnosticar(nf)) }); }
+    try {
+      const q = req.query, E = EMP.find(e => e.id === q.emp);
+      const nf = q.cep ? { contato: { endereco: { cep: q.cep, bairro: q.bairro || '', municipio: q.municipio || '', uf: q.uf || '' } } }   // teste com endereço informado
+                       : (await breq(bling.client(E.idx), 'get', '/nfe/' + q.id)).data?.data;
+      res.json({ endereco: nf?.contato?.endereco, ...(await diagnosticar(nf)) });
+    }
     catch (e) { res.status(500).json({ erro: erroTxt(e) }); }
   });
   setTimeout(() => rodarAuto().catch(() => {}), 90e3);
