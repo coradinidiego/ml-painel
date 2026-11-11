@@ -2166,6 +2166,14 @@ app.post('/ml/mensagem/:idx', express.json(), async (req, res) => {
   try { const r = await mlReq(parseInt(req.params.idx), 'post', p, req.body.body); res.json({ ok: true, resposta: r.data }); }
   catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
+// Admin (diagnóstico): chamada crua nas promoções do ML. POST /debug/ml-promo/1 {metodo:'post'|'put'|'delete', path:'/seller-promotions/...', body}
+app.post('/debug/ml-promo/:idx', express.json(), async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const p = String(req.body?.path || ''), m = String(req.body?.metodo || 'post');
+  if (!/^\/seller-promotions\//.test(p) || !['post', 'put', 'delete'].includes(m)) return res.status(400).json({ erro: 'path/metodo não permitido' });
+  try { const r = await mlReq(parseInt(req.params.idx), m, p, req.body.body); res.json({ ok: true, data: r.data }); }
+  catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
+});
 // Admin: estoque de anúncio "user product" (vendedor multi-depósito, onde available_quantity é ignorado). POST /ml/up-estoque/0 {up:'MLBU..', quantidade, store_id?}
 app.post('/ml/up-estoque/:idx', express.json(), async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
