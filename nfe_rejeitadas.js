@@ -44,7 +44,7 @@ async function breq(c, metodo, url, a, b) {
 const _mun = {};
 async function municipios(uf) {
   if (_mun[uf]) return _mun[uf];
-  const r = await axios.get(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios`, { timeout: 20000 });
+  const r = await axios.get(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios`, { timeout: 8000 });
   return (_mun[uf] = (r.data || []).map(m => m.nome));
 }
 const acharMunicipio = (lista, nome) => lista.find(m => norm(m) === norm(nome)) || null;
@@ -57,28 +57,26 @@ async function cep(c) {
   return null;
 }
 
-/** Diagnóstico do endereço da nota: o que está errado e como fica */
+/** Diagnóstico do endereço da nota: o que está errado e como fica.
+ *  O CEP manda: bairro vazio → bairro do CEP; município diferente do CEP (escrita errada, "Parati") → município do CEP.
+ *  Sem CEP válido: confere o município na lista do IBGE; se não existir, capital do estado; bairro vazio → "Centro". */
 async function diagnosticar(nf) {
-  const e = nf?.contato?.endereco || {}, uf = String(e.uf || '').toUpperCase();
-  const problemas = [];
-  if (!String(e.bairro || '').trim()) problemas.push('bairro vazio');
-  let lista = [];
-  try { lista = uf ? await municipios(uf) : []; } catch (err) {}
-  const munOk = lista.length ? acharMunicipio(lista, e.municipio) : e.municipio;
-  if (lista.length && !munOk) problemas.push(`município "${e.municipio || ''}" não existe em ${uf || '?'}`);
-  if (!problemas.length) return { problemas, novo: null };
-  const C = await cep(e.cep);
-  const ufN = (C?.uf || uf).toUpperCase();
-  let listaN = lista; if (ufN !== uf) try { listaN = await municipios(ufN); } catch (err) {}
-  const munCep = C?.municipio ? acharMunicipio(listaN, C.municipio) : null;
-  const novo = {
-    bairro: String(e.bairro || '').trim() || C?.bairro || 'Centro',
-    municipio: munOk && ufN === uf ? munOk : (munCep || CAPITAL[ufN] || e.municipio),
-    uf: ufN,
-  };
-  novo.fonte = C ? 'CEP' : 'sem CEP: capital/Centro';
-  if (!C?.bairro && !String(e.bairro || '').trim()) novo.fonte = C ? 'CEP (sem bairro: Centro)' : novo.fonte;
-  return { problemas, novo, antes: { bairro: e.bairro || '', municipio: e.municipio || '', uf } };
+  const e = nf?.contato?.endereco || {}, uf = String(e.uf || '').toUpperCase(), bairro = String(e.bairro || '').trim();
+  const problemas = [], C = await cep(e.cep);
+  let novo = null;
+  if (C?.municipio) {
+    if (!bairro) problemas.push('bairro vazio');
+    if (norm(C.municipio) !== norm(e.municipio) || (C.uf && C.uf.toUpperCase() !== uf)) problemas.push(`município "${e.municipio || ''}-${uf}" não confere com o CEP (${C.municipio}-${C.uf})`);
+    if (problemas.length) novo = { bairro: bairro || C.bairro || 'Centro', municipio: C.municipio, uf: (C.uf || uf).toUpperCase(), fonte: C.bairro || bairro ? 'CEP' : 'CEP (sem bairro: Centro)' };
+  } else {
+    if (!bairro) problemas.push('bairro vazio');
+    let lista = [];
+    try { lista = uf ? await municipios(uf) : []; } catch (err) {}
+    const ok = lista.length ? acharMunicipio(lista, e.municipio) : null;
+    if (lista.length && !ok) problemas.push(`município "${e.municipio || ''}" não existe em ${uf}`);
+    if (problemas.length) novo = { bairro: bairro || 'Centro', municipio: ok || (lista.length ? CAPITAL[uf] : e.municipio) || e.municipio, uf, fonte: 'CEP não encontrado: capital/Centro' };
+  }
+  return { problemas, novo, antes: { bairro, municipio: e.municipio || '', uf } };
 }
 
 async function listar() {
