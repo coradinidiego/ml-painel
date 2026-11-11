@@ -1,7 +1,7 @@
 /**
  * NF-e automática dos pedidos da SHEIN no Bling (Zagodini e Com Amor de Mãe).
  * O Bling importa o pedido da SHEIN e deixa "Em aberto" sem nota; aqui o painel:
- *   1. lista os pedidos de venda da SHEIN em aberto dos últimos DIAS dias, sem nota;
+ *   1. lista os pedidos da SHEIN com NF-e pendente: na própria SHEIN (invoiceStatus 2) e no Bling (em aberto sem nota\n *      ou com nota ainda não autorizada — gerada e não transmitida, rejeitada…);
  *   2. confere na SHEIN que o pedido não foi cancelado;
  *   3. gera a NF-e a partir do pedido (POST /pedidos/vendas/{id}/gerar-nfe — usa natureza/impostos do Bling);
  *   4. transmite à SEFAZ (POST /nfe/{id}/enviar) e confere a situação.
@@ -68,15 +68,60 @@ async function listar() {
       }
     } catch (e) { out.push({ emp: E.id, empresa: E.nome, erro: erroTxt(e) }); }
   }
-  // tira quem já tem nota
+  // nota de cada pedido em aberto: sem nota, ou com nota que ainda não foi autorizada (gerada e não transmitida, rejeitada…)
   for (const p of out.filter(x => x.id)) {
     try { const d = (await req(bling.client(p.idx), 'get', '/pedidos/vendas/' + p.id)).data?.data; p.nota = d?.notaFiscal?.id || null; } catch (e) {}
     await delay(350);
+    if (p.nota) await situacaoNota(p);
   }
-  S.pendentes = out.filter(x => x.erro || !x.nota);
+  const pend = out.filter(x => x.erro || !x.nota || !x.autorizada);
+  // fonte principal: a própria SHEIN — pedido a processar com a NF-e ainda pendente lá (invoiceStatus 2)
+  for (const x of await pendentesNaShein().catch(e => [{ empresa: 'SHEIN', erro: 'consulta da SHEIN: ' + e.message }])) {
+    if (x.erro) { pend.push(x); continue; }
+    const j = pend.find(y => y.emp === x.emp && y.numeroLoja === x.numeroLoja);
+    if (j) { j.naShein = true; j.motivoShein = x.motivoShein; continue; }
+    pend.push(x);
+  }
+  for (const p of pend) if (!p.erro) p.motivo = !p.id ? 'pedido não encontrado no Bling' : !p.nota ? 'sem nota no Bling' : p.autorizada ? 'nota autorizada no Bling, mas pendente na SHEIN (upload da NF-e)' : 'nota ' + (p.sitNota || 'não autorizada') + ' no Bling';
+  S.pendentes = pend;
   S.listadoEm = new Date().toISOString();
   salvar();
   return S.pendentes;
+}
+
+async function situacaoNota(p) {
+  try {
+    const n = (await req(bling.client(p.idx), 'get', '/nfe/' + p.nota)).data?.data;
+    p.sitNota = SIT[n?.situacao] || ('situação ' + n?.situacao); p.numeroNota = n?.numero; p.autorizada = [5, 6, 7].includes(Number(n?.situacao));
+  } catch (e) { p.sitNota = 'não consultada'; }
+  await delay(350);
+}
+// SHEIN: pedidos dos últimos DIAS dias ainda a processar/enviar com invoiceStatus 2 (NF-e pendente na plataforma)
+async function pendentesNaShein() {
+  const shein = require('./shein'), out = [];
+  for (const E of EMP) {
+    if (!shein.autorizada(E.id)) continue;
+    const L = (await shein.listarPedidos(E.id, new Date(Date.now() - DIAS * 864e5), new Date())).filter(x => [1, 2].includes(x.st));
+    for (let i = 0; i < L.length; i += 30) {
+      const d = await shein.api(E.id, '/open-api/order/order-detail', { orderNoList: L.slice(i, i + 30).map(x => x.num) });
+      for (const o of (Array.isArray(d.info) ? d.info : [])) {
+        if (Number(o.invoiceStatus) !== 2) continue;
+        const x = { emp: E.id, empresa: E.nome, idx: E.idx, numeroLoja: o.orderNo, naShein: true, motivoShein: (o.unProcessReason || []).join(','), total: +o.productTotalPrice || 0, data: shein.deCn(o.orderTime) };
+        try {   // pedido e nota no Bling
+          const c = bling.client(E.idx), b = (await req(c, 'get', '/pedidos/vendas', { params: { 'numerosLojas[]': o.orderNo } })).data?.data?.[0];
+          if (b) {
+            Object.assign(x, { id: b.id, numero: b.numero, data: b.data, total: b.total, cliente: b.contato?.nome || '' });
+            const ped = (await req(c, 'get', '/pedidos/vendas/' + b.id)).data?.data; x.nota = ped?.notaFiscal?.id || null;
+            if (x.nota) await situacaoNota(x);
+          }
+        } catch (e) {}
+        await delay(350);
+        out.push(x);
+      }
+      await delay(400);
+    }
+  }
+  return out;
 }
 
 async function emitir(p, por) {
@@ -114,7 +159,7 @@ async function rodarAuto() {
   if (rodando) return; rodando = true;
   try {
     const L = await listar();
-    if (S.modo === 'auto') for (const p of L.filter(x => x.id)) {
+    if (S.modo === 'auto') for (const p of L.filter(x => x.id && !x.autorizada)) {
       if (S.hist.some(h => h.emp === p.emp && h.pedido === p.numero && h.situacao === 'erro' && Date.now() - Date.parse(h.em) < 6 * 3600e3)) continue;   // erro recente: não insiste
       await emitir(p); await delay(1500);
     }
