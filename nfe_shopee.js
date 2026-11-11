@@ -47,7 +47,7 @@ async function breq(c, url, cfg) {
 async function sp(loja, metodo, apiPath, arg) {
   const L = shopee.loja(loja);
   for (let t = 0; ; t++) {
-    try { return metodo === 'get' ? await L.shopeeGet(apiPath, arg) : await L.shopeePost(apiPath, arg); }
+    try { return metodo === 'get' ? await L.shopeeGet(apiPath, arg) : metodo === 'form' ? await L.shopeePostForm(apiPath, arg()) : await L.shopeePost(apiPath, arg); }
     catch (e) {
       if (/too many|rate|limit|429/i.test(e.message) && t < 8) { await delay(2000 * (t + 1)); continue; }
       if (/invalid_access_token|access token/i.test(e.message) && t === 0) { await L.refreshToken().catch(() => {}); continue; }
@@ -130,10 +130,28 @@ async function dadosNota(nf) {
     products_total_value: +(tag('vProd', tot) || itens.reduce((s, i) => s + (+i.valor || 0) * (+i.quantidade || 1), 0) || nf.valorNota || 0),
     tax_code: String(tag('CFOP') || itens[0]?.cfop || ''),
   };
+  Object.defineProperty(d, 'xml', { value: xml, enumerable: false });
   if (d.access_key.length !== 44) throw new Error('chave de acesso da nota não encontrada');
   if (!d.issue_date) throw new Error('data de emissão da nota inválida');
   if (!d.tax_code) throw new Error('CFOP da nota não encontrado');
   return d;
+}
+
+// manda a NF-e à Shopee: o XML (upload_invoice_doc, file_type 4 — o que a Shopee Brasil usa); se recusar, tenta os campos (add_invoice_data)
+async function subirNota(loja, sn, d) {
+  if (!/<nfeProc|<NFe/.test(d.xml || '')) throw new Error('não consegui baixar o XML da nota no Bling');
+  if (Buffer.byteLength(d.xml) > 1024 * 1024) throw new Error('XML maior que 1 MB');
+  try {
+    return await sp(loja, 'form', '/api/v2/order/upload_invoice_doc', () => {
+      const fd = new FormData();
+      fd.append('order_sn', sn); fd.append('file_type', '4');
+      fd.append('file', new Blob([d.xml], { type: 'text/xml' }), 'NFe' + d.access_key + '.xml');
+      return fd;
+    });
+  } catch (e1) {
+    try { return await sp(loja, 'post', '/api/v2/order/add_invoice_data', { order_sn: sn, invoice_data: d }); }
+    catch (e2) { throw new Error(e1.message + ' | ' + e2.message); }
+  }
 }
 
 // organiza o envio: coleta no endereço de coleta (senão o padrão), horário recomendado; postagem se for o caso
@@ -168,7 +186,7 @@ async function enviar(x, por) {
       if (!b?.nf || !b.autorizada) throw new Error(b?.nfeId ? 'nota ' + b.sitNota + ' no Bling' : 'pedido sem nota no Bling');
       reg.pedido = b.pedido; reg.numeroNota = b.numeroNota;
       const d = await dadosNota(b.nf);
-      await sp(x.loja, 'post', '/api/v2/order/add_invoice_data', { order_sn: x.sn, invoice_data: d });
+      await subirNota(x.loja, x.sn, d);
       reg.nfEnviada = true;
       S.enviados[x.sn] = { em: reg.em, loja: x.loja };
       let st = '';

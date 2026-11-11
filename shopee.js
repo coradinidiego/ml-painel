@@ -311,6 +311,14 @@ async function uploadImagem(buf, nome = 'img.jpg') {
   try { return checar(apiPath, (await axios.post(BASE_URL + apiPath, fd, { params: commonParams(apiPath), timeout: 60000 })).data); }
   catch (e) { throw e.response ? erroAxios(apiPath, e) : e; }
 }
+// POST multipart (form-data) com assinatura de loja — ex.: upload_invoice_doc (XML da NF-e)
+async function shopeePostForm(apiPath, fd, timeout = 60000) {
+  const tokens = getTokens();
+  if (!tokens.access_token) throw new Error('Sem autenticação Shopee');
+  const params = commonParams(apiPath, tokens.access_token, tokens.shop_id);
+  try { return checar(apiPath, (await axios.post(BASE_URL + apiPath, fd, { params, timeout })).data); }
+  catch (e) { throw e.response ? erroAxios(apiPath, e) : e; }
+}
 async function replyRating(ratingId, comment) {
   return shopeePost('/api/v2/product/reply_comment', { comment_list: [{ comment_id: Number(ratingId), comment }] });
 }
@@ -319,7 +327,7 @@ async function replyRating(ratingId, comment) {
 return { CHAVE, nome: L.nome, ml: L.ml, PARTNER_ID, appProprio, REDIRECT_URL, SANDBOX, BASE_URL, 
   getAuthUrl, getToken, refreshToken,
   saveTokens, getTokens,
-  listarProdutos, listarPedidos, listarAvaliacoes, replyRating, shopeeGet, shopeePost, uploadImagem,
+  listarProdutos, listarPedidos, listarAvaliacoes, replyRating, shopeeGet, shopeePost, shopeePostForm, uploadImagem,
   promocoesPorItem, variacoes, responderAvaliacoesLote, impulsionados, impulsionar, atualizarEstoque, listarConversas, mensagens, enviarMensagem,
 };
 }
