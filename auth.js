@@ -226,7 +226,7 @@ function paginaConta(u, msg, hostBase = '') {
   </script></div>
 
   ${u.admin ? `<div class="box"><h2>👥 Usuários</h2><p class="s">Todos os usuários têm acesso completo ao painel.</p>
-  <table><tr><th>Nome</th><th>E-mail</th><th></th></tr>${usuarios.map(x => `<tr><td>${esc(x.nome)}${x.admin ? ' <small style="color:#999">(admin)</small>' : ''}</td><td>${esc(x.email)}</td><td style="text-align:right">${x.email === u.email ? '' : `<form method="post" action="/conta/remover" style="margin:0" onsubmit="return confirm('Remover ${esc(x.email)}?')"><input type="hidden" name="email" value="${esc(x.email)}"><button class="del">Remover</button></form>`}</td></tr>`).join('')}</table>
+  <table><tr><th>Nome</th><th>E-mail</th><th></th></tr>${usuarios.map(x => `<tr><td>${esc(x.nome)}${x.admin ? ' <small style="color:#999">(admin)</small>' : ''}</td><td>${esc(x.email)}</td><td style="text-align:right;white-space:nowrap">${x.email === u.email ? '' : `<form method="post" action="/conta/admin" style="margin:0 6px 0 0;display:inline" onsubmit="return confirm('${x.admin ? 'Tirar o acesso de administrador de' : 'Tornar administrador:'} ${esc(x.email)}?')"><input type="hidden" name="email" value="${esc(x.email)}"><input type="hidden" name="admin" value="${x.admin ? '0' : '1'}"><button type="submit" style="width:auto;padding:4px 10px;font-size:12px">${x.admin ? 'Tirar admin' : 'Tornar admin'}</button></form><form method="post" action="/conta/remover" style="margin:0;display:inline" onsubmit="return confirm('Remover ${esc(x.email)}?')"><input type="hidden" name="email" value="${esc(x.email)}"><button class="del">Remover</button></form>`}</td></tr>`).join('')}</table>
   <form method="post" action="/conta/usuarios" style="margin-top:12px"><div class="row">
     <div><label>Nome</label><input name="nome" required></div><div><label>E-mail</label><input name="email" type="email" required></div><div><label>Senha inicial</label><input name="senha" type="text" minlength="8" required></div></div>
     <button>Adicionar usuário</button></form></div>` : ''}
@@ -294,6 +294,14 @@ function montar(app) {
     if (u.find(x => x.email === email)) return volta(res, 'erro', 'Esse e-mail já está cadastrado.');
     u.push({ email, nome: String(req.body.nome || email).slice(0, 80), admin: false, criadoEm: new Date().toISOString(), ...hash(senha) });
     salvarUsuarios(u); volta(res, 'ok', `Usuário ${email} adicionado. Passe a senha inicial para ele trocar no primeiro acesso.`);
+  });
+  app.post('/conta/admin', exigeLogin, form, (req, res) => {   // admin promove ou rebaixa outro usuário
+    if (!req.usuario.admin) return volta(res, 'erro', 'Só o administrador pode alterar permissões.');
+    const email = normEmail(req.body.email), virar = String(req.body.admin) === '1';
+    if (email === req.usuario.email) return volta(res, 'erro', 'Você não pode alterar a sua própria permissão.');
+    const u = lerUsuarios(), x = u.find(y => y.email === email);
+    if (!x) return volta(res, 'erro', 'Usuário não encontrado.');
+    x.admin = virar; salvarUsuarios(u); volta(res, 'ok', virar ? `${x.nome || email} agora é administrador.` : `${x.nome || email} não é mais administrador.`);
   });
   app.post('/conta/remover', exigeLogin, form, (req, res) => {
     if (!req.usuario.admin) return volta(res, 'erro', 'Só o administrador pode remover usuários.');
