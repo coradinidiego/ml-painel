@@ -102,6 +102,7 @@ async function carregar(idx, dias) {
           const it = w.body || w; if (!it?.id) continue;
           const skuAttr = o => o?.seller_custom_field || (o?.attributes || []).find(x => x.id === 'SELLER_SKU')?.value_name;
           it._sku = skuAttr(it) || (it.variations || []).map(skuAttr).find(Boolean) || '';
+          it._semPainel = true;   // sem o preço promocional do painel: a margem usa o preço médio que realmente vendeu (abaixo)
           porId[it.id] = it;
         }
       } catch (e) {}
@@ -112,7 +113,9 @@ async function carregar(idx, dias) {
     for (const a of itens) {
       const it = porId[a.item_id];
       const m = a.metrics || {};
-      const preco = it ? (it.sale_amount && it.sale_amount < (it.regular_amount || it.original_price || it.price) ? it.sale_amount : it.price) : (+a.price || 0);
+      let preco = it ? (it.sale_amount && it.sale_amount < (it.regular_amount || it.original_price || it.price) ? it.sale_amount : it.price) : (+a.price || 0);
+      // anúncio que a lista do painel ainda não carregou (logo depois de reiniciar): it.price é o preço cheio, sem a promoção → usa o preço médio vendido no período
+      if (it?._semPainel) { const uR = (+m.direct_units_quantity || 0) + (+m.organic_units_quantity || 0), vR = (+m.direct_amount || 0) + (+m.organic_units_amount || 0); if (uR > 0 && vR > 0) preco = r2(vR / uR); }
       const mg = it ? await cm.margemPreco(F.ml, idx, uid, it, preco, 0, erp) : { erro: 'anúncio fora da lista do painel' };
       const un = (+m.units_quantity || ((+m.direct_units_quantity || 0) + (+m.indirect_units_quantity || 0)));
       const custo = r2(m.cost);
