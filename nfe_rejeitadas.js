@@ -132,10 +132,44 @@ async function corrigir(p, por) {
   return reg;
 }
 
+/** Notas paradas em "consultar situação" (10): pede ao Bling para reenviar/consultar na SEFAZ.
+ *  Se voltar rejeitada: corrige o endereço pelo CEP e transmite (corrigir); se a rejeição for por outro motivo, transmite de novo 1 vez. */
+async function consultar({ minIdade = 0, por } = {}) {
+  const res = [];
+  for (const E of EMP) {
+    const c = bling.client(E.idx), de = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10);
+    let L = [];
+    try { L = (await breq(c, 'get', '/nfe', { params: { situacao: 10, dataEmissaoInicial: de + ' 00:00:00', limite: 100 } })).data?.data || []; }
+    catch (e) { res.push({ empresa: E.nome, erro: erroTxt(e) }); continue; }
+    for (const x of L) {
+      if (minIdade && Date.now() - Date.parse(String(x.dataEmissao).replace(' ', 'T') + '-03:00') < minIdade) continue;
+      const reg = { em: new Date().toISOString(), emp: E.id, empresa: E.nome, nota: x.numero, cliente: x.contato?.nome || '', por: por || 'automático', acao: 'consulta' };
+      try {
+        await breq(c, 'post', `/nfe/${x.id}/enviar`);
+        let n = null;
+        for (let t = 0; t < 5; t++) { await delay(4000); n = (await breq(c, 'get', '/nfe/' + x.id)).data?.data; if (![3, 8, 10].includes(Number(n?.situacao))) break; }
+        if (Number(n?.situacao) === 4) {
+          const d = await diagnosticar(n);
+          if (d.novo) { const r = await corrigir({ emp: E.id, empresa: E.nome, idx: E.idx, id: x.id, numero: x.numero, cliente: reg.cliente }, por); reg.situacao = 'rejeitada → corrigida: ' + r.situacao; reg.ok = r.ok; res.push(reg); continue; }
+          await delay(1500); await breq(c, 'post', `/nfe/${x.id}/enviar`);
+          for (let t = 0; t < 5; t++) { await delay(4000); n = (await breq(c, 'get', '/nfe/' + x.id)).data?.data; if (![3, 8, 10].includes(Number(n?.situacao))) break; }
+          reg.acao = 'consulta + retransmissão';
+        }
+        reg.situacao = SIT[n?.situacao] || ('situação ' + n?.situacao); reg.ok = [5, 6, 7].includes(Number(n?.situacao));
+      } catch (e) { reg.situacao = 'erro'; reg.erro = erroTxt(e); }
+      S.hist.unshift(reg); salvar(); res.push(reg);
+      await delay(1000);
+    }
+  }
+  S.consulta = { em: new Date().toISOString(), res }; salvar();
+  return res;
+}
+
 let rodando = false;
 async function rodarAuto() {
   if (rodando) return; rodando = true;
   try {
+    try { await consultar({ minIdade: 15 * 60e3 }); } catch (e) {}   // notas em "consultar situação" há mais de 15 min
     const L = await listar();
     if (S.modo === 'auto') {
       for (const p of L.filter(x => x.id && x.novo)) {
@@ -150,7 +184,7 @@ async function rodarAuto() {
 
 module.exports = function (app) {
   const admin = (req, res) => { if (require('./auth').ativo() && !req.usuario?.admin) { res.status(403).json({ erro: 'só admin' }); return false; } return true; };
-  app.get('/nfe-rejeitadas', (req, res) => res.json({ modo: S.modo, listadoEm: S.listadoEm, rodando, lista: S.lista, hist: S.hist.slice(0, 60) }));
+  app.get('/nfe-rejeitadas', (req, res) => res.json({ modo: S.modo, listadoEm: S.listadoEm, rodando, lista: S.lista, hist: S.hist.slice(0, 60), consulta: S.consulta }));
   app.post('/nfe-rejeitadas/atualizar', async (req, res) => { try { await listar(); res.json({ ok: true }); } catch (e) { res.status(500).json({ erro: e.message }); } });
   app.post('/nfe-rejeitadas/corrigir', require('express').json(), async (req, res) => {
     if (!admin(req, res)) return;
@@ -159,6 +193,14 @@ module.exports = function (app) {
     const r = await corrigir(p, req.usuario?.nome || req.usuario?.email || 'painel');
     listar().catch(() => {});
     res.json(r);
+  });
+  // consulta na SEFAZ as notas em "consultar situação" (roda em segundo plano; resultado em GET /nfe-rejeitadas → consulta)
+  app.post('/nfe-rejeitadas/consultar', async (req, res) => {
+    if (!admin(req, res)) return;
+    if (rodando) return res.status(409).json({ erro: 'já está rodando, tente em instantes' });
+    rodando = true; S.consulta = { em: new Date().toISOString(), rodando: true, res: [] };
+    consultar({ por: req.usuario?.nome || req.usuario?.email || 'painel' }).catch(e => { S.consulta = { erro: e.message }; }).finally(() => { rodando = false; listar().catch(() => {}); });
+    res.json({ ok: true });
   });
   app.post('/nfe-rejeitadas/modo', require('express').json(), (req, res) => {
     if (!admin(req, res)) return;
