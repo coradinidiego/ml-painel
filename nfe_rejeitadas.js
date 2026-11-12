@@ -169,7 +169,6 @@ let rodando = false;
 async function rodarAuto() {
   if (rodando) return; rodando = true;
   try {
-    try { await consultar({ minIdade: 15 * 60e3 }); } catch (e) {}   // notas em "consultar situação" há mais de 15 min
     const L = await listar();
     if (S.modo === 'auto') {
       for (const p of L.filter(x => x.id && x.novo)) {
