@@ -46,7 +46,7 @@ if (!SAIDAS['2|MLB47278842']) { SAIDAS['2|MLB47278842'] = [{ data: '2026-10-30',
 const ARQ_MUD = path.join(DATA, 'apuracao_cache', 'ads_mudancas.json'), ARQ_SNAP = path.join(DATA, 'apuracao_cache', 'ads_camp_snap.json');
 let MUD = ler(ARQ_MUD, []), SNAP = ler(ARQ_SNAP, {});   // MUD: [{ idx, conta, campanha, nome, itens, data, tipo: 'orcamento'|'roas', de, para, origem, antes, depois?, veredito? }]
 const f2 = v => (v < 0 ? '-' : '+') + 'R$ ' + Math.abs(v).toFixed(2).replace('.', ',');
-const metr7 = (k7, luc) => k7 ? { gastoDia: r2(k7.custo / 7), vendasDia: r2(k7.vendas / 7), lucroDia: luc == null ? null : r2(luc / 7), roas: k7.custo > 0 ? Math.round(k7.vendas / k7.custo * 10) / 10 : null } : null;
+const metr7 = (k7, luc, lt) => k7 ? { gastoDia: r2(k7.custo / 7), vendasDia: r2(k7.vendas / 7), lucroDia: luc == null ? null : r2(luc / 7), lucroTotalDia: lt == null ? null : r2(lt / 7), roas: k7.custo > 0 ? Math.round(k7.vendas / k7.custo * 10) / 10 : null } : null;
 // primeira vez: usa a última análise salva como "antes" (pega as mudanças feitas hoje direto no ML)
 if (!Object.keys(SNAP).length && P?.contas) {
   for (const c of P.contas) for (const r of [...(c.recs || []), ...(c.manter || [])]) {
@@ -63,29 +63,43 @@ function registrarMudanca(o) {
   MUD = MUD.filter(x => diasDesde(x.data) <= 60); gravar(ARQ_MUD, MUD);
 }
 /** Compara com a análise anterior: orçamento ou ROAS objetivo diferente = alguém mudou (no painel ou no ML) */
-function detectarMudancas(c, Q, camp7, lucCamp, itensCamp) {
+function detectarMudancas(c, Q, camp7, lucCamp, itensCamp, lucTotCamp, contaLT) {
+  const contaAnt = SNAP['conta|' + c.idx]?.lt ?? null;   // lucro total/dia da conta na análise anterior (controle da sazonalidade)
   for (const k of Q.campanhas) {
     const key = c.idx + '|' + k.id, ant = SNAP[key], roasK = k.acosAlvo ? Math.round(1000 / k.acosAlvo) / 10 : null;
     if (ant) {
-      const base = { idx: c.idx, conta: c.nome, campanha: k.id, nome: k.nome, itens: itensCamp[k.id] || [], data: diaSP(), origem: 'detectada', antes: ant.m7 };
+      const base = { idx: c.idx, conta: c.nome, campanha: k.id, nome: k.nome, itens: itensCamp[k.id] || [], data: diaSP(), origem: 'detectada', antes: ant.m7 ? { ...ant.m7, contaLT: contaAnt } : ant.m7 };
       if (ant.orcamento != null && k.orcamento != null && Math.abs(ant.orcamento - k.orcamento) >= 0.5) registrarMudanca({ ...base, tipo: 'orcamento', de: ant.orcamento, para: k.orcamento });
       if (ant.roas != null && roasK != null && Math.abs(ant.roas - roasK) >= 0.2) registrarMudanca({ ...base, tipo: 'roas', de: ant.roas, para: roasK });
     }
-    SNAP[key] = { orcamento: k.orcamento ?? null, roas: roasK, m7: metr7(camp7[String(k.id)], lucCamp[k.id]), em: diaSP() };
+    SNAP[key] = { orcamento: k.orcamento ?? null, roas: roasK, m7: metr7(camp7[String(k.id)], lucCamp[k.id], lucTotCamp[k.id]), em: diaSP() };
   }
+  SNAP['conta|' + c.idx] = { lt: contaLT, em: diaSP() };
   gravar(ARQ_SNAP, SNAP);
 }
-/** Resultado das mudanças com 7 a 30 dias: antes (7 dias anteriores à mudança) × depois (últimos 7 dias) */
-function avaliarMudancas(c, Q, camp7, lucCamp) {
+/** Resultado das mudanças com 14 a 45 dias: antes (7 dias anteriores à mudança) × depois (últimos 7 dias).
+ *  Mede pelo LUCRO TOTAL do anúncio (orgânico + ADS − gasto), descontando o que a conta inteira variou no período (sazonalidade, Black Friday).
+ *  Mudanças antigas, sem o lucro total gravado, seguem pelo lucro do ADS. */
+function avaliarMudancas(c, Q, camp7, lucCamp, lucTotCamp, contaLT) {
   const out = [], empate = {};
   for (const x of Q.itens) if (x.campanha && x.margem?.pct > 0) empate[x.campanha.id] = Math.max(empate[x.campanha.id] || 0, 100 / x.margem.pct);
   for (const m of MUD.filter(x => x.idx === c.idx)) {
-    const d = diasDesde(m.data); if (d < 7 || d > 30 || !m.antes) continue;
+    const d = diasDesde(m.data); if (d < ESPERA || d > 45 || !m.antes) continue;
     const k = Q.campanhas.find(k => String(k.id) === String(m.campanha));
-    const dep = metr7(camp7[String(m.campanha)], lucCamp[m.campanha]); if (!dep) continue;
+    const dep = metr7(camp7[String(m.campanha)], lucCamp[m.campanha], lucTotCamp[m.campanha]); if (!dep) continue;
     const A = m.antes, dl = (dep.lucroDia ?? 0) - (A.lucroDia ?? 0), dv = dep.vendasDia - A.vendasDia, emp = empate[m.campanha];
     let ver, acao = null;
-    if (m.tipo === 'orcamento') {
+    if (A.lucroTotalDia != null && dep.lucroTotalDia != null) {
+      if ((A.gastoDia || 0) < 1 && (dep.gastoDia || 0) < 1) ver = { ok: null, txt: 'gasto abaixo de R$ 1/dia antes e depois — sem efeito mensurável' };
+      else {
+        const fator = A.contaLT > 0 && contaLT > 0 ? Math.max(0.5, Math.min(2, contaLT / A.contaLT)) : 1;
+        const esperado = A.lucroTotalDia * fator, dif = dep.lucroTotalDia - esperado, tol = Math.max(1, Math.abs(esperado) * 0.1);
+        const ctx = `lucro total do anúncio (orgânico + ADS) R$ ${A.lucroTotalDia.toFixed(2)} → R$ ${dep.lucroTotalDia.toFixed(2)}/dia` + (fator !== 1 ? `; a conta variou ${fator >= 1 ? '+' : ''}${Math.round((fator - 1) * 100)}% no período, o esperado era R$ ${esperado.toFixed(2)}/dia` : '');
+        if (dif > tol) ver = { ok: true, txt: `funcionou: ${f2(dif)}/dia acima do esperado — ${ctx}` };
+        else if (dif < -tol) { ver = { ok: false, txt: `piorou: ${f2(dif)}/dia abaixo do esperado — ${ctx}` + (m.de != null ? ' — voltar ao que era' : '') }; if (m.de != null) acao = m.tipo === 'orcamento' ? { budget: m.de } : { acos_target: r2(100 / m.de), roas: m.de }; }
+        else ver = { ok: null, txt: `sem diferença relevante — ${ctx}` };
+      }
+    } else if (m.tipo === 'orcamento') {
       if (dl >= 0) ver = { ok: true, txt: `funcionou: lucro ${f2(dl)}/dia e vendas ${f2(dv)}/dia` };
       else if (m.para > m.de && ((dep.lucroDia ?? 0) < 0 || (emp && dep.roas != null && dep.roas < emp))) { ver = { ok: false, txt: `piorou: lucro ${f2(dl)}/dia e ROAS real ${A.roas ?? '—'}x → ${dep.roas ?? '—'}x` + (emp ? ` (empate ${Math.round(emp * 10) / 10}x)` : '') + ' — voltar o orçamento' }; acao = { budget: m.de }; }
       else ver = { ok: null, txt: `lucro ${f2(dl)}/dia, ROAS real ${A.roas ?? '—'}x → ${dep.roas ?? '—'}x — acompanhar` };
@@ -98,6 +112,7 @@ function avaliarMudancas(c, Q, camp7, lucCamp) {
   }
   return out.sort((a, b) => (a.veredito.ok === false ? 0 : a.veredito.ok == null ? 1 : 2) - (b.veredito.ok === false ? 0 : b.veredito.ok == null ? 1 : 2));
 }
+const ESPERA = 14;                                         // dias até julgar uma mudança
 const diaSP = () => hojeSP().toISOString().slice(0, 10);
 const diasDesde = d => Math.floor((Date.parse(diaSP()) - Date.parse(d)) / 864e5);
 const razaoDe = (motivo, x) => /sem nenhuma venda/.test(motivo || '') ? 'semvenda' : /margem de .* não comporta/.test(motivo || '') ? 'margem' : /prejuízo/.test(motivo || '') ? 'prejuizo'
@@ -130,6 +145,9 @@ const roas = a => a > 0 ? String(Math.round(1000 / a) / 10).replace('.', ',') + 
 const ACOS_MIN = 100 / 35;                                 // ROAS objetivo máximo aceito pelo ML: 35x
 const acosAlvo = m => Math.max(ACOS_MIN, Math.min(30, Math.floor(m / 2)));   // metade da margem → ROAS entre 3,3x e 35x
 
+/** % do lucro das vendas do ADS que o próprio ADS consumiu: gasto ÷ (lucro depois do ADS + gasto) */
+const pctAds = L => { const g = L.reduce((a, x) => a + (x.lucroAds != null ? x.custo : 0), 0), l = L.reduce((a, x) => a + (x.lucroAds || 0), 0); return g + l > 0 ? Math.round(g / (g + l) * 100) : null; };
+
 async function pronto(idx, dias, forcar) {
   let e = A.estado(idx, dias);
   // "Analisar agora" (manual) sempre busca de novo no ML: pausas/ajustes feitos agora há pouco têm que aparecer
@@ -138,7 +156,7 @@ async function pronto(idx, dias, forcar) {
   return e;
 }
 
-function planoConta(c, Q, S) {   // Q = 15 dias, S = 7 dias
+function planoConta(c, Q, S, L60) {   // Q = 15 dias, S = 7 dias, L60 = { dias, itens } gasto/unidades do período longo (cauda)
   const s7 = Object.fromEntries(S.itens.map(x => [x.id, x]));
   const camp15 = Object.fromEntries(Q.campanhas.map(k => [String(k.id), k])), camp7 = Object.fromEntries(S.campanhas.map(k => [String(k.id), k]));
   const naCamp = {};                       // campanha → anúncios ativos/pausados nela
@@ -155,6 +173,9 @@ function planoConta(c, Q, S) {   // Q = 15 dias, S = 7 dias
       { const L = SAIDAS[c.idx + '|' + x.id]; if (L?.length && L[L.length - 1].tipo === 'saida') registrarVolta(c.idx, x.id); }
       if (x.custo >= 5 && !x.unidadesAds) { recs.push({ ...b, tipo: 'remover', peso: x.custo, motivo: `R$ ${x.custo.toFixed(2)} em 15 dias sem nenhuma venda pelo ADS` }); continue; }
       if (m != null && m < 5 && x.custo >= 3 && (x.lucroAds ?? 0) <= 0) { recs.push({ ...b, tipo: 'remover', peso: x.custo, motivo: `margem de ${m}% não comporta ADS (R$ ${x.custo.toFixed(2)} gastos em 15 dias)` }); continue; }
+      // cauda: gastou no período longo (60 dias) mais que o lucro de 1 unidade e não vendeu nada pelo ADS
+      { const z = L60?.itens?.[x.id], lim = Math.max(2, x.margem?.lucro > 0 ? x.margem.lucro : 3);
+        if (z && !z.un && !x.unidadesAds && z.custo >= lim) { recs.push({ ...b, tipo: 'remover', peso: z.custo, motivo: `R$ ${z.custo.toFixed(2)} em ${L60.dias} dias sem nenhuma venda pelo ADS — já gastou mais que o lucro de 1 unidade (R$ ${lim.toFixed(2)})` }); continue; } }
       // ACOS bem abaixo da margem mas "prejuízo": o preço que vendeu não bate com o de hoje (variação/kit) — não recomenda no escuro
       const incoerente = x.acos != null && m != null && x.acos < m * 0.7;
       if (x.lucroAds != null && x.lucroAds < -5 && (y.lucro ?? 0) <= 0 && !incoerente) {
@@ -171,6 +192,15 @@ function planoConta(c, Q, S) {   // Q = 15 dias, S = 7 dias
         }
         recs.push({ ...b, tipo: 'acos', peso: x.custo, sugestao: { acos_target: acosAlvo(m) }, motivo: `ROAS objetivo da campanha (${roas(b.campanha.acosAlvo)}) está abaixo do mínimo para empatar com a margem de ${m}% (${roas(m)})` }); continue;
       }
+      // dá lucro, mas o ADS fica com mais da metade do lucro das vendas dele → subir o ROAS objetivo 1 degrau (não pausa: continua vendendo)
+      { const antes = (x.lucroAds ?? 0) + x.custo, parte = antes > 0 ? x.custo / antes : null, rAtual = b.campanha?.acosAlvo ? 100 / b.campanha.acosAlvo : null;
+        const recente = b.campanha && MUD.some(u => u.idx === c.idx && String(u.campanha) === String(b.campanha.id) && u.tipo === 'roas' && diasDesde(u.data) < ESPERA);
+        if (b.campanha?.individual && x.lucroAds > 0 && x.custo >= 10 && parte > 0.5 && rAtual && rAtual < 34.5 && !recente) {
+          const prox = rAtual < 24.5 ? 25 : rAtual < 29.5 ? 30 : 35;
+          recs.push({ ...b, tipo: 'apertar', peso: x.custo, pctAds: Math.round(parte * 100), sugestao: { acos_target: prox === 35 ? ACOS_MIN : r2(100 / prox) },
+            motivo: `dá lucro, mas o ADS fica com ${Math.round(parte * 100)}% do lucro das vendas dele (gastou R$ ${x.custo.toFixed(2)} para sobrar R$ ${x.lucroAds.toFixed(2)}) · ROAS real ${roas(x.acos)}, empate ${roas(m)} · ${x.organicas || 0} venda(s) orgânica(s) em 15 dias` });
+          continue;
+        } }
       if (x.lucroAds > 0) ok.push({ ...b, tipo: 'manter', peso: x.lucroAds });
     } else if (x.status !== 'hold' && (!x.campanha || x.status !== 'active')) {
       // gastou nos 15 dias e não está mais ativo = saiu do ADS (pelo painel ou direto no ML): registra para a quarentena
@@ -197,12 +227,13 @@ function planoConta(c, Q, S) {   // Q = 15 dias, S = 7 dias
         motivo: `gastando R$ ${gDia.toFixed(2)}/dia de R$ ${k.orcamento} (7 dias) com lucro de R$ ${luc.toFixed(2)} depois do ADS` });
     }
   }
-  const lucCamp = {}, itensCamp = {};
-  for (const [id, its] of Object.entries(naCamp)) { lucCamp[id] = its.reduce((a, x) => a + (s7[x.id]?.lucroAds || 0), 0); itensCamp[id] = its.map(x => x.id); }
-  detectarMudancas(c, Q, camp7, lucCamp, itensCamp);
-  const resultados = avaliarMudancas(c, Q, camp7, lucCamp);
-  const acompanhando = MUD.filter(x => x.idx === c.idx && diasDesde(x.data) < 7).map(x => ({ ...x, faltam: 7 - diasDesde(x.data) }));
-  const ord = { remover: 0, acos: 1, orcamento: 2, criar: 3, voltar: 4 };
+  const lucCamp = {}, itensCamp = {}, lucTotCamp = {};
+  for (const [id, its] of Object.entries(naCamp)) { lucCamp[id] = its.reduce((a, x) => a + (s7[x.id]?.lucroAds || 0), 0); lucTotCamp[id] = its.reduce((a, x) => a + (s7[x.id]?.lucroTotal || 0), 0); itensCamp[id] = its.map(x => x.id); }
+  const contaLT = r2(S.itens.reduce((a, x) => a + (x.lucroTotal || 0), 0) / 7);   // lucro total/dia da conta (7 dias): controle da sazonalidade
+  const resultados = avaliarMudancas(c, Q, camp7, lucCamp, lucTotCamp, contaLT);
+  detectarMudancas(c, Q, camp7, lucCamp, itensCamp, lucTotCamp, contaLT);
+  const acompanhando = MUD.filter(x => x.idx === c.idx && diasDesde(x.data) < ESPERA).map(x => ({ ...x, faltam: ESPERA - diasDesde(x.data) }));
+  const ord = { remover: 0, acos: 1, apertar: 2, orcamento: 3, criar: 4, voltar: 5 };
   recs.sort((a, b) => ord[a.tipo] - ord[b.tipo] || b.peso - a.peso);
   const soma = (L, f) => r2(L.reduce((a, x) => a + (f(x) || 0), 0));
   const atv = Q.itens.filter(x => x.campanha && x.status === 'active');
@@ -210,6 +241,8 @@ function planoConta(c, Q, S) {   // Q = 15 dias, S = 7 dias
     conta: c.nome, idx: c.idx, recs, manter: ok.sort((a, b) => b.peso - a.peso).slice(0, 30), quarentena: quarentena.sort((a, b) => a.faltam - b.faltam), resultados, acompanhando,
     resumo: { custo15: soma(Q.itens, x => x.custo), vendas15: soma(Q.itens, x => x.vendasAds), lucro15: soma(Q.itens.filter(x => x.lucroAds != null), x => x.lucroAds),
       custo7: soma(S.itens, x => x.custo), vendas7: soma(S.itens, x => x.vendasAds), lucro7: soma(S.itens.filter(x => x.lucroAds != null), x => x.lucroAds),
+      lucroTotal15: soma(Q.itens, x => x.lucroTotal), lucroTotal7: soma(S.itens, x => x.lucroTotal),
+      pctAds15: pctAds(Q.itens), pctAds7: pctAds(S.itens), cauda: L60 ? L60.dias : null,
       anunciosAtivos: atv.length, campanhas: Q.campanhas.filter(k => k.status === 'active').length,
       desperdicio15: soma(recs.filter(r => r.tipo === 'remover'), r => r.q?.custo) },
   };
@@ -220,7 +253,7 @@ async function calcular(motivo) {
   const out = { em: new Date().toISOString(), motivo, contas: [] };
   try {
     for (const c of CONTAS) {
-      try { const f = motivo === 'manual', Q = await pronto(c.idx, 15, f), S = await pronto(c.idx, 7, f); out.contas.push(planoConta(c, Q, S)); }
+      try { const f = motivo === 'manual', Q = await pronto(c.idx, 15, f), S = await pronto(c.idx, 7, f), L60 = await A.metricasPeriodo(c.idx, 60).catch(() => null); out.contas.push(planoConta(c, Q, S, L60)); }
       catch (e) { out.contas.push({ conta: c.nome, idx: c.idx, erro: e.message, recs: [], manter: [] }); }
     }
     P = out; gravar(ARQ, P);
@@ -235,7 +268,8 @@ function textoTelegram(p) {
     if (c.erro) { linhas.push(`\n<b>${c.conta}</b>: erro (${c.erro})`); continue; }
     const R = c.resumo, L = c.recs;
     linhas.push(`\n<b>${c.conta}</b> · 7 dias: ADS ${brl(R.custo7)} → vendas ${brl(R.vendas7)} · lucro depois do ADS ${brl(R.lucro7)}`);
-    const t = [['⛔ tirar do ADS', 'remover'], ['🎯 subir ROAS objetivo', 'acos'], ['💰 subir orçamento', 'orcamento'], ['➕ criar campanha', 'criar'], ['🔁 testar volta ao ADS', 'voltar']].filter(([, k]) => n(L, k)).map(([r, k]) => `${r}: ${n(L, k)}`);
+    linhas.push(`   lucro total dos anúncios (orgânico + ADS): ${brl(R.lucroTotal7)}` + (R.pctAds7 != null ? ` · o ADS ficou com ${R.pctAds7}% do lucro das vendas dele` : ''));
+    const t = [['⛔ tirar do ADS', 'remover'], ['🎯 subir ROAS objetivo', 'acos'], ['📐 apertar ROAS (ADS leva +50% do lucro)', 'apertar'], ['💰 subir orçamento', 'orcamento'], ['➕ criar campanha', 'criar'], ['🔁 testar volta ao ADS', 'voltar']].filter(([, k]) => n(L, k)).map(([r, k]) => `${r}: ${n(L, k)}`);
     linhas.push(t.length ? t.join(' · ') : '✅ nada a fazer');
     for (const r of L.filter(r => r.tipo === 'remover').slice(0, 3)) linhas.push(`   • ${(r.titulo || r.item || '').slice(0, 40)} — ${r.motivo}`);
   }
@@ -259,12 +293,12 @@ function rotas(app) {
       const r = await A.alterarCampanha(idx, req.params.id, req.body || {});
       try {
         const id = req.params.id, cta = CONTAS.find(c => c.idx === idx), rec = P?.contas.find(c => c.idx === idx)?.recs.find(x => String(x.campanha?.id) === String(id));
-        const snap = SNAP[idx + '|' + id] || {}, base = { idx, conta: cta?.nome, campanha: id, nome: rec?.campanha?.nome || rec?.titulo || id, itens: rec?.itens || (rec?.item ? [rec.item] : []), data: diaSP(), origem: 'painel', antes: snap.m7 || null };
+        const snap = SNAP[idx + '|' + id] || {}, base = { idx, conta: cta?.nome, campanha: id, nome: rec?.campanha?.nome || rec?.titulo || id, itens: rec?.itens || (rec?.item ? [rec.item] : []), data: diaSP(), origem: 'painel', antes: snap.m7 ? { ...snap.m7, contaLT: SNAP['conta|' + idx]?.lt ?? null } : null };
         if (req.body?.budget != null) { registrarMudanca({ ...base, tipo: 'orcamento', de: snap.orcamento ?? rec?.campanha?.orcamento ?? null, para: +req.body.budget }); if (SNAP[idx + '|' + id]) SNAP[idx + '|' + id].orcamento = +req.body.budget; }
         if (req.body?.acos_target != null) { const para = Math.min(35, Math.round(1000 / req.body.acos_target) / 10); registrarMudanca({ ...base, tipo: 'roas', de: snap.roas ?? null, para }); if (SNAP[idx + '|' + id]) SNAP[idx + '|' + id].roas = para; }
         gravar(ARQ_SNAP, SNAP);
       } catch (e) {}
-      if (P) for (const c of P.contas) if (c.idx === idx) c.recs = c.recs.filter(x => String(x.campanha?.id) !== String(req.params.id) || !['acos', 'orcamento'].includes(x.tipo));
+      if (P) for (const c of P.contas) if (c.idx === idx) c.recs = c.recs.filter(x => String(x.campanha?.id) !== String(req.params.id) || !['acos', 'apertar', 'orcamento'].includes(x.tipo));
       gravar(ARQ, P); res.json({ ok: true, resposta: r });
     } catch (e) { res.status(400).json({ erro: erroML(e) }); }
   });

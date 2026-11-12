@@ -130,7 +130,10 @@ async function carregar(idx, dias) {
         cliques: +m.clicks || 0, impressoes: +m.prints || 0, custo, cpc: r2(m.cpc), acos: m.acos != null ? r2(m.acos) : null,
         unidadesAds: un, vendasAds: r2(m.total_amount || ((+m.direct_amount || 0) + (+m.indirect_amount || 0))),
         organicas: +m.organic_units_quantity || 0,
-        lucroAds: lucroAntes != null ? r2(lucroAntes - custo) : null });
+        lucroAds: lucroAntes != null ? r2(lucroAntes - custo) : null,
+        // lucro total do anúncio = vendas orgânicas × lucro por unidade + lucro das vendas do ADS − gasto do ADS
+        lucroOrg: mg.lucro == null ? null : r2((+m.organic_units_quantity || 0) * mg.lucro),
+        lucroTotal: lucroAntes == null || mg.lucro == null ? null : r2((+m.organic_units_quantity || 0) * mg.lucro + lucroAntes - custo) });
     }
     Object.assign(E, { status: 'pronto', em: new Date().toISOString(), dias, anunciante: adv, campanhas: camps, itens: out });
   } catch (e) {
@@ -174,6 +177,23 @@ async function custoPeriodo(idx, ini, fim) {
   C = { em: new Date().toISOString(), ini, fim, itens: L, skus };
   try { fs.mkdirSync(path.dirname(arq), { recursive: true }); fs.writeFileSync(arq, JSON.stringify(C)); } catch (e) {}
   return C;
+}
+
+/** Gasto e unidades vendidas pelo ADS por anúncio num período longo (regra da cauda). Tenta 60 dias; se o ML recusar, 30. → { dias, itens: { MLB: { custo, un } } } */
+async function metricasPeriodo(idx, dias = 60) {
+  const adv = await anunciante(idx);
+  for (const d of [dias, 30]) {
+    try {
+      const out = {}, params = { limit: 50, date_from: hojeSP(d), date_to: hojeSP(0), metrics: 'cost,units_quantity,clicks' };
+      for (let offset = 0; offset < 5000; offset += 50) {
+        const r = await getCand(idx, adv, 'ads', { ...params, offset }), L = r.results || r.items || [];
+        for (const a of L) out[a.item_id] = { custo: r2(a.metrics?.cost), un: +a.metrics?.units_quantity || 0, cliques: +a.metrics?.clicks || 0 };
+        if (L.length < 50 || (r.paging?.total != null && offset + 50 >= r.paging.total)) break;
+        await delay(250);
+      }
+      return { dias: d, itens: out };
+    } catch (e) { if (d === 30) throw e; }
+  }
 }
 
 function rotas(app, fontes) {
@@ -241,4 +261,4 @@ async function criarCampanha(idx, item, { nome, budget, acos_target }) {
   return { campanha: c, anuncio: a, id: cid };
 }
 const estado = (idx, dias) => ST[idx + '|' + dias];
-module.exports = { rotas, custoPeriodo, carregar, estado, alterarCampanha, criarCampanha, moverAnuncio: async (idx, item, body) => { const adv = await anunciante(idx); return req(idx, 'put', `/marketplace/advertising/${adv.site}/product_ads/ads/${item}`, { params: { channel: 'marketplace' }, data: body }); } };
+module.exports = { rotas, custoPeriodo, metricasPeriodo, carregar, estado, alterarCampanha, criarCampanha, moverAnuncio: async (idx, item, body) => { const adv = await anunciante(idx); return req(idx, 'put', `/marketplace/advertising/${adv.site}/product_ads/ads/${item}`, { params: { channel: 'marketplace' }, data: body }); } };
