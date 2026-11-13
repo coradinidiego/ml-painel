@@ -4456,7 +4456,7 @@ function amGraficosHtml(L){
   return h;
 }
 function amGraficos(L,G){
-  Object.values(amCharts).forEach(c=>c.destroy());amCharts={};
+  Object.values(amCharts).forEach(c=>c.destroy());amCharts={};{const t=document.getElementById('am-tip-float');if(t)t.style.opacity=0;}
   if(typeof Chart==='undefined')return;
   const brl=v=>'R$ '+Math.round(v).toLocaleString('pt-BR');
   const dias=[...new Set(L.map(l=>l.data))].filter(Boolean).sort(),emps=[...new Set(L.map(l=>l.empresa))];
@@ -4470,7 +4470,7 @@ function amGraficos(L,G){
   if(temAnt)ds.push({type:'line',label:'Mês anterior',data:totAnt,borderColor:'#9aa3b2',backgroundColor:'#9aa3b2',borderDash:[6,4],borderWidth:2,pointRadius:2,pointHoverRadius:5,tension:.3,spanGaps:true,stack:'a',order:1});
   const pcs=v=>(v>=0?'+':'')+v.toFixed(1).replace('.',',')+'%';
   amCharts.dia=new Chart(el('amc-dia'),{type:'bar',data:{labels:dias.map(d=>d.slice(8,10)+'/'+d.slice(5,7)),datasets:ds},
-    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{boxWidth:12}},tooltip:{
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{boxWidth:12}},tooltip:{enabled:false,external:amTipExt,
       filter:c=>c.raw!=null&&(ds[c.datasetIndex]?.type==='line'||Math.abs(c.raw)>=0.5),
       itemSort:(a,b)=>{const o=x=>{const d=ds[x.datasetIndex]||{};return d.label==='Total'?0:d.label==='Mês anterior'?1:2;};return o(a)-o(b);},
       callbacks:{
@@ -4487,6 +4487,21 @@ function amGraficos(L,G){
       return '<div class="am-hb-r"><div class="am-hb-n"><span><i style="background:'+c+'"></i>'+k+'</span><b>'+sh.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%</b></div><div class="am-hb-tr"><div style="width:'+(r/mx*100)+'%;background:'+c+'33;border:1px solid '+c+'88"><div style="width:'+Math.max(0,r?l/r*100:0)+'%;background:'+c+'"></div></div></div><div class="am-hb-v">'+brl(r)+' faturados · <span style="color:'+(l>=0?'var(--po)':'var(--ne)')+'">'+brl(l)+' de lucro</span> · margem '+mg.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%</div></div>';}).join('');};
   hb('amc-emp','empresa',AM_COR_EMP,'Por empresa');hb('amc-canal','canal',AM_COR_CANAL,'Por canal');
   Object.values(amCharts).forEach(amTema);
+}
+// balão do "Lucro por dia" em HTML, solto no <body>: o do canvas era cortado quando a lista passava da altura do gráfico
+function amTipExt({chart,tooltip}){
+  let t=document.getElementById('am-tip-float');
+  if(!t){t=document.createElement('div');t.id='am-tip-float';t.style.cssText="position:fixed;z-index:10000;pointer-events:none;background:#2c3036;border:1px solid #383d45;border-radius:6px;padding:10px 12px;color:#e8eaed;font:600 11.5px/1.5 'Manrope',system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.45);white-space:nowrap;transition:opacity .12s;opacity:0";document.body.appendChild(t);}
+  if(!tooltip||tooltip.opacity===0||!document.body.contains(chart.canvas)){t.style.opacity=0;return;}
+  const esc=x=>String(x).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  let h='<div style="font-weight:800;font-size:12.5px;margin-bottom:4px">'+(tooltip.title||[]).map(esc).join(' ')+'</div>';
+  (tooltip.body||[]).forEach((b,i)=>{const c=(tooltip.labelColors[i]||{}).backgroundColor||'#888';
+    b.lines.forEach((l,j)=>{h+=j===0?'<div style="margin-top:'+(i?5:0)+'px"><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:'+c+';margin-right:6px"></i>'+esc(l)+'</div>':'<div style="color:#959ca7;padding-left:15px;font-weight:500">'+esc(l.trim())+'</div>';});});
+  t.innerHTML=h;
+  const r=chart.canvas.getBoundingClientRect(),w=t.offsetWidth,hh=t.offsetHeight,cx=r.left+tooltip.caretX;
+  let x=cx+16;if(x+w>innerWidth-8)x=cx-16-w;if(x<8)x=8;
+  let y=r.top+r.height/2-hh/2;if(y+hh>innerHeight-8)y=innerHeight-8-hh;if(y<8)y=8;
+  t.style.left=x+'px';t.style.top=y+'px';t.style.opacity=1;
 }
 function amTema(ch){
   // ajusta direto nas opções: reatribuir o objeto (o.x=Object.assign(o.x,...)) quebra o tooltip no Chart.js 3
