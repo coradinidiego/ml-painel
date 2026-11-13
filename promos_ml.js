@@ -45,9 +45,14 @@ const ST = {};   // idx -> { status, feito, total, em, itens, erro }
 let F;           // funções do server.js
 
 async function opcoesItem(idx, uid, it, cat, erp) {
-  let lista = [];
-  try { lista = await F.ml(idx, '/seller-promotions/items/' + it.id, { app_version: 'v2' }); } catch (e) { lista = []; }
-  if (!Array.isArray(lista)) lista = [];
+  // falha ao ler as promoções (ML fora / limite de chamadas) não pode virar "anúncio sem promoção nenhuma": repete e,
+  // se não der, mantém o que já estava calculado para o anúncio (o erro sobe e o item antigo fica)
+  let lista = null;
+  for (let t = 0; t < 2 && !lista; t++) {
+    try { const r = await F.ml(idx, '/seller-promotions/items/' + it.id, { app_version: 'v2' }); lista = Array.isArray(r) ? r : []; }
+    catch (e) { const st = e.response?.status; if (st >= 400 && st < 500 && st !== 429) lista = []; else await delay(3000); }   // 4xx: o ML não tem promoções para o anúncio
+  }
+  if (!lista) throw new Error('não consegui ler as promoções do anúncio no ML');
   const precoAtual = it.sale_amount && it.sale_amount < (it.regular_amount || it.original_price || it.price) ? it.sale_amount : it.price;
   const ativa = lista.find(p => p.status === 'started' && Math.abs((+p.price || 0) - precoAtual) < 0.05);
   const rebAtual = ativa && +ativa.meli_percentage > 0 ? r2((+ativa.original_price || 0) * +ativa.meli_percentage / 100) : 0;
@@ -192,33 +197,46 @@ async function entrar(idx, itemId, i, preco, qtd) {
     o.qtd = Math.max(o0.estoque.min, Math.min(o0.estoque.max, disp, qtd > 0 ? Math.round(qtd) : o0.estoque.min));
   }
   const body = ENTRA[o.tipo](o);
-  const r = await F.mlReq(idx, 'post', '/seller-promotions/items/' + itemId + '?app_version=v2', body);
+  const r = o.tipo === 'PRICE_DISCOUNT' ? await trocarDescontoProprio(idx, itemId, body, null)
+    : await F.mlReq(idx, 'post', '/seller-promotions/items/' + itemId + '?app_version=v2', body);
   const tambem = ['PRICE_DISCOUNT', 'SELLER_CAMPAIGN'].includes(o.tipo) ? await entrarCampanhasMesmoPreco(idx, itemId, o.preco) : [];
   // recalcula só este item
   const d = F.dados()[idx], it = [...(d?.semPromo || []), ...(d?.comPromo || [])].find(y => y.id === itemId);
   if (it) {
     it.sale_amount = o.preco;
-    const novo = await opcoesItem(idx, await F.uid(idx), it, x.catalogo ? { status: x.catalogo.status, ptw: x.catalogo.ptw, s2price: x.catalogo.s2 } : null, await cm.custosErp(idx).catch(() => ({})));
-    Object.assign(x, novo, { semPromo: false }); moverParaComPromo(d, itemId);
+    try {   // a entrada já foi aceita pelo ML: erro ao recalcular o card não vira "recusou"
+      const novo = await opcoesItem(idx, await F.uid(idx), it, x.catalogo ? { status: x.catalogo.status, ptw: x.catalogo.ptw, s2price: x.catalogo.s2 } : null, await cm.custosErp(idx).catch(() => ({})));
+      Object.assign(x, novo, { semPromo: false });
+    } catch (e) {}
+    moverParaComPromo(d, itemId);
   }
   return { ok: true, resposta: r.data, item: x, qtd: o.qtd || null, tambem };
 }
 
-// Muda o preço de um desconto próprio já ativo. O ML não aceita PUT nesse tipo ("Invalid promotion type") e, com o
-// desconto ativo, recusa um novo POST ("No candidates found for item"). Então:
+// Muda o preço de um anúncio que já tem desconto próprio ativo (ou em que o ML recusa criar um desconto próprio novo com
+// "No candidates found for item"). O ML não aceita PUT no desconto próprio nem um segundo POST por cima. Então, pela
+// lista de promoções do anúncio lida na hora (vale sempre o menor preço entre as promoções ativas):
 //   1. tenta o POST (substitui, quando o ML aceita);
-//   2. entra na campanha do vendedor disponível com o preço novo (vale o menor preço; não fica nenhum momento sem desconto);
-//   3. sem campanha: apaga o desconto e cria de novo — o ML leva de segundos a alguns minutos para liberar, por isso
+//   2. campanha de preço livre JÁ ATIVA no anúncio (campanha do vendedor / campanha do ML) → muda o preço dela (PUT);
+//   3. campanha do vendedor disponível → entra nela com o preço novo (não fica nenhum momento sem desconto);
+//   4. só desconto próprio: apaga e cria de novo — o ML leva de segundos a alguns minutos para liberar, por isso
 //      repete por ~3 min; se não conseguir, recoloca o desconto anterior (também repetindo).
 async function trocarDescontoProprio(idx, itemId, body, precoAnterior, fontes) {
-  const req = (fontes || F).mlReq, ml = (fontes || F).ml, url = '/seller-promotions/items/' + itemId + '?app_version=v2';
+  const req = (fontes || F).mlReq, ml = (fontes || F).ml, url = '/seller-promotions/items/' + itemId + '?app_version=v2', preco = +body.deal_price;
+  let e1;
   try { return await req(idx, 'post', url, body); }
-  catch (e) { if (e.response?.status >= 500) throw e; }
-  try {
-    const L = await ml(idx, '/seller-promotions/items/' + itemId, { app_version: 'v2' });
-    const c = (Array.isArray(L) ? L : []).find(p => p.type === 'SELLER_CAMPAIGN' && p.status === 'candidate' && p.id);
-    if (c) return await req(idx, 'post', url, { promotion_id: c.id, promotion_type: 'SELLER_CAMPAIGN', deal_price: body.deal_price });
-  } catch (e) {}
+  catch (e) { if (e.response?.status >= 500) throw e; e1 = e; }
+  let L = [];
+  try { L = await ml(idx, '/seller-promotions/items/' + itemId, { app_version: 'v2' }); } catch (e) {}
+  if (!Array.isArray(L)) L = [];
+  const cabe = p => !(+p.max_discounted_price > 0) || (preco >= +p.min_discounted_price - 0.001 && preco <= +p.max_discounted_price + 0.001);
+  const ativa = L.find(p => p.status === 'started' && p.id && ['SELLER_CAMPAIGN', 'DEAL'].includes(p.type) && cabe(p));
+  if (ativa) try { return await req(idx, 'put', url, { promotion_id: ativa.id, promotion_type: ativa.type, deal_price: preco }); } catch (e) {}
+  const c = L.find(p => p.type === 'SELLER_CAMPAIGN' && p.status === 'candidate' && p.id);
+  if (c) try { return await req(idx, 'post', url, { promotion_id: c.id, promotion_type: 'SELLER_CAMPAIGN', deal_price: preco }); } catch (e) {}
+  const proprio = L.find(p => p.type === 'PRICE_DISCOUNT' && p.status === 'started');
+  if (!proprio) throw e1;   // não há desconto próprio para trocar: devolve a recusa original do ML
+  if (!(precoAnterior > 0)) precoAnterior = +proprio.price || null;
   await req(idx, 'delete', url + '&promotion_type=PRICE_DISCOUNT');
   let erro;
   for (const espera of [5, 10, 15, 20, 25, 30, 30, 30, 30]) {
@@ -262,8 +280,10 @@ async function editar(idx, itemId, i, preco) {
   const d = F.dados()[idx], it = [...(d?.semPromo || []), ...(d?.comPromo || [])].find(y => y.id === itemId);
   if (it) {
     if (o.status === 'started') it.sale_amount = p;
-    const novo = await opcoesItem(idx, await F.uid(idx), it, x.catalogo ? { status: x.catalogo.status, ptw: x.catalogo.ptw, s2price: x.catalogo.s2 } : null, await cm.custosErp(idx).catch(() => ({})));
-    Object.assign(x, novo);
+    try {
+      const novo = await opcoesItem(idx, await F.uid(idx), it, x.catalogo ? { status: x.catalogo.status, ptw: x.catalogo.ptw, s2price: x.catalogo.s2 } : null, await cm.custosErp(idx).catch(() => ({})));
+      Object.assign(x, novo);
+    } catch (e) {}
   }
   return { ok: true, resposta: r.data, item: x, tambem };
 }
