@@ -149,8 +149,13 @@ async function emitir(p, por) {
     reg.numeroNota = n?.numero; reg.chave = n?.chaveAcesso; reg.situacao = SIT[n?.situacao] || ('situação ' + n?.situacao);
     reg.ok = [5, 6, 7].includes(Number(n?.situacao));
   } catch (e) { reg.situacao = 'erro'; reg.erro = erroTxt(e); }
+  // aviso no Telegram: o mesmo problema do mesmo pedido só avisa de novo depois de 24 h
+  const msg = reg.erro || reg.situacao;
+  const jaAvisou = S.hist.some(h => h.avisado && h.emp === p.emp && h.numeroLoja === p.numeroLoja && (h.erro || h.situacao) === msg && Date.now() - Date.parse(h.em) < 24 * 3600e3);
+  const avisar = !reg.ok && reg.situacao !== 'cancelado na SHEIN — não emitido' && !jaAvisou;
+  if (avisar) reg.avisado = true;
   S.hist.unshift(reg); salvar();
-  if (!reg.ok && reg.situacao !== 'cancelado na SHEIN — não emitido') try { require('./telegram').sendTelegram(`⚠️ NF-e SHEIN ${p.empresa} pedido ${p.numeroLoja}: ${reg.erro || reg.situacao}`); } catch (e) {}
+  if (avisar) try { require('./telegram').sendTelegram(`⚠️ NF-e SHEIN ${p.empresa} pedido ${p.numeroLoja}: ${reg.erro || reg.situacao}`); } catch (e) {}
   return reg;
 }
 
@@ -160,7 +165,7 @@ async function rodarAuto() {
   try {
     const L = await listar();
     if (S.modo === 'auto') for (const p of L.filter(x => x.id && !x.autorizada)) {
-      if (S.hist.some(h => h.emp === p.emp && h.pedido === p.numero && h.situacao === 'erro' && Date.now() - Date.parse(h.em) < 6 * 3600e3)) continue;   // erro recente: não insiste
+      if (S.hist.some(h => h.emp === p.emp && h.pedido === p.numero && !h.ok && Date.now() - Date.parse(h.em) < 6 * 3600e3)) continue;   // tentativa recente sem sucesso (erro ou nota que não autorizou): não insiste
       await emitir(p); await delay(1500);
     }
     if (S.modo === 'auto') await listar();
