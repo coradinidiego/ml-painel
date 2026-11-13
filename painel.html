@@ -4489,10 +4489,11 @@ function amGraficos(L,G){
   Object.values(amCharts).forEach(amTema);
 }
 function amTema(ch){
+  // ajusta direto nas opções: reatribuir o objeto (o.x=Object.assign(o.x,...)) quebra o tooltip no Chart.js 3
   const o=ch.options,mu='#959ca7',ln='rgba(255,255,255,.07)',f={family:"'Manrope',system-ui,sans-serif",size:11,weight:'600'};
-  for(const s of Object.values(o.scales||{})){s.ticks=Object.assign(s.ticks||{},{color:mu,font:f});s.grid=Object.assign(s.grid||{},{color:ln,drawBorder:false});}
-  o.plugins.legend.labels=Object.assign(o.plugins.legend.labels||{},{color:'#e8eaed',font:f,usePointStyle:true,pointStyle:'rectRounded'});
-  o.plugins.tooltip=Object.assign(o.plugins.tooltip||{},{backgroundColor:'#2c3036',borderColor:'#383d45',borderWidth:1,titleColor:'#e8eaed',bodyColor:'#e8eaed',padding:10,titleFont:f,bodyFont:f});
+  for(const s of Object.values(o.scales||{})){Object.assign(s.ticks,{color:mu,font:f});Object.assign(s.grid,{color:ln,drawBorder:false});}
+  Object.assign(o.plugins.legend.labels,{color:'#e8eaed',font:f,usePointStyle:true,pointStyle:'rectRounded'});
+  Object.assign(o.plugins.tooltip,{backgroundColor:'#2c3036',borderColor:'#383d45',borderWidth:1,titleColor:'#e8eaed',bodyColor:'#e8eaed',padding:10,titleFont:f,bodyFont:f});
   ch.data.datasets.forEach(d=>{if(d.type!=='line'){d.borderRadius=4;d.borderSkipped=false;}else if(d.label==='Mês anterior'){d.borderWidth=2;d.borderColor='#8a93a3';d.backgroundColor='#8a93a3';d.pointBackgroundColor='#8a93a3';d.pointRadius=2;}else{d.borderWidth=2.5;d.borderColor='#ffffff';d.backgroundColor='#ffffff';d.pointBackgroundColor='#ffffff';d.pointRadius=2.5;}});
   ch.update('none');
 }
