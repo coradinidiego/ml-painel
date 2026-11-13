@@ -583,6 +583,7 @@ body.pm-tipjs .pm-hastip:hover .pm-tip,body.pm-tipjs .pm-hastip:focus .pm-tip{di
   </div>
   <div id="tab-ganhando" class="tab-content">
     <div class="sf"><input class="sinput" type="text" placeholder="Buscar..." oninput="renderGanhando(0)" id="bg"><select class="sselect" id="og" onchange="renderGanhando(0)"><option value="subir">Maior ganho ao subir o preço</option><option value="lucro">Menor margem hoje</option><option value="folga">Maior folga até o 2º</option></select></div>
+    <div class="section" id="sec-subir"><div class="sec-head" style="cursor:pointer" onclick="_subAberto=!_subAberto;renderSubir()"><span>📈 Onde dá para subir preço e margem <span class="cnt" id="c-subir">-</span></span><span id="subir-seta" style="font-size:12px;color:#888">▾</span></div><div id="b-subir"></div></div>
     <div class="section"><div class="sec-head">🟢 Ganhando — margem, 2º colocado e quanto dá para subir <span class="cnt" id="c-ganhando">-</span></div><div id="b-ganhando"><div class="loading">Carregando...</div></div></div>
     <div class="footer"><span id="upd-g">-</span><button class="btn" onclick="recarregarConta()">↺ Atualizar</button></div>
   </div>
@@ -2039,7 +2040,70 @@ function seloVendedor(med,oficial){
   const m=M[med];const b=(t,bg,c,tit)=>'<span title="'+tit+'" style="display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:10px;background:'+bg+';color:'+c+';margin-left:5px;white-space:nowrap">'+t+'</span>';
   return (m?b(m[0],m[1],m[2],'MercadoLíder '+m[0].split(' ')[1]):b('sem medalha','#f5f5f5','#888','Não é MercadoLíder'))+(oficial?b('✔ Loja oficial','#E3F2FD','#1565C0','Loja oficial no Mercado Livre'):'');
 }
+// ══ Ganhando: onde subir preço (ranking por ganho no mês) ══
+let _subVendas=null,_subVendasEm=0,_subCarregando=false,_subAberto=true,_subGrupo='todos',_subSoVenda=false,_subTudo=false;
+const SUB_EMP=['Zagodini','Com Amor de Mãe','Lufe'];
+const SUB_GRUPO={folga:['Folga até o 2º','#2e7d32','O 2º colocado está mais caro: sugestão = R$ 0,10 abaixo dele'],sozinho:['Sozinho no catálogo','#1565C0','Sem concorrente no catálogo: teste de +10%'],caro:['Ganha mesmo mais caro','#8e24aa','Você já ganha com preço acima do 2º colocado: teste de +5%']};
+async function subVendas(){
+  if(_subCarregando||(_subVendas&&Date.now()-_subVendasEm<15*60e3))return;
+  _subCarregando=true;
+  try{const z=n=>String(n).padStart(2,'0'),f=d=>d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate());
+    const r=await fetch('/apuracao-mkt/resultado?emp=todas&ini='+f(new Date(Date.now()-30*864e5))+'&fim='+f(new Date())).then(r=>r.json());
+    const m={};(r.linhas||[]).filter(l=>/mercado/i.test(l.canal)).forEach(l=>{const k=l.empresa+'|'+String(l.sku||'').trim().toUpperCase();m[k]=(m[k]||0)+(l.qtd||0);});
+    _subVendas=m;_subVendasEm=Date.now();
+  }catch(e){if(!_subVendas){_subVendas={};_subVendasEm=Date.now()-14*60e3;}}
+  _subCarregando=false;renderSubir();
+}
+function subLista(){
+  const d=window._dados[ci];if(!d)return [];
+  const emp=SUB_EMP[ci],v=_subVendas;
+  return (d.ganhando||[]).map(it=>{
+    const a=it.calc_atual;if(!a)return null;
+    let n,grupo;
+    if(it.preco_subir&&it.calc_subir){n=it.calc_subir;grupo='folga';}
+    else if(!it.s2price){n=(it.calc_testes||[])[1]||(it.calc_testes||[])[0];grupo='sozinho';}
+    else{n=(it.calc_testes||[])[0];grupo='caro';}
+    if(!n||!(n.lucro>a.lucro+0.005))return null;
+    const sku=String(it._sku||it.seller_sku||'').trim().toUpperCase(),q=v?(v[emp+'|'+sku]||0):null,g=n.lucro-a.lucro;
+    const av=[];
+    if(grupo==='caro')av.push('já ganha '+((a.preco/it.s2price-1)*100).toFixed(0)+'% acima do 2º ('+fmt(it.s2price)+')');
+    if(n.perdeCampanha)av.push('sai da campanha '+(n.campanhaNome||'')+(a.rebate?' (perde rebate de '+fmt(a.rebate)+')':''));
+    if(n.frete>a.frete+0.01)av.push('frete sobe de '+fmt(a.frete)+' para '+fmt(n.frete));
+    if(it.price&&n.preco>it.price+0.01)av.push('acima do preço cheio ('+fmt(it.price)+'): subir o preço do anúncio');
+    if(grupo==='folga'&&it.s2_oficial)av.push('2º é loja oficial');
+    return {it,a,n,grupo,q,g,gm:q==null?null:g*q,queda:a.lucro>0?(1-a.lucro/n.lucro)*100:null,av};
+  }).filter(Boolean);
+}
+function renderSubir(){
+  const b=el('b-subir');if(!b)return;
+  el('subir-seta').textContent=_subAberto?'▾':'▸';
+  const d=window._dados[ci];
+  if(!d){b.innerHTML='';el('c-subir').textContent='-';return;}
+  if(!_subVendas||Date.now()-_subVendasEm>=15*60e3)subVendas();
+  const todos=subLista();el('c-subir').textContent=todos.length;
+  if(!_subAberto){b.innerHTML='';return;}
+  const pc=v=>v.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%',cor=v=>v<0?'#b71c1c':v<10?'#e53935':v<15?'#e67e00':'#2e7d32';
+  const escH=t=>String(t||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const sum=k=>{const a=todos.filter(x=>k==='todos'||x.grupo===k);return {n:a.length,gm:a.reduce((s,x)=>s+(x.gm||0),0)};};
+  const chip=(k,t,tip)=>{const s=sum(k),on=_subGrupo===k;return '<button title="'+escH(tip||'')+'" onclick="_subGrupo=\''+k+'\';_subTudo=false;renderSubir()" style="border:1px solid '+(on?'#0d1b2a':'#ddd')+';background:'+(on?'#0d1b2a':'white')+';color:'+(on?'white':'#333')+';border-radius:16px;padding:5px 11px;font-size:12px;cursor:pointer">'+t+' · <b>'+s.n+'</b>'+(_subVendas?' · '+fmt(Math.round(s.gm))+'/mês':'')+'</button>';};
+  let f=todos.filter(x=>(_subGrupo==='todos'||x.grupo===_subGrupo)&&(!_subSoVenda||x.q>0));
+  f.sort((x,y)=>(y.gm||0)-(x.gm||0)||y.g-x.g);
+  let h='<div style="padding:10px 16px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;border-bottom:1px solid #f0f0f0">'+chip('todos','Todos','')+Object.entries(SUB_GRUPO).map(([k,[t,,tip]])=>chip(k,t,tip)).join('')+
+    '<label style="font-size:12px;color:#555;margin-left:auto;cursor:pointer"><input type="checkbox" '+(_subSoVenda?'checked':'')+' onchange="_subSoVenda=this.checked;renderSubir()"> só com venda nos últimos 30 dias</label></div>';
+  if(!f.length){b.innerHTML=h+'<div class="loading">Nenhum anúncio ganhando com espaço para subir neste filtro.</div>';return;}
+  const lim=_subTudo?f.length:25;
+  h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><tr style="color:#888;text-align:right;font-size:11.5px"><th style="text-align:left;padding:8px 16px">Anúncio</th><th title="Unidades do SKU vendidas no Mercado Livre nos últimos 30 dias (todos os anúncios desse SKU)">Vendas 30d</th><th>Preço hoje</th><th>Sugerido</th><th>Margem hoje</th><th>Margem nova</th><th>Lucro/venda</th><th title="Ganho no mês se as vendas se mantiverem">Ganho/mês</th><th title="Quanto a venda pode cair e o lucro total ficar igual ao de hoje" style="padding-right:16px">Empata até</th></tr>'+
+    f.slice(0,lim).map(x=>{const it=x.it,G=SUB_GRUPO[x.grupo],dp=(x.n.preco/x.a.preco-1)*100;
+      return '<tr style="border-top:1px solid #f0f0f0;text-align:right;vertical-align:top"><td style="text-align:left;padding:8px 16px;max-width:380px"><div style="font-weight:500">'+escH(it.title||it.id)+'</div><div style="color:#999;font-size:11px;margin-top:2px"><span title="'+escH(G[2])+'" style="color:'+G[1]+';font-weight:600">'+G[0]+'</span> · '+it.id+(it._sku?' · SKU '+escH(it._sku):'')+' · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+it.id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="https://www.mercadolivre.com.br/anuncios/lista/promos?page=1&search='+it.id.replace('MLB','')+'" target="_blank">Promo</a></div>'+(x.av.length?'<div style="color:#b26a00;font-size:11px;margin-top:2px">⚠ '+escH(x.av.join(' · '))+'</div>':'')+'</td>'+
+        '<td style="padding-top:8px">'+(x.q==null?'…':x.q)+'</td><td style="padding-top:8px">'+fmt(x.a.preco)+'</td><td style="padding-top:8px;font-weight:700">'+fmt(x.n.preco)+'<div style="font-weight:400;color:#999;font-size:11px">+'+dp.toFixed(0)+'%</div></td>'+
+        '<td style="padding-top:8px;color:'+cor(x.a.pct)+'">'+pc(x.a.pct)+'</td><td style="padding-top:8px;font-weight:700;color:'+cor(x.n.pct)+'">'+pc(x.n.pct)+'</td><td style="padding-top:8px;color:#2e7d32">+'+fmt(x.g)+'</td>'+
+        '<td style="padding-top:8px;font-weight:700;color:#2e7d32">'+(x.gm==null?'…':x.gm>0?'+'+fmt(Math.round(x.gm)):'—')+'</td><td style="padding:8px 16px 8px 0;color:#555">'+(x.queda==null?'hoje sem lucro':'−'+x.queda.toFixed(0)+'% de vendas')+'</td></tr>';}).join('')+'</table></div>';
+  if(f.length>lim)h+='<div style="padding:10px 16px;text-align:center"><button class="tl-btn" onclick="_subTudo=true;renderSubir()">Ver todos os '+f.length+'</button></div>';
+  h+='<div style="padding:8px 16px;font-size:11px;color:#999;border-top:1px solid #f0f0f0">Margem nova já com tarifa, frete, imposto e rebate no preço sugerido. Ganho/mês supõe as mesmas vendas dos últimos 30 dias; "Empata até" é quanto a venda pode cair sem o lucro total diminuir. Suba em etapas e confira se continua ganhando o catálogo.</div>';
+  b.innerHTML=h;
+}
 function renderGanhando(from){
+  renderSubir();
   const d=window._dados[ci];const b=el('b-ganhando');
   if(!d){b.innerHTML='<div class="loading">Aguarde...</div>';return;}
   const q=(el('bg')?.value||'').toLowerCase();
