@@ -152,7 +152,7 @@ const FLUXO_VERIFICADO = { Shein: /^GSH/i, Shopee: /^\d{6}[A-Z0-9]{8}$/i, Amazon
 const SIT = { emAberto: 6, atendido: 9, verificado: 24 };
 
 // Status dos pedidos direto na Shopee (só lojas com a Shopee conectada no painel). Cache de 3 min por pedido.
-const _stShp = {}, _criadoShp = {}, _carrierShp = {}, _coletadoShp = {}, _limShp = {};   // _limShp: ship_by_date da Shopee (prazo real de envio, já com feriados)   // order_sn -> status / create_time (segundos)
+const _stShp = {}, _criadoShp = {}, _carrierShp = {}, _coletadoShp = {}, _limShp = {}, _nfShp = {};   // _limShp: ship_by_date da Shopee (prazo real de envio, já com feriados)   // order_sn -> status / create_time (segundos)
 async function statusShopee(empId, sns) {
   let sp;
   try { sp = require('./shopee').loja(empId); } catch (e) { return null; }
@@ -161,8 +161,8 @@ async function statusShopee(empId, sns) {
   for (const sn of sns) { const c = _stShp[sn]; if (c && agora - c.ts < 3 * 60e3) out[sn] = c.st; else faltam.push(sn); }
   try {
     for (let i = 0; i < faltam.length; i += 50) {
-      const d = await sp.shopeeGet('/api/v2/order/get_order_detail', { order_sn_list: faltam.slice(i, i + 50).join(','), response_optional_fields: 'shipping_carrier,pickup_done_time,pay_time,ship_by_date' });
-      for (const o of d.response?.order_list || []) { out[o.order_sn] = o.order_status; _stShp[o.order_sn] = { st: o.order_status, ts: agora }; if (o.ship_by_date > 0) _limShp[o.order_sn] = o.ship_by_date; if (o.pay_time || o.create_time) _criadoShp[o.order_sn] = o.pay_time || o.create_time; /* prazo da Shopee conta a partir do pagamento */ if (o.shipping_carrier) _carrierShp[o.order_sn] = o.shipping_carrier; if (o.pickup_done_time) _coletadoShp[o.order_sn] = o.pickup_done_time; }
+      const d = await sp.shopeeGet('/api/v2/order/get_order_detail', { order_sn_list: faltam.slice(i, i + 50).join(','), response_optional_fields: 'shipping_carrier,pickup_done_time,pay_time,ship_by_date,invoice_data' });
+      for (const o of d.response?.order_list || []) { out[o.order_sn] = o.order_status; _nfShp[o.order_sn] = o.order_status === 'READY_TO_SHIP' && !!o.invoice_data && o.invoice_data.status !== 'valid'; _stShp[o.order_sn] = { st: o.order_status, ts: agora }; if (o.ship_by_date > 0) _limShp[o.order_sn] = o.ship_by_date; if (o.pay_time || o.create_time) _criadoShp[o.order_sn] = o.pay_time || o.create_time; /* prazo da Shopee conta a partir do pagamento */ if (o.shipping_carrier) _carrierShp[o.order_sn] = o.shipping_carrier; if (o.pickup_done_time) _coletadoShp[o.order_sn] = o.pickup_done_time; }
     }
   } catch (e) { console.warn('[tv] status Shopee', empId, e.message); if (!Object.keys(out).length) return null; }
   return out;
@@ -527,6 +527,8 @@ async function coletarEmpresa(emp, cfg, hoje, erros, aoParcial) {
         if (az) erp = [...erp.filter(l => l.canal !== 'Amazon'), ...az];
       } catch (e) { erros[`${emp.nome} · Amazon`] = e.message; console.warn('[tv] Amazon', emp.id, e.message); }
     }
+    // Shopee ainda esperando a NF-e ("Enviar NF-e" na Shopee): fica em Emitir NF, mesmo que o ERP já tenha passado o pedido adiante
+    for (const l of erp) if (l.canal === 'Shopee' && l.num && ['aEmpacotar', 'empacotado'].includes(l.tipo) && _nfShp[l.num] && _stShp[l.num]?.st === 'READY_TO_SHIP') { l.tipo = 'emitirNF'; l.nfShopee = true; }
     // SHEIN conectada: hora do pagamento, prazo de envio e status direto da SHEIN
     try { erp = await ajustarShein(emp, erp); } catch (e) { console.warn('[tv] SHEIN', emp.id, e.message); }
     try { erp = await atrasadosSheinApi(emp, erp); } catch (e) { console.warn('[tv] SHEIN atrasados', emp.id, e.message); }
