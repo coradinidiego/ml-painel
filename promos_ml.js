@@ -186,6 +186,17 @@ async function simular(idx, itemId, i, preco) {
   const p = precoEscolhido(o, preco);
   return { preco: p, m: await cm.margemPreco(F.ml, idx, await F.uid(idx), it, p, o.rebate || 0, await cm.custosErp(idx).catch(() => ({}))) };
 }
+// Promoções em que o painel acabou de entrar: o ML demora a mostrar a promoção como ativa/programada, então o card
+// guarda a marca (x.entrou) e mostra "você entrou" no lugar do botão até o próximo recálculo completo da lista.
+const chaveOp = o => o.tipo + '|' + (o.id || '');
+function marcarEntrou(x, o, preco) { (x.entrou = x.entrou || {})[chaveOp(o)] = r2(preco); aplicarEntrou(x); }
+function aplicarEntrou(x) {
+  for (const o of x.opcoes || []) {
+    const p = x.entrou?.[chaveOp(o)];
+    if (p != null && o.status === 'candidate') { o.entrou = true; o.entrouPreco = p; o.podeEntrar = false; }
+  }
+}
+
 async function entrar(idx, itemId, i, preco, qtd) {
   const E = ST[idx], x = E?.itens?.find(y => y.id === itemId), o0 = x?.opcoes?.[i];
   if (!o0) throw new Error('opção não encontrada — atualize a lista');
@@ -210,6 +221,8 @@ async function entrar(idx, itemId, i, preco, qtd) {
     } catch (e) {}
     moverParaComPromo(d, itemId);
   }
+  marcarEntrou(x, o0, o.preco);
+  for (const o2 of x.opcoes || []) if (o2.tipo === 'DEAL' && tambem.includes(o2.nome)) marcarEntrou(x, o2, o.preco);
   return { ok: true, resposta: r.data, item: x, qtd: o.qtd || null, tambem };
 }
 
@@ -285,6 +298,8 @@ async function editar(idx, itemId, i, preco) {
       Object.assign(x, novo);
     } catch (e) {}
   }
+  aplicarEntrou(x);
+  for (const o2 of x.opcoes || []) if (o2.tipo === 'DEAL' && tambem.includes(o2.nome)) marcarEntrou(x, o2, p);
   return { ok: true, resposta: r.data, item: x, tambem };
 }
 
