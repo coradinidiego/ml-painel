@@ -203,6 +203,25 @@ async function entrar(idx, itemId, i, preco, qtd) {
   return { ok: true, resposta: r.data, item: x, qtd: o.qtd || null };
 }
 
+// Muda o preço de um desconto próprio. O ML não aceita PUT nesse tipo ("Invalid promotion type"); um novo POST às vezes
+// substitui, mas com o desconto já ativo costuma responder "No candidates found for item" — aí apaga o desconto e cria
+// de novo com o preço novo (o ML leva alguns segundos para liberar; repete). Se não conseguir, volta o preço anterior.
+async function trocarDescontoProprio(idx, itemId, body, precoAnterior, mlReq) {
+  const req = mlReq || F.mlReq, url = '/seller-promotions/items/' + itemId + '?app_version=v2';
+  try { return await req(idx, 'post', url, body); }
+  catch (e) { if (e.response?.status >= 500) throw e; }
+  await req(idx, 'delete', url + '&promotion_type=PRICE_DISCOUNT');
+  let erro;
+  for (let t = 0; t < 6; t++) {
+    await delay(2000 + t * 1000);
+    try { return await req(idx, 'post', url, body); } catch (e) { erro = e; }
+  }
+  if (precoAnterior > 0) for (let t = 0; t < 4; t++) {   // não conseguiu: recoloca o desconto que estava
+    try { await req(idx, 'post', url, { ...body, deal_price: precoAnterior }); break; } catch (e2) { await delay(3000); }
+  }
+  throw erro;
+}
+
 async function editar(idx, itemId, i, preco) {
   const E = ST[idx], x = E?.itens?.find(y => y.id === itemId), o = x?.opcoes?.[i];
   if (!o) throw new Error('opção não encontrada — atualize a lista');
@@ -213,10 +232,8 @@ async function editar(idx, itemId, i, preco) {
     ? { promotion_type: 'PRICE_DISCOUNT', deal_price: p, start_date: o.status === 'pending' && o.inicio ? String(o.inicio).slice(0, 19) : horaBR(), finish_date: o.fim ? String(o.fim).slice(0, 19) : horaBR(Date.now() + 30 * 864e5) }
     : { promotion_id: o.id, promotion_type: o.tipo, deal_price: p };
   let r;
-  if (o.tipo === 'PRICE_DISCOUNT') {
-    // o ML não aceita PUT no desconto próprio ("Invalid promotion type"): um novo POST substitui o preço
-    r = await F.mlReq(idx, 'post', '/seller-promotions/items/' + itemId + '?app_version=v2', body);
-  } else r = await F.mlReq(idx, 'put', '/seller-promotions/items/' + itemId + '?app_version=v2', body);
+  if (o.tipo === 'PRICE_DISCOUNT') r = await trocarDescontoProprio(idx, itemId, body, o.status === 'started' ? o.preco : null);
+  else r = await F.mlReq(idx, 'put', '/seller-promotions/items/' + itemId + '?app_version=v2', body);
   const d = F.dados()[idx], it = [...(d?.semPromo || []), ...(d?.comPromo || [])].find(y => y.id === itemId);
   if (it) {
     if (o.status === 'started') it.sale_amount = p;
@@ -283,4 +300,4 @@ function rotas(app, fontes) {
   // atualiza a cada 6h (quando os dados do ML da conta estiverem prontos)
   setInterval(() => { for (const idx of [0, 1, 2]) if (F.dados()[idx] && ST[idx]?.status !== 'carregando') carregar(idx).catch(() => {}); }, 6 * 3600e3).unref?.();
 }
-module.exports = { rotas, jaEmPromo };
+module.exports = { rotas, jaEmPromo, trocarDescontoProprio };
