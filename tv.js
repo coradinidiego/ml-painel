@@ -457,6 +457,9 @@ async function ajustarShein(emp, linhas) {
   if (!nums.length) return linhas;
   const cache = shein.pedidosCache(emp.id);   // já coletado não muda mais: não precisa perguntar de novo
   const C = await shein.detalhes(emp.id, nums.filter(n => !(cache[n] && SHEIN_FORA.has(cache[n].st))), { idadeMin: 10 });
+  // NF-e pendente na SHEIN: confere de novo a cada rodada (sem esperar os 10 min), para sair de Emitir NF assim que a nota sobe
+  const comNf = Object.keys(C).filter(n => C[n].nfPendente && !SHEIN_FORA.has(C[n].st));
+  if (comNf.length) try { Object.assign(C, await shein.detalhes(emp.id, comNf, { idadeMin: 1 })); } catch (e) {}
   const agora = Date.now();
   const hoje = hojeIso(), diaSP = iso => iso ? new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) : '';
   return linhas.filter(l => {
