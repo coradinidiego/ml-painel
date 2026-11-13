@@ -199,10 +199,13 @@ async function enviar(x, por) {
     if (pk.length && pk.every(p => p.logistics_status !== 'LOGISTICS_READY')) { reg.situacao = 'NF-e ok; envio não está pronto para organizar (' + pk.map(p => p.logistics_status).join(',') + ')'; reg.ok = reg.nfEnviada; }
     else { reg.envio = await organizar(x.loja, x.sn); reg.situacao = 'NF-e ok e envio organizado (' + reg.envio + ')'; reg.ok = true; if (S.enviados[x.sn]) S.enviados[x.sn].organizado = true; }
   } catch (e) { reg.situacao = reg.nfEnviada ? 'NF-e enviada, mas erro ao organizar o envio' : 'erro'; reg.erro = erroTxt(e); }
+  // Telegram: o mesmo erro do mesmo pedido só avisa de novo depois de 24 h (o painel continua tentando a cada rodada)
+  const jaAvisou = reg.erro && S.hist.some(h => h.sn === x.sn && h.erro === reg.erro && Date.now() - Date.parse(h.em) < 24 * 3600e3);
+  reg.voltou = !!reg.ok && S.hist.some(h => h.sn === x.sn && h.erro);   // deu certo depois de ter falhado
   S.hist.unshift(reg); salvar();
   try {
     const tg = require('./telegram');
-    if (reg.erro) tg.sendTelegram(`⚠️ Shopee ${x.empresa} pedido ${x.sn}: ${reg.situacao} — ${reg.erro}`);
+    if (reg.erro && !jaAvisou) tg.sendTelegram(`⚠️ Shopee ${x.empresa} pedido ${x.sn}: ${reg.situacao} — ${reg.erro}`);
   } catch (e) {}
   return reg;
 }
@@ -230,11 +233,14 @@ async function rodar() {
   try {
     const L = await listar();
     if (S.modo === 'auto') {
+      const voltaram = [];
       for (const x of L.filter(x => x.autorizada && x.invStatus !== 'valid')) {
         if (x.emissao && Date.now() - Date.parse(String(x.emissao).replace(' ', 'T') + '-03:00') < ESPERA_MIN * 60e3) continue;   // dá tempo ao Bling
-        if (S.hist.some(h => h.sn === x.sn && h.erro && Date.now() - Date.parse(h.em) < 2 * 3600e3)) continue;   // erro recente: não insiste
-        await enviar(x); await delay(1500);
+        // erro na Shopee (integração fora do ar): tenta de novo em toda rodada, até normalizar (Diego, 13/11)
+        const r = await enviar(x); if (r.voltou) voltaram.push(x.empresa + ' ' + x.sn);
+        await delay(1500);
       }
+      if (voltaram.length) try { require('./telegram').sendTelegram(`✅ Shopee: ${voltaram.length} pedido(s) que estavam com erro tiveram a NF-e enviada e o envio organizado:\n${voltaram.join('\n')}`); } catch (e) {}
       await organizarPendentes();
       await listar();
     }
