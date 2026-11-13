@@ -203,21 +203,29 @@ async function entrar(idx, itemId, i, preco, qtd) {
   return { ok: true, resposta: r.data, item: x, qtd: o.qtd || null };
 }
 
-// Muda o preço de um desconto próprio. O ML não aceita PUT nesse tipo ("Invalid promotion type"); um novo POST às vezes
-// substitui, mas com o desconto já ativo costuma responder "No candidates found for item" — aí apaga o desconto e cria
-// de novo com o preço novo (o ML leva alguns segundos para liberar; repete). Se não conseguir, volta o preço anterior.
-async function trocarDescontoProprio(idx, itemId, body, precoAnterior, mlReq) {
-  const req = mlReq || F.mlReq, url = '/seller-promotions/items/' + itemId + '?app_version=v2';
+// Muda o preço de um desconto próprio já ativo. O ML não aceita PUT nesse tipo ("Invalid promotion type") e, com o
+// desconto ativo, recusa um novo POST ("No candidates found for item"). Então:
+//   1. tenta o POST (substitui, quando o ML aceita);
+//   2. entra na campanha do vendedor disponível com o preço novo (vale o menor preço; não fica nenhum momento sem desconto);
+//   3. sem campanha: apaga o desconto e cria de novo — o ML leva de segundos a alguns minutos para liberar, por isso
+//      repete por ~3 min; se não conseguir, recoloca o desconto anterior (também repetindo).
+async function trocarDescontoProprio(idx, itemId, body, precoAnterior, fontes) {
+  const req = (fontes || F).mlReq, ml = (fontes || F).ml, url = '/seller-promotions/items/' + itemId + '?app_version=v2';
   try { return await req(idx, 'post', url, body); }
   catch (e) { if (e.response?.status >= 500) throw e; }
+  try {
+    const L = await ml(idx, '/seller-promotions/items/' + itemId, { app_version: 'v2' });
+    const c = (Array.isArray(L) ? L : []).find(p => p.type === 'SELLER_CAMPAIGN' && p.status === 'candidate' && p.id);
+    if (c) return await req(idx, 'post', url, { promotion_id: c.id, promotion_type: 'SELLER_CAMPAIGN', deal_price: body.deal_price });
+  } catch (e) {}
   await req(idx, 'delete', url + '&promotion_type=PRICE_DISCOUNT');
   let erro;
-  for (let t = 0; t < 6; t++) {
-    await delay(2000 + t * 1000);
+  for (const espera of [5, 10, 15, 20, 25, 30, 30, 30, 30]) {
+    await delay(espera * 1000);
     try { return await req(idx, 'post', url, body); } catch (e) { erro = e; }
   }
-  if (precoAnterior > 0) for (let t = 0; t < 4; t++) {   // não conseguiu: recoloca o desconto que estava
-    try { await req(idx, 'post', url, { ...body, deal_price: precoAnterior }); break; } catch (e2) { await delay(3000); }
+  if (precoAnterior > 0) for (let t = 0; t < 10; t++) {   // não conseguiu: recoloca o desconto que estava
+    try { await req(idx, 'post', url, { ...body, deal_price: precoAnterior }); break; } catch (e2) { await delay(20000); }
   }
   throw erro;
 }

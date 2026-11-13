@@ -70,7 +70,7 @@ async function aplicarPreco(idx, id, preco) {
   const ativa = L.filter(p => p.status === 'started' && EDITA.has(p.type) && dentro(p)).sort((a, b) => (a.type === 'PRICE_DISCOUNT') - (b.type === 'PRICE_DISCOUNT'))[0];
   if (ativa) {
     if (ativa.type === 'PRICE_DISCOUNT') {   // o ML não aceita PUT no desconto próprio: um novo POST substitui
-      await require('./promos_ml').trocarDescontoProprio(idx, id, { promotion_type: 'PRICE_DISCOUNT', deal_price: preco, start_date: horaBR(), finish_date: ativa.finish_date ? String(ativa.finish_date).slice(0, 19) : horaBR(Date.now() + 30 * 864e5) }, +ativa.price || null, F.mlReq);
+      await require('./promos_ml').trocarDescontoProprio(idx, id, { promotion_type: 'PRICE_DISCOUNT', deal_price: preco, start_date: horaBR(), finish_date: ativa.finish_date ? String(ativa.finish_date).slice(0, 19) : horaBR(Date.now() + 30 * 864e5) }, +ativa.price || null, F);
     } else await F.mlReq(idx, 'put', url, { promotion_id: ativa.id, promotion_type: ativa.type, deal_price: preco });
     return (ativa.name || 'Desconto próprio') + ' (editada)';
   }
