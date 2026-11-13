@@ -116,7 +116,7 @@ function resumir(o) {
   return { st: +o.orderStatus, com: +o.totalCommission || 0, fixo: +o.totalPerformanceServiceCharge || 0, serv: +o.totalServiceCharge || 0,
     frete: +o.sellerShippingFee || 0, renda: +o.estimatedGrossIncome || 0, desconto: (+o.storeDiscountTotalPrice || 0) + (+o.promotionDiscountTotalPrice || 0),
     pedido: deCn(o.orderTime), pago: deCn(o.paymentTime), prazoEnvio: deCn(o.requestDeliveryTime), prazoEntrega: deCn(o.requestHandoverTime),
-    enviado: deCn(o.sellerDeliveryTime), coletado: deCn(o.pickUpTime), itens, em: Date.now() };
+    enviado: deCn(o.sellerDeliveryTime), coletado: deCn(o.pickUpTime), nfPendente: Number(o.invoiceStatus) === 2, itens, em: Date.now() };
 }
 /** Detalhe (com taxas) dos pedidos; usa o cache e só rebusca o que não terminou (a cada `idadeMin`) */
 async function detalhes(loja, nums, { idadeMin = 360, prog } = {}) {

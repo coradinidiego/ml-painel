@@ -469,6 +469,9 @@ async function ajustarShein(emp, linhas) {
       return false;
     }
     if (P.pago) l.criado = Math.floor(Date.parse(P.pago) / 1000);
+    // Bling já "Atendido" (nota gerada), mas a SHEIN ainda espera a NF-e (nota não autorizada, parada em "consultar situação"…):
+    // continua em Emitir NF, não em A empacotar
+    if (l.tipo === 'aEmpacotar' && P.nfPendente && [1, 2].includes(P.st)) l.tipo = 'emitirNF';
     // prazo de envio da SHEIN vencido sem coleta = atrasado, em qualquer etapa (inclusive já empacotado esperando a coleta)
     // prazo que vale: entrega à transportadora (requestHandoverTime) em qualquer etapa; o requestDeliveryTime vence
     // ~24h após o pagamento mas não é atraso de verdade (Diego, 26/10)
