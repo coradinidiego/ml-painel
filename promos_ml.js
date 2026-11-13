@@ -193,6 +193,7 @@ async function entrar(idx, itemId, i, preco, qtd) {
   }
   const body = ENTRA[o.tipo](o);
   const r = await F.mlReq(idx, 'post', '/seller-promotions/items/' + itemId + '?app_version=v2', body);
+  const tambem = ['PRICE_DISCOUNT', 'SELLER_CAMPAIGN'].includes(o.tipo) ? await entrarCampanhasMesmoPreco(idx, itemId, o.preco) : [];
   // recalcula só este item
   const d = F.dados()[idx], it = [...(d?.semPromo || []), ...(d?.comPromo || [])].find(y => y.id === itemId);
   if (it) {
@@ -200,7 +201,7 @@ async function entrar(idx, itemId, i, preco, qtd) {
     const novo = await opcoesItem(idx, await F.uid(idx), it, x.catalogo ? { status: x.catalogo.status, ptw: x.catalogo.ptw, s2price: x.catalogo.s2 } : null, await cm.custosErp(idx).catch(() => ({})));
     Object.assign(x, novo, { semPromo: false }); moverParaComPromo(d, itemId);
   }
-  return { ok: true, resposta: r.data, item: x, qtd: o.qtd || null };
+  return { ok: true, resposta: r.data, item: x, qtd: o.qtd || null, tambem };
 }
 
 // Muda o preço de um desconto próprio já ativo. O ML não aceita PUT nesse tipo ("Invalid promotion type") e, com o
@@ -230,6 +231,21 @@ async function trocarDescontoProprio(idx, itemId, body, precoAnterior, fontes) {
   throw erro;
 }
 
+// Depois de definir um preço escolhido pelo vendedor (desconto próprio / campanha do vendedor): entra também nas
+// campanhas do ML disponíveis (ex.: Black Friday) que aceitam esse MESMO preço — o preço não muda, só ganha a campanha.
+async function entrarCampanhasMesmoPreco(idx, itemId, preco, fontes) {
+  const req = (fontes || F).mlReq, ml = (fontes || F).ml, nomes = [];
+  try {
+    const L = await ml(idx, '/seller-promotions/items/' + itemId, { app_version: 'v2' });
+    for (const p of Array.isArray(L) ? L : []) {
+      if (p.type !== 'DEAL' || p.status !== 'candidate' || !p.id || !(+p.max_discounted_price > 0)) continue;
+      if (preco < +p.min_discounted_price - 0.001 || preco > +p.max_discounted_price + 0.001) continue;
+      try { await req(idx, 'post', '/seller-promotions/items/' + itemId + '?app_version=v2', { promotion_id: p.id, promotion_type: 'DEAL', deal_price: preco }); nomes.push(p.name || 'Campanha'); } catch (e) {}
+    }
+  } catch (e) {}
+  return nomes;
+}
+
 async function editar(idx, itemId, i, preco) {
   const E = ST[idx], x = E?.itens?.find(y => y.id === itemId), o = x?.opcoes?.[i];
   if (!o) throw new Error('opção não encontrada — atualize a lista');
@@ -242,13 +258,14 @@ async function editar(idx, itemId, i, preco) {
   let r;
   if (o.tipo === 'PRICE_DISCOUNT') r = await trocarDescontoProprio(idx, itemId, body, o.status === 'started' ? o.preco : null);
   else r = await F.mlReq(idx, 'put', '/seller-promotions/items/' + itemId + '?app_version=v2', body);
+  const tambem = ['PRICE_DISCOUNT', 'SELLER_CAMPAIGN'].includes(o.tipo) ? await entrarCampanhasMesmoPreco(idx, itemId, p) : [];
   const d = F.dados()[idx], it = [...(d?.semPromo || []), ...(d?.comPromo || [])].find(y => y.id === itemId);
   if (it) {
     if (o.status === 'started') it.sale_amount = p;
     const novo = await opcoesItem(idx, await F.uid(idx), it, x.catalogo ? { status: x.catalogo.status, ptw: x.catalogo.ptw, s2price: x.catalogo.s2 } : null, await cm.custosErp(idx).catch(() => ({})));
     Object.assign(x, novo);
   }
-  return { ok: true, resposta: r.data, item: x };
+  return { ok: true, resposta: r.data, item: x, tambem };
 }
 
 function rotas(app, fontes) {
@@ -308,4 +325,4 @@ function rotas(app, fontes) {
   // atualiza a cada 6h (quando os dados do ML da conta estiverem prontos)
   setInterval(() => { for (const idx of [0, 1, 2]) if (F.dados()[idx] && ST[idx]?.status !== 'carregando') carregar(idx).catch(() => {}); }, 6 * 3600e3).unref?.();
 }
-module.exports = { rotas, jaEmPromo, trocarDescontoProprio };
+module.exports = { rotas, jaEmPromo, trocarDescontoProprio, entrarCampanhasMesmoPreco };

@@ -1079,7 +1079,7 @@ async function acaoAdsML(item,body,elx){
 let _pm=null,_pmEmp=null,_pmTimer=null;
 async function carregarPromosML(forcar){
   clearTimeout(_pmTimer);
-  if(forcar){await fetch('/ml/promos/'+ci+'/recarregar',{method:'POST'});_pm=null;}
+  if(forcar){await fetch('/ml/promos/'+ci+'/recarregar',{method:'POST'});_pm=null;delete _pmFixos[ci];}
   if(!forcar&&_pm&&_pmEmp===ci&&_pm.status==='pronto'){renderPromosML();return;}
   _pmEmp=ci;
   try{
@@ -1097,13 +1097,18 @@ async function carregarPromosML(forcar){
 }
 // Promoções: painel com indicadores + listas que abrem e fecham (sem promoção, rebate, catálogo, todos)
 const _pmAberto={sem:true};let _pmL={},_pmGanharMin=10;
+// anúncios em que você acabou de entrar numa promoção pela lista "sem promoção": continuam na lista (para entrar em outras) até clicar em Concluído ou Atualizar
+const _pmFixos={};
+function pmFixar(id){(_pmFixos[ci]||(_pmFixos[ci]=new Set())).add(id);}
+function pmSoltar(id){_pmFixos[ci]?.delete(id);renderPromosML();}
 function pmListas(q){
   const d=window._dados?.[ci], pm=_pm&&_pm.itens?Object.fromEntries(_pm.itens.map(x=>[x.id,x])):{}, I=_pm?.itens||[];
   const busca=x=>!q||((x.sku||x._sku||x.seller_sku||'')+' '+(x.titulo||x.title||'')+' '+x.id).toLowerCase().includes(q);
   const ord=el('pm-ord')?.value||'margem';
   const melhor=x=>x?.opcoes?.length?Math.max(...x.opcoes.filter(o=>o.status==='candidate').map(o=>o.m?.lucro??-1e9)):-1e9;
   const ordenar=L=>L.sort((a,b)=>ord==='preco'?(b.precoAtual||b.price||0)-(a.precoAtual||a.price||0):ord==='az'?String(a.titulo||a.title||'').localeCompare(b.titulo||b.title||''):melhor(pm[b.id]||b)-melhor(pm[a.id]||a));
-  const sem=ordenar((d?d.semPromo:I.filter(x=>x.semPromo)).filter(busca));
+  const semBase=d?d.semPromo:I.filter(x=>x.semPromo), semIds=new Set(semBase.map(x=>x.id));
+  const sem=ordenar([...semBase,...I.filter(x=>_pmFixos[ci]?.has(x.id)&&!semIds.has(x.id))].filter(busca));
   const ganho=x=>(x.opcoes.find(o=>o.rebate>0&&o.status==='candidate')?.m?.lucro||0)-(x.atual?.lucro||0);
   const rebate=I.filter(x=>x.rebateMelhor>0&&busca(x)).sort((a,b)=>ganho(b)-ganho(a));
   const perdendo=ordenar(I.filter(x=>x.catalogo?.status==='competing'&&busca(x))).sort((a,b)=>(b.opcoes.some(o=>o.catalogo==='passa a ganhar')?1:0)-(a.opcoes.some(o=>o.catalogo==='passa a ganhar')?1:0));
@@ -1163,13 +1168,14 @@ async function editarPromoML(item,i,btn){
   try{const r=await (await fetch('/ml/promos/'+ci+'/editar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item,opcao:i,preco})})).json();
     if(r.erro)throw new Error(r.erro+(r.detalhe?' — '+JSON.stringify(r.detalhe):''));
     delete _pmPreco[item+'|'+i];delete _pmSim[item+'|'+i];Object.assign(x,r.item||{});renderPromosML();
+    if(r.tambem?.length)alert('Entrou também, com o mesmo preço, em: '+r.tambem.join(', '));
   }catch(e){alert('O ML recusou: '+e.message);btn.disabled=false;btn.textContent='Salvar preço';}
 }
 function pmRenderSec(k){
   const b=el('pm-sec-'+k);if(!b)return;const L=_pmL[k]||[],pm=_pmL.pm||{};
   if(!L.length){b.innerHTML='<div class="pm-vazio" style="color:#2e7d32">✓ Nada nesta lista.</div>';return;}
   const carregando=!_pm||_pm.status!=='pronto';
-  const ocultar=id=>'<div style="font-size:11px;margin-top:4px;padding:0 14px"><a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="#" onclick="ignorarPromo(\''+id+'\',true);return false" title="Tirar da lista (produto que não pode ter promoção)">Ocultar</a></div>';
+  const ocultar=id=>'<div style="font-size:11px;margin-top:4px;padding:0 14px"><a class="alink" href="https://www.mercadolivre.com.br/anuncios/'+id+'/modificar" target="_blank">Editar</a> · <a class="alink" href="#" onclick="ignorarPromo(\''+id+'\',true);return false" title="Tirar da lista (produto que não pode ter promoção)">Ocultar</a>'+(_pmFixos[ci]?.has(id)?' · <b style="color:#2e7d32">✓ já entrou em promoção — fica aqui para você entrar em outras</b> · <a class="alink" href="#" onclick="pmSoltar(\''+id+'\');return false">Concluído (tirar da lista)</a>':'')+'</div>';
   let html=L.slice(0,150).map(it=>{
     if(k==='ganhar')return cardPromoML(it,pmGanharFaixa(it));
     if(k!=='sem')return cardPromoML(it);
@@ -1274,7 +1280,9 @@ async function entrarPromoML(item,i,btn){
   btn.disabled=true;btn.textContent='Entrando…';
   try{const r=await (await fetch('/ml/promos/'+ci+'/entrar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item,opcao:i,preco:o0.livre?preco:undefined,qtd})})).json();
     if(r.erro)throw new Error(r.erro+(r.detalhe?' — '+JSON.stringify(r.detalhe):''));
+    if(x.semPromo||window._dados?.[ci]?.semPromo?.some(y=>y.id===item))pmFixar(item);
     Object.assign(x,r.item||{});renderPromosML();
+    if(r.tambem?.length)alert('Entrou também, com o mesmo preço, em: '+r.tambem.join(', '));
   }catch(e){alert('O ML recusou: '+e.message);btn.disabled=false;btn.textContent='Entrar';}
 }
 let _prRef=null;

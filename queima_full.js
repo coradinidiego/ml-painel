@@ -118,7 +118,9 @@ async function conferir(x) {
     return;
   }
   // 3. baixa para ganhar
-  const antes = x.preco, via = await aplicarPreco(x.idx, x.id, ptw);
+  const antes = x.preco; let via = await aplicarPreco(x.idx, x.id, ptw);
+  const tambem = await require('./promos_ml').entrarCampanhasMesmoPreco(x.idx, x.id, ptw, F);   // ex.: Black Friday, se aceitar o mesmo preço
+  if (tambem.length) via += ' + ' + tambem.join(', ');
   await delay(8000);
   let st = '?', agora = ptw;
   try { const q = await F.ml(x.idx, '/items/' + x.id + '/price_to_win', { siteId: 'MLB', version: 'v2' }); st = q.status; agora = +q.current_price || ptw; } catch (e) {}
