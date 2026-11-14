@@ -406,12 +406,12 @@ module.exports = function montar(app, ctx) {
         const r = achar(erp, x.sku);
         if (!r || r.semSaldo) { semErp.push(x); continue; }
         comparados[x.canal]++;
-        if (!bate(x, r)) divs.push({ ...x, erpId: r.id, erpFis: Math.max(0, Math.floor(r.fis)), erpDisp: Math.max(0, Math.floor(r.disp)), kit: !!(r.kit || r.kitDe) });
+        if (!bate(x, r)) divs.push({ ...x, erpId: r.id, erpFis: Math.max(0, Math.floor(r.fis)), erpDisp: Math.max(0, Math.floor(r.disp)), kit: !!(r.kit || r.kitDe), kitDe: r.kitDe || null });
       }
       if (e.erp === 'Tiny' && divs.length) {
         R.etapa = 'relendo no Tiny o saldo dos itens com diferença';
         const vivo = await tinyAoVivo(divs.map(x => x.erpId));
-        divs = divs.map(x => { const r = achar(vivo, x.sku); return r && !r.semSaldo ? { ...x, erpFis: Math.max(0, Math.floor(r.fis)), erpDisp: Math.max(0, Math.floor(r.disp)), kit: !!(r.kit || r.kitDe), _r: r } : null; })
+        divs = divs.map(x => { const r = achar(vivo, x.sku); return r && !r.semSaldo ? { ...x, erpFis: Math.max(0, Math.floor(r.fis)), erpDisp: Math.max(0, Math.floor(r.disp)), kit: !!(r.kit || r.kitDe), kitDe: r.kitDe || null, _r: r } : null; })
           .filter(x => x && !bate(x, x._r)).map(({ _r, ...x }) => x);
       }
       R.etapa = 'conferindo divergências';
@@ -534,7 +534,7 @@ module.exports = function montar(app, ctx) {
       const k = chaveSync(e, x), S = SYNC[k] ||= { n: 0 };
       S.canal = x.canal; S.erpId = x.erpId;
       if (x.relampago) {                      // Shopee bloqueia durante a oferta: agenda para depois do fim
-        S.status = 'aguardando fim do relâmpago'; S.aguardaAte = (x.relampago.fim || agora + 6 * 3600e3) + 10 * 60e3; S.item = { canal: x.canal, anuncio: x.anuncio, variacao: x.variacao || null, sku: x.sku };
+        S.status = 'aguardando fim do relâmpago'; S.aguardaAte = (x.relampago.fim || agora + 6 * 3600e3) + 10 * 60e3; S.item = { canal: x.canal, anuncio: x.anuncio, variacao: x.variacao || null, sku: x.sku, kitDe: x.kitDe || null };
       } else if (S.n >= 2 && agora - (S.em || 0) < 24 * 3600e3) {
         S.status = 'continua diferente depois de 2 atualizações (conferir vínculo/estoque no ' + (e.erp === 'Tiny' ? 'Tiny' : 'Bling') + ')';
       } else if (!S.em || agora - S.em > 2 * 3600e3) {
@@ -560,8 +560,11 @@ module.exports = function montar(app, ctx) {
         let disp;
         if (e.erp === 'Tiny') {
           // saldo atual do Tiny (pode ter vendido durante a oferta)
-          const p = (await require('./tiny').chamar('produto.obter.estoque.php', { id: S.erpId })).produto || {};
-          disp = num(p.saldo) - num(p.saldoReservado);
+          // (relê o produto — e os componentes, se for kit — e calcula como na conferência: o "-2"/"-3" do SKU não é
+          //  dividido de novo quando o kit já é um produto próprio no Tiny; era isso que deixava o kit com metade na Shopee)
+          const r = achar(await tinyAoVivo([S.erpId]), S.item?.sku);
+          if (!r || r.semSaldo) throw new Error('sem saldo no Tiny para ' + (S.item?.sku || S.erpId));
+          disp = r.disp;
         } else {
         // saldo atual do Bling (pode ter vendido durante a oferta)
         const c = require('./bling').client(e.idx);
@@ -571,8 +574,11 @@ module.exports = function montar(app, ctx) {
         const ign = new Set(deps.filter(d => /full/i.test(d.descricao || '') || d.desconsiderarSaldo === true).map(d => String(d.id)));
         const D = (sd?.depositos || []).filter(d => !ign.has(String(d.id)));
         disp = D.length ? D.reduce((a, d) => a + num(d.saldoVirtual), 0) : num(sd?.saldoVirtualTotal);
+        // kit "SKU-N" só é dividido por N quando NÃO existe como produto próprio no ERP (aí o saldo lido é o do item avulso).
+        // Registro antigo, sem essa informação: não mexe agora — a próxima conferência corrige com o número certo.
+        if (S.item?.kitDe === undefined) { delete S.aguardaAte; gravar(ARQ_SYNC, SYNC); continue; }
+        if (S.item.kitDe > 1) disp = Math.floor(disp / S.item.kitDe);
         }
-        const m = String(S.item?.sku || '').match(/-(\d+)$/); if (m && parseInt(m[1]) > 1 && parseInt(m[1]) <= 20 && !/^0/.test(m[1])) disp = Math.floor(disp / parseInt(m[1]));
         const q = await atualizarCanal(e, { ...S.item, erpDisp: Math.floor(disp) });
         S.em = Date.now(); S.n = (S.n || 0) + 1; S.status = 'atualizado no site para ' + q + ' (após relâmpago)'; S.erro = null;
       }
