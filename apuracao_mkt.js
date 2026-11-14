@@ -523,7 +523,7 @@ async function calcular(empKey, ini, fim) {
       });
     }
   }
-  return { linhas, fora, amazonFinanceiro: fin?.geradoEm || null };
+  return { linhas, fora, amazonFinanceiro: fin?.geradoEm || null, semML: !perML, semShp: !perShp };
 }
 
 function resumir(linhas) {
@@ -619,6 +619,9 @@ async function resultado(q) {
       }
       // nenhum período cobre tudo (ex.: "Este mês" = 01→ontem do automático + hoje da apuração do dia): junta os pedaços já baixados
       if (r.pendente) { const c = await comporPeriodo(e, ini, fim); if (c) r = c; }
+      // período sem o download do Mercado Livre / Shopee (ex.: 01→hoje na Lufe: Amazon e Shein vêm do Tiny, mas ML e Shopee só
+      // existem em 01→ontem + hoje): junta os pedaços em vez de mostrar o mês sem esses canais (e o ADS todo como prejuízo)
+      else if (r.semML || r.semShp) { const c = await comporPeriodo(e, ini, fim); if (c) r = c; }
       if (r.pendente) pendentes.push(EMP[e].nome); else { linhas.push(...r.linhas); fora.push(...r.fora); amz[EMP[e].nome] = r.amazonFinanceiro; }
     }
     const canal = CANAIS.includes(req.query.canal) ? req.query.canal : null;
