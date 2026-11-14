@@ -190,7 +190,22 @@ module.exports = function montar(app, ctx) {
     // 2) saldo completo dos SKUs anunciados que ainda não temos (ou tudo de novo a cada 12h)
     const refazer = Date.now() - (TINY.cheio || 0) > 12 * 3600e3;
     const ids = [...new Set(skusAnunciados.map(s => achar(TINY.codigos, s)?.id).filter(Boolean))];
-    const faltam = ids.filter(id => refazer || !TINY.saldos[id]);
+    // kits do Tiny (classe K): o saldo do kit que o Tiny devolve não desconta as reservas dos COMPONENTES (pedidos do
+    // item avulso e de outros kits). O que o Tiny manda aos sites é o menor (saldo − reservado) ÷ quantidade entre os
+    // componentes — então guardamos a composição de cada produto anunciado (1x por semana) e calculamos igual.
+    TINY.estr = TINY.estr || {};
+    const semEstr = ids.filter(id => !TINY.estr[id] || Date.now() - TINY.estr[id].ts > 7 * 864e5);
+    for (let i = 0; i < semEstr.length; i++) {
+      prog(i + 1, semEstr.length);
+      try {
+        const p = (await tiny.chamar('produto.obter.php', { id: semEstr[i] })).produto || {};
+        TINY.estr[semEstr[i]] = { ts: Date.now(), comps: p.classe_produto === 'K' ? (p.kit || []).map(k => k.item || k).filter(k => k.id_produto).map(k => [String(k.id_produto), num(k.quantidade) || 1]) : [] };
+      } catch (e) { if (!/erro 20/.test(e.message)) console.warn('[inicio] Tiny composição', semEstr[i], e.message); }
+      if (i % 50 === 49) gravar(ARQ_TINY, TINY);
+      await delay(1100);
+    }
+    const comps = [...new Set(ids.flatMap(id => (TINY.estr[id]?.comps || []).map(c => c[0])))];
+    const faltam = [...new Set([...ids, ...comps])].filter(id => refazer || !TINY.saldos[id]);
     for (let i = 0; i < faltam.length; i++) {
       prog(i + 1, faltam.length);
       try {
@@ -204,9 +219,34 @@ module.exports = function montar(app, ctx) {
     if (refazer) TINY.cheio = Date.now();
     TINY.ultimaAtualizacao = brDataHora(new Date(inicio.getTime() - 5 * 60e3));   // 5 min de folga
     gravar(ARQ_TINY, TINY);
+    return mapaTiny();
+  }
+  function mapaTiny() {
     const mapa = {};
-    for (const [k, info] of Object.entries(TINY.codigos)) { const s = TINY.saldos[info.id]; if (s) mapa[k] = { ...info, fis: s.fis, disp: s.disp }; else mapa[k] = { ...info, semSaldo: true }; }
+    for (const [k, info] of Object.entries(TINY.codigos)) {
+      const cs = TINY.estr?.[info.id]?.comps || [];
+      if (cs.length) {   // kit: o que dá para montar com os componentes
+        const S = cs.map(([id, q]) => TINY.saldos[id] ? { fis: Math.floor(TINY.saldos[id].fis / q), disp: Math.floor(TINY.saldos[id].disp / q) } : null);
+        if (S.some(x => !x)) mapa[k] = { ...info, kit: true, semSaldo: true };
+        else mapa[k] = { ...info, kit: true, fis: Math.min(...S.map(x => x.fis)), disp: Math.min(...S.map(x => x.disp)) };
+        continue;
+      }
+      const s = TINY.saldos[info.id]; if (s) mapa[k] = { ...info, fis: s.fis, disp: s.disp }; else mapa[k] = { ...info, semSaldo: true };
+    }
     return mapa;
+  }
+  // Tiny: relê agora o saldo (e o reservado) dos produtos com divergência — e dos componentes, se for kit — antes de
+  // acusar a diferença ou corrigir o site: a reserva de um pedido novo muda o disponível sem aparecer na lista de alterações
+  async function tinyAoVivo(idsProdutos) {
+    const tiny = require('./tiny');
+    const alvo = [...new Set(idsProdutos.flatMap(id => { const cs = TINY.estr?.[id]?.comps || []; return cs.length ? cs.map(c => c[0]) : [String(id)]; }))].slice(0, 120);
+    for (const id of alvo) {
+      try { const p = (await tiny.chamar('produto.obter.estoque.php', { id })).produto || {}; TINY.saldos[id] = { fis: num(p.saldo), disp: num(p.saldo) - num(p.saldoReservado), ts: Date.now() }; }
+      catch (e) { if (!/erro 20/.test(e.message)) console.warn('[inicio] Tiny saldo ao vivo', id, e.message); }
+      await delay(1100);
+    }
+    gravar(ARQ_TINY, TINY);
+    return mapaTiny();
   }
 
   // procura o SKU no ERP: exato, sem zeros à esquerda, ou kit "SKU-3" = saldo ÷ 3
@@ -359,7 +399,7 @@ module.exports = function montar(app, ctx) {
       anuncios = anuncios.filter(x => !x.full && !x.sheinInativo);
       R.etapa = e.erp === 'Tiny' ? 'saldos no Tiny' : 'saldos no Bling';
       const erp = e.erp === 'Tiny' ? await erpTiny(anuncios.map(x => x.sku).filter(Boolean), (i, n) => { R.etapa = `saldos no Tiny (${i} de ${n}, ~${Math.ceil((n - i) * 1.2 / 60)} min)`; }) : await erpBling(e.idx);
-      const semSku = [], semErp = [], divs = [], comparados = { ml: 0, shopee: 0, amazon: 0, shein: 0 };
+      const semSku = [], semErp = [], comparados = { ml: 0, shopee: 0, amazon: 0, shein: 0 }; let divs = [];
       const bate = (x, r) => { const f = Math.max(0, Math.floor(r.fis)), d = Math.max(0, Math.floor(r.disp)); return x.qtd >= Math.min(f, d) && x.qtd <= Math.max(f, d); };   // entre o disponível e o físico = pedidos em andamento, não é divergência
       for (const x of anuncios) {
         if (!x.sku) { semSku.push(x); continue; }
@@ -367,6 +407,12 @@ module.exports = function montar(app, ctx) {
         if (!r || r.semSaldo) { semErp.push(x); continue; }
         comparados[x.canal]++;
         if (!bate(x, r)) divs.push({ ...x, erpId: r.id, erpFis: Math.max(0, Math.floor(r.fis)), erpDisp: Math.max(0, Math.floor(r.disp)), kit: !!(r.kit || r.kitDe) });
+      }
+      if (e.erp === 'Tiny' && divs.length) {
+        R.etapa = 'relendo no Tiny o saldo dos itens com diferença';
+        const vivo = await tinyAoVivo(divs.map(x => x.erpId));
+        divs = divs.map(x => { const r = achar(vivo, x.sku); return r && !r.semSaldo ? { ...x, erpFis: Math.max(0, Math.floor(r.fis)), erpDisp: Math.max(0, Math.floor(r.disp)), kit: !!(r.kit || r.kitDe), _r: r } : null; })
+          .filter(x => x && !bate(x, x._r)).map(({ _r, ...x }) => x);
       }
       R.etapa = 'conferindo divergências';
       await reconferir(e, divs);

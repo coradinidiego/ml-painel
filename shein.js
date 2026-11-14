@@ -154,6 +154,8 @@ const arqCat = loja => path.join(DATA, 'apuracao_cache', `shein_catalogo_${loja}
 const _cat = {};
 const catCache = loja => (_cat[loja] ||= (() => { try { return JSON.parse(fs.readFileSync(arqCat(loja))); } catch (e) { return { spus: {}, skus: {}, ts: 0 }; } })());
 /** Atualiza o catálogo: lista os SPUs publicados e busca o detalhe só dos novos (ou de todos, 1x por semana) */
+// nome do produto em português (a SHEIN devolve um nome por idioma); sem pt-br, usa o que vier
+const nomePt = L => ((L || []).find(n => /^pt/i.test(n.language || '')) || (L || [])[0])?.productName || '';
 async function catalogo(loja, { prog } = {}) {
   const C = catCache(loja), spus = new Set();
   for (let pg = 1; pg <= 400; pg++) {
@@ -164,19 +166,19 @@ async function catalogo(loja, { prog } = {}) {
     await delay(250);
   }
   // detalhe de todos 1x por dia (status de vitrine muda: bloqueio/desbloqueio da SHEIN); os inativos a cada rodada
-  const semana = Date.now() - (C.ts || 0) > 864e5 || Object.values(C.skus).some(v => v.inativo === undefined);
+  const semana = Date.now() - (C.ts || 0) > 864e5 || Object.values(C.skus).some(v => v.inativo === undefined) || C.idioma !== 'pt';   // idioma: refaz uma vez para trazer os nomes em português
   const inativos = new Set(Object.values(C.skus).filter(v => v.inativo).map(v => v.spu));
   const falta = [...spus].filter(s => semana || !C.spus[s] || inativos.has(s));
   let i = 0;
   for (const spu of falta) {
     try {
-      const d = await api(loja, '/open-api/goods/spu-info', { languageList: ['en'], spuName: spu });
+      const d = await api(loja, '/open-api/goods/spu-info', { languageList: ['pt-br', 'en'], spuName: spu });
       const I = d.info || {};
       for (const skc of I.skcInfoList || []) for (const k of skc.skuInfoList || []) {
         const preco = (k.priceInfoList || []).find(p => /br/i.test(p.subSite || p.site || '')) || (k.priceInfoList || [])[0] || {};
         // fora da vitrine na SHEIN Brasil (ex.: bloqueado pela SHEIN enquanto valida o estoque): shelfStatus 0 em shein-br
         const vitrine = (skc.shelfStatusInfoList || []).find(x => /shein-br/i.test(x.siteAbbr || '')) || (skc.shelfStatusInfoList || [])[0];
-        C.skus[k.skuCode] = { sku: String(k.supplierSku || skc.supplierCode || I.supplierCode || '').trim(), skc: skc.skcName, spu, titulo: skc.productMultiNameList?.[0]?.productName || I.productMultiNameList?.[0]?.productName || '', preco: +preco.specialPrice || +preco.basePrice || null, inativo: !!vitrine && +vitrine.shelfStatus === 0 };
+        C.skus[k.skuCode] = { sku: String(k.supplierSku || skc.supplierCode || I.supplierCode || '').trim(), skc: skc.skcName, spu, titulo: nomePt(skc.productMultiNameList) || nomePt(I.productMultiNameList) || '', preco: +preco.specialPrice || +preco.basePrice || null, inativo: !!vitrine && +vitrine.shelfStatus === 0 };
       }
       C.spus[spu] = Date.now();
     } catch (e) { console.warn('[shein] spu', spu, e.message); }
@@ -184,7 +186,7 @@ async function catalogo(loja, { prog } = {}) {
     await delay(250);
   }
   for (const s of Object.keys(C.spus)) if (!spus.has(s)) { delete C.spus[s]; for (const [k, v] of Object.entries(C.skus)) if (v.spu === s) delete C.skus[k]; }
-  if (semana) C.ts = Date.now();
+  if (semana) { C.ts = Date.now(); C.idioma = 'pt'; }
   try { fs.mkdirSync(path.dirname(arqCat(loja)), { recursive: true }); fs.writeFileSync(arqCat(loja), JSON.stringify(C)); } catch (e) {}
   return C.skus;
 }
