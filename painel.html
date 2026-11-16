@@ -4345,17 +4345,21 @@ function lancRender(){
   const opE=sel=>[['todas','Todas (rateio)'],...DRE_EMP].map(([k,n])=>'<option value="'+k+'"'+(sel===k?' selected':'')+'>'+n+'</option>').join('');
   const L=[...D.lanc].sort((a,b)=>a.categoria.localeCompare(b.categoria)||b.valor-a.valor);
   const [ya,ma]=D.mes.split('-').map(Number),ant=new Date(ya,ma-2,1),mesAnt=ant.getFullYear()+'-'+String(ant.getMonth()+1).padStart(2,'0');
+  // data do lançamento: a do registro em edição; senão hoje (se for o mês aberto) ou o dia 1 do mês escolhido
+  const hj=new Date(),hojeIso=hj.getFullYear()+'-'+String(hj.getMonth()+1).padStart(2,'0')+'-'+String(hj.getDate()).padStart(2,'0');
+  const dataIni=e.data||(hojeIso.slice(0,7)===D.mes?hojeIso:D.mes+'-01'),brD=d=>d?d.slice(8,10)+'/'+d.slice(5,7):'—';
   const porCat={};L.forEach(l=>porCat[l.categoria]=(porCat[l.categoria]||0)+l.valor);
   const form='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">'+
+    '<div><label class="tl-lbl">Data</label><input type="date" id="dre-data" class="tl-in" value="'+dataIni+'" style="width:150px"></div>'+
     '<div><label class="tl-lbl">Empresa</label><select id="dre-emp" class="tl-in">'+opE(e.empresa||'todas')+'</select></div>'+
     '<div><label class="tl-lbl">Categoria</label><input id="dre-cat" class="tl-in" list="dre-cats" value="'+esc(e.categoria||'')+'" placeholder="Salários, Aluguel…" style="width:170px"><datalist id="dre-cats">'+D.cats.map(c=>'<option value="'+esc(c)+'">').join('')+'</datalist></div>'+
     '<div><label class="tl-lbl">Descrição</label><input id="dre-desc" class="tl-in" value="'+esc(e.descricao||'')+'" placeholder="opcional" style="width:200px"></div>'+
     '<div><label class="tl-lbl">Valor (R$)</label><input id="dre-val" class="tl-in" inputmode="decimal" value="'+(e.valor!=null?String(e.valor).replace('.',','):'')+'" style="width:110px" onkeydown="if(event.key===\'Enter\')lancSalvar()"></div>'+
-    '<label style="font-size:12px;color:var(--mu);display:flex;gap:5px;align-items:center;padding-bottom:8px"><input type="checkbox" id="dre-rec"'+(e.id?(e.recorrente?' checked':''):' checked')+'> repete todo mês</label>'+
+    '<label style="font-size:12px;color:var(--mu);display:flex;gap:5px;align-items:center;padding-bottom:8px"><input type="checkbox" id="dre-rec"'+(e.id&&e.recorrente?' checked':'')+'> repete todo mês</label>'+
     '<button class="tl-btn" style="background:#0d1b2a;color:white" onclick="lancSalvar()">'+(e.id?'💾 Salvar alteração':'➕ Lançar')+'</button>'+(e.id?'<button class="tl-btn" style="background:white;color:#0d1b2a;border:1px solid #0d1b2a" onclick="_lc.edit=null;lancRender()">Cancelar</button>':'')+'</div>';
-  const tab=L.length?'<table class="gtab" style="font-size:12.5px"><tr><th class="l">Categoria</th><th class="l">Descrição</th><th class="l">Empresa</th><th>Valor</th><th>Repete</th><th></th></tr>'+
-    L.map(l=>'<tr><td class="l">'+esc(l.categoria)+'</td><td class="l">'+esc(l.descricao||'')+'</td><td class="l">'+nomeE(l.empresa)+'</td><td>'+f(l.valor)+'</td><td>'+(l.recorrente?'✓':'')+'</td><td style="white-space:nowrap"><button class="am-chip" title="editar" onclick="lancEditar(\''+l.id+'\')">✏️</button> <button class="am-chip" title="excluir" onclick="lancExcluir(\''+l.id+'\')">🗑</button></td></tr>').join('')+
-    '<tr style="font-weight:800"><td class="l" colspan="3">Total do mês</td><td>'+f(L.reduce((s,l)=>s+l.valor,0))+'</td><td colspan="2"></td></tr></table>'
+  const tab=L.length?'<table class="gtab" style="font-size:12.5px"><tr><th class="l">Data</th><th class="l">Categoria</th><th class="l">Descrição</th><th class="l">Empresa</th><th>Valor</th><th>Repete</th><th></th></tr>'+
+    L.map(l=>'<tr><td class="l" style="color:var(--mu);white-space:nowrap">'+brD(l.data)+'</td><td class="l">'+esc(l.categoria)+'</td><td class="l">'+esc(l.descricao||'')+'</td><td class="l">'+nomeE(l.empresa)+'</td><td>'+f(l.valor)+'</td><td>'+(l.recorrente?'✓':'')+'</td><td style="white-space:nowrap"><button class="am-chip" title="editar" onclick="lancEditar(\''+l.id+'\')">✏️</button> <button class="am-chip" title="excluir" onclick="lancExcluir(\''+l.id+'\')">🗑</button></td></tr>').join('')+
+    '<tr style="font-weight:800"><td class="l" colspan="4">Total do mês</td><td>'+f(L.reduce((s,l)=>s+l.valor,0))+'</td><td colspan="2"></td></tr></table>'
     :'<div style="color:var(--mu);font-size:13px;padding:8px 0">Nenhuma despesa lançada em '+dreNomeMes(D.mes)+'.</div>';
   const res=Object.keys(porCat).length?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+Object.entries(porCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>'<div style="background:var(--ws);border:1px solid var(--ln);border-radius:5px;padding:6px 10px;font-size:12px"><span style="color:var(--mu)">'+esc(c)+'</span> <b>'+f(v)+'</b></div>').join('')+'</div>':'';
   el('am-lanc').innerHTML='<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px"><div><label class="tl-lbl">Mês da despesa</label><select class="tl-in" onchange="_lc.mes=this.value;_lc.edit=null;lancCarregar()">'+
@@ -4366,9 +4370,11 @@ function lancRender(){
     '<div class="section"><div class="sec-head"><span>Despesas de '+dreNomeMes(D.mes)+' <span class="cnt">'+L.length+'</span></span></div><div style="padding:12px 14px">'+res+'<div class="gwrap">'+tab+'</div></div></div>';
 }
 async function lancSalvar(){
-  const b={id:_lc.edit?.id,mes:_lc.mes,empresa:el('dre-emp').value,categoria:el('dre-cat').value.trim(),descricao:el('dre-desc').value.trim(),valor:el('dre-val').value.trim().replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.'),recorrente:el('dre-rec').checked};
+  const b={id:_lc.edit?.id,mes:_lc.mes,data:el('dre-data')?.value||null,empresa:el('dre-emp').value,categoria:el('dre-cat').value.trim(),descricao:el('dre-desc').value.trim(),valor:el('dre-val').value.trim().replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.'),recorrente:el('dre-rec').checked};
   const r=await fetch('/despesas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(x=>x.json()).catch(e=>({erro:e.message}));
-  if(r.erro)return alert(r.erro);_lc.edit=null;_dre.mes=_dre.mes||null;await lancCarregar();el('dre-cat')?.focus();
+  if(r.erro)return alert(r.erro);_lc.edit=null;_dre.mes=_dre.mes||null;
+  if(r.mes&&r.mes!==_lc.mes)_lc.mes=r.mes;   // data em outro mês: abre o mês em que o lançamento ficou
+  await lancCarregar();el('dre-cat')?.focus();
 }
 function lancEditar(id){_lc.edit=_lc.lanc.find(l=>l.id===id)||null;lancRender();el('dre-val')?.focus();}
 async function lancExcluir(id){const l=_lc.lanc.find(x=>x.id===id);if(!l||!confirm('Excluir '+l.categoria+(l.descricao?' — '+l.descricao:'')+'?'))return;await fetch('/despesas/'+id,{method:'DELETE'});_lc.lanc=_lc.lanc.filter(x=>x.id!==id);lancRender();}

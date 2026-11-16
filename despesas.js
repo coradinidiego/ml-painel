@@ -1,6 +1,7 @@
 /**
  * Despesas fixas por mês (para o DRE e o ponto de equilíbrio da Apuração).
- * Lançamento: { id, mes:'AAAA-MM', empresa:'zagodini'|'mae'|'lufe'|'todas', categoria, descricao, valor, recorrente, em, por }
+ * Lançamento: { id, mes:'AAAA-MM', data?:'AAAA-MM-DD', empresa:'zagodini'|'mae'|'lufe'|'todas', categoria, descricao, valor, recorrente, em, por }
+ *   data = dia da despesa (opcional); quando informada, o mês do lançamento é o mês dessa data.
  *   empresa 'todas' = despesa compartilhada → no DRE é rateada pelas empresas pela receita líquida do mês.
  *   recorrente = entra no "Copiar recorrentes do mês anterior".
  *
@@ -32,12 +33,14 @@ module.exports = function (app) {
   app.post('/despesas', J, (req, res) => {
     if (!admin(req, res)) return;
     const b = req.body || {}, valor = Number(String(b.valor ?? '').replace(',', '.'));
+    const data = /^\d{4}-\d{2}-\d{2}$/.test(b.data || '') && !isNaN(Date.parse(b.data)) ? b.data : null;
+    if (data) b.mes = data.slice(0, 7);   // a data manda no mês do lançamento
     if (!mesOk(b.mes) || !EMPS.includes(b.empresa) || !String(b.categoria || '').trim() || !(valor >= 0)) return res.status(400).json({ erro: 'preencha mês, empresa, categoria e valor' });
     const d = ler(), por = req.usuario?.nome || req.usuario?.email || null;
-    const reg = { mes: b.mes, empresa: b.empresa, categoria: String(b.categoria).trim().slice(0, 40), descricao: String(b.descricao || '').trim().slice(0, 120), valor: Math.round(valor * 100) / 100, recorrente: !!b.recorrente, em: new Date().toISOString(), por };
+    const reg = { mes: b.mes, data, empresa: b.empresa, categoria: String(b.categoria).trim().slice(0, 40), descricao: String(b.descricao || '').trim().slice(0, 120), valor: Math.round(valor * 100) / 100, recorrente: !!b.recorrente, em: new Date().toISOString(), por };
     if (b.id) { const i = d.lanc.findIndex(l => l.id === b.id); if (i < 0) return res.status(404).json({ erro: 'lançamento não encontrado' }); d.lanc[i] = { ...d.lanc[i], ...reg }; }
     else d.lanc.push({ id: crypto.randomBytes(6).toString('hex'), ...reg });
-    gravar(d); res.json({ ok: true });
+    gravar(d); res.json({ ok: true, mes: reg.mes });
   });
   app.delete('/despesas/:id', (req, res) => {
     if (!admin(req, res)) return;
@@ -51,7 +54,10 @@ module.exports = function (app) {
     if (!mesOk(de) || !mesOk(para)) return res.status(400).json({ erro: 'mês inválido' });
     const d = ler(), ja = new Set(d.lanc.filter(l => l.mes === para).map(l => l.empresa + '|' + l.categoria + '|' + l.descricao));
     const novos = d.lanc.filter(l => l.mes === de && l.recorrente && !ja.has(l.empresa + '|' + l.categoria + '|' + l.descricao))
-      .map(l => ({ ...l, id: crypto.randomBytes(6).toString('hex'), mes: para, em: new Date().toISOString(), por: req.usuario?.nome || null }));
+      .map(l => { // mesmo dia no mês de destino (limitado ao último dia do mês)
+        const [a, m] = para.split('-').map(Number), ult = new Date(a, m, 0).getDate();
+        const data = l.data ? para + '-' + String(Math.min(Number(l.data.slice(8, 10)), ult)).padStart(2, '0') : null;
+        return { ...l, id: crypto.randomBytes(6).toString('hex'), mes: para, data, em: new Date().toISOString(), por: req.usuario?.nome || null }; });
     d.lanc.push(...novos); gravar(d); res.json({ ok: true, copiados: novos.length });
   });
 };
