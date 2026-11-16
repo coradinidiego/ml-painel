@@ -84,7 +84,10 @@ main{display:grid;grid-template-rows:repeat(3,minmax(0,1fr)) auto;gap:calc(.9*va
 .est.nf{background:var(--nf-bg)} .est.nf .rot,.est.nf .num{color:var(--nf)}
 .est.em{background:var(--emp-bg)} .est.em .rot,.est.em .num{color:var(--emp)}
 .est.zero .num{color:var(--linha)!important}
-.atraso{position:absolute;top:calc(.7*var(--u));right:calc(.8*var(--u));background:var(--atraso);color:#fff;font-weight:700;font-size:calc(.9*var(--u));padding:calc(.15*var(--u)) calc(.6*var(--u));border-radius:calc(2*var(--u))}
+.atraso{background:var(--atraso);color:#fff;font-weight:700;font-size:calc(.9*var(--u));padding:calc(.15*var(--u)) calc(.6*var(--u));border-radius:calc(2*var(--u));white-space:nowrap;line-height:1.3}
+.est .rot .atraso,.coletar .rot .atraso{margin-left:auto}
+.chip.atr{background:var(--atraso);color:#fff;font-weight:700;border-radius:calc(2*var(--u));padding:0 calc(.5*var(--u));font-size:calc(.85*var(--u))}
+.faixa.geral .mkts+.atraso,.faixa.geral .coletar>.atraso{font-size:calc(.85*var(--u))}
 .chips{display:flex;flex-wrap:wrap;gap:calc(.3*var(--u)) calc(.7*var(--u));margin-top:calc(.4*var(--u));min-height:calc(1.4*var(--u))}
 .chip{display:inline-flex;align-items:center;gap:calc(.3*var(--u));font-size:calc(.95*var(--u));font-weight:600;color:#cfd5df}
 .chip i{width:calc(.55*var(--u));height:calc(.55*var(--u));border-radius:50%}
@@ -166,12 +169,14 @@ function chips(e, etapa){
 }
 function estacao(e, etapa, classe, rotulo){
   const v = e.total[etapa];
-  const atraso = e.canais.reduce((s,c)=> s + (c[etapa] ? Math.min(c.atrasados, c[etapa]) : 0), 0);
+  // atrasados desta etapa (emitir NF / a empacotar); os de quem já está empacotado aparecem em "A coletar" — a soma bate com o aviso da empresa
+  const campo = etapa === 'emitirNF' ? 'atrNF' : 'atrEmp';
+  const atraso = e.canais.reduce((s,c)=> s + (c[campo] !== undefined ? c[campo] : (c[etapa] ? Math.min(c.atrasados, c[etapa]) : 0)), 0);
+  const txt = atraso ? `${fmt(atraso)} atrasado${atraso>1?'s':''}` : '';
   return `<div class="est ${classe} ${v ? '' : 'zero'}">
-    ${atraso ? `<span class="atraso">${fmt(atraso)} atrasado${atraso>1?'s':''}</span>` : ''}
-    <div class="rot">${rotulo}</div>
+    <div class="rot">${rotulo}${atraso ? `<span class="atraso">${txt}</span>` : ''}</div>
     <div class="num">${fmt(v)}</div>
-    <div class="chips">${chips(e, etapa)}</div>
+    <div class="chips">${chips(e, etapa)}${atraso && e.geral ? `<span class="chip atr">⚠ ${txt}</span>` : ''}</div>
   </div>`;
 }
 function coletar(e){
@@ -179,7 +184,9 @@ function coletar(e){
     .concat(e.canais.map(c => c.canal).filter(m => !ORDEM.includes(m) && e.canais.find(c => c.canal === m).empacotado));
   const blocos = lista.map(m => { const v = e.canais.find(c => c.canal === m)?.empacotado || 0;
     return `<div class="mkt ${v ? '' : 'zero'}" style="--marca:${CORES[m]||CORES.Outros}"><span>${esc(CURTO[m]||m)}</span><b>${fmt(v)}</b></div>`; }).join('');
-  return `<div class="coletar"><div class="est" style="padding:0;background:none"><div class="rot" style="color:var(--ok)">A coletar</div></div>
+  const atCol = e.canais.reduce((s,c)=> s + (c.atrCol||0), 0), txtCol = atCol ? `${fmt(atCol)} atrasado${atCol>1?'s':''}` : '';
+  return `<div class="coletar"><div class="est" style="padding:0;background:none"><div class="rot" style="color:var(--ok)">A coletar${atCol ? `<span class="atraso">${txtCol}</span>` : ''}</div></div>
+    ${atCol && e.geral ? `<span class="atraso">⚠ ${txtCol}</span>` : ''}
     <div class="mkts" style="grid-template-columns:repeat(${Math.max(lista.length,4)},minmax(0,1fr))">${blocos}</div>
     <div class="total"><span>Total a coletar</span><b>${fmt(e.total.empacotado)}</b></div></div>`;
 }
@@ -197,15 +204,15 @@ function alertasDe(e){
 }
 function geral(emps){
   // Soma das empresas: mesmos totalizadores das faixas de cima (pendente de coleta = empacotado aguardando coleta)
-  const canais = {}, total = {emitirNF:0,aEmpacotar:0,empacotado:0,atrasados:0};
+  const zero = () => ({emitirNF:0,aEmpacotar:0,empacotado:0,atrasados:0,atrNF:0,atrEmp:0,atrCol:0,atrasoTotal:0});
+  const canais = {}, total = zero();
   for (const e of emps) for (const c of e.canais||[]) {
-    const g = canais[c.canal] ||= {canal:c.canal,emitirNF:0,aEmpacotar:0,empacotado:0,atrasados:0};
-    const v = {emitirNF:c.emitirNF||0, aEmpacotar:c.aEmpacotar||0, empacotado:c.empacotado||0, atrasados:c.atrasados||0};
-    for (const k in total) { g[k] += v[k]; total[k] += v[k]; }
+    const g = canais[c.canal] ||= {canal:c.canal, ...zero()};
+    for (const k in total) { const v = c[k]||0; g[k] += v; total[k] += v; }
   }
-  const e = { canais:Object.values(canais), total };
+  const e = { canais:Object.values(canais), total, geral:true }, nAt = total.atrasoTotal;
   return `<section class="faixa geral">
-    <div class="marca"><b>Todas as empresas</b></div>
+    <div class="marca"><b>Todas as empresas</b>${nAt ? `<span class="atraso">⚠ ${fmt(nAt)} atrasado${nAt>1?'s':''}</span>` : ''}</div>
     ${estacao(e,'emitirNF','nf','Emitir NF')}
     ${estacao(e,'aEmpacotar','em','A empacotar')}
     ${coletar(e)}

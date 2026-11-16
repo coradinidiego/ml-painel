@@ -413,7 +413,7 @@ function cortes(empresas) {
 }
 
 // ─── Agregação ─────────────────────────────────────────────────────────────
-const zerado = () => ({ emitirNF: 0, aEmpacotar: 0, empacotado: 0, enviado: 0, atrasados: 0, atrasoTotal: 0, futuros: 0, corte: 0, proprio: 0 });
+const zerado = () => ({ emitirNF: 0, aEmpacotar: 0, empacotado: 0, enviado: 0, atrasados: 0, atrasoTotal: 0, atrNF: 0, atrEmp: 0, atrCol: 0, futuros: 0, corte: 0, proprio: 0 });   // atrNF/atrEmp/atrCol: atrasados por etapa (somam atrasoTotal)
 function agregar(emp, linhas) {
   const canais = {}, hoje = hojeIso(), agoraS = Date.now() / 1000;
   // Shopee: quem manda é o prazo de envio da própria Shopee (ship_by_date), não a data prevista do Bling/Tiny.
@@ -425,7 +425,7 @@ function agregar(emp, linhas) {
     const c = canais[l.canal] ||= { canal: l.canal, ...zerado() };
     if (pendenteCorte(l, hoje)) c.corte++;
     if (pendenteProprio(l, hoje)) c.proprio++;
-    if (['emitirNF', 'aEmpacotar', 'empacotado', '_alerta'].includes(l.tipo) && l.prazo === 'atrasado') { c.atrasoTotal++; if (l.num && (c.atrasoVendas ||= []).length < 15) c.atrasoVendas.push(String(l.num)); }   // prazo de envio vencido em qualquer etapa
+    if (['emitirNF', 'aEmpacotar', 'empacotado', '_alerta'].includes(l.tipo) && l.prazo === 'atrasado') { c.atrasoTotal++; c[l.tipo === 'emitirNF' ? 'atrNF' : l.tipo === 'aEmpacotar' ? 'atrEmp' : 'atrCol']++; if (l.num && (c.atrasoVendas ||= []).length < 15) c.atrasoVendas.push(String(l.num)); }   // prazo de envio vencido em qualquer etapa
     if (l.tipo === 'futuro') { c.futuros++; continue; }
     // empacotar com prazo para outro dia (ML libera a etiqueta antes): só em "futuros", não em "a empacotar".
     // Se já empacotarem, a venda passa a "empacotado" (para coletar) normalmente.
