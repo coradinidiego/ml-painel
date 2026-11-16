@@ -1487,6 +1487,12 @@ app.post('/fotos/:nome', express.raw({ type: ['image/jpeg', 'image/png'], limit:
   require('fs').mkdirSync(DIR_FOTOS, { recursive: true }); require('fs').writeFileSync(require('path').join(DIR_FOTOS, nome), req.body);
   res.json({ ok: true, url: 'https://' + req.get('host') + '/fotos/' + nome });
 });
+app.delete('/fotos/:nome', (req, res) => {   // apaga uma foto enviada ao painel
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const nome = String(req.params.nome); if (!/^[\w.-]+\.(jpg|png)$/.test(nome)) return res.status(400).json({ erro: 'nome inválido' });
+  const f = require('path').join(DIR_FOTOS, nome); if (!require('fs').existsSync(f)) return res.status(404).json({ erro: 'não existe' });
+  require('fs').unlinkSync(f); res.json({ ok: true });
+});
 app.get('/fotos/:nome', (req, res) => {
   const nome = String(req.params.nome); if (!/^[\w.-]+\.(jpg|png)$/.test(nome)) return res.status(400).end();
   const f = require('path').join(DIR_FOTOS, nome); if (!require('fs').existsSync(f)) return res.status(404).end();
@@ -2228,7 +2234,10 @@ app.post('/ml/item-criar/:idx', express.json({ limit: '2mb' }), async (req, res)
 app.post('/bling/post/:idx', express.json({ limit: '1mb' }), async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   const p = String(req.body?.path || ''); if (!/^\/produtos\//.test(p)) return res.status(400).json({ erro: 'path não permitido' });
-  try { const r = await bling.client(parseInt(req.params.idx))[['put', 'patch'].includes(req.body.metodo) ? req.body.metodo : 'post'](p, req.body.data || {}); res.json({ ok: true, status: r.status, data: r.data }); }
+  try { const c = bling.client(parseInt(req.params.idx));
+    // metodo 'delete': apaga o recurso (ex.: vínculo /produtos/lojas/<id> ou produto já em situação Excluído)
+    const r = req.body.metodo === 'delete' ? await c.delete(p) : await c[['put', 'patch'].includes(req.body.metodo) ? req.body.metodo : 'post'](p, req.body.data || {});
+    res.json({ ok: true, status: r.status, data: r.data }); }
   catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
 // Admin: cria (POST) ou altera (PUT) produto no Bling v3. /bling/produto/1  { id?, produto }
