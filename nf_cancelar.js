@@ -162,6 +162,12 @@ async function tinyTodas(metodo, chave, params) {
   }
   return out;
 }
+// A mesma venda pode ter dois pedidos no Tiny (um cancelado e outro refeito com os dados corrigidos): existe algum ativo?
+async function tinyPedidoAtivo(numEcommerce) {
+  try { const r = await require('./tiny').chamar('pedidos.pesquisa.php', { numeroEcommerce: String(numEcommerce) });
+    return (r.pedidos || []).some(x => String(x.pedido?.numero_ecommerce) === String(numEcommerce) && !/cancel/i.test(x.pedido?.situacao || ''));
+  } catch (er) { return false; }
+}
 async function coletarTiny() {
   const desde = br(new Date(Date.now() - DIAS * 864e5));
   const canc = (await tinyTodas('pedidos.pesquisa.php', 'pedidos', { situacao: 'cancelado', dataInicial: desde })).map(x => x.pedido);
@@ -184,6 +190,7 @@ async function coletarTiny() {
     if (sit.full) { EXCLUIDOS.add('tiny|' + n.id); continue; }   // Full: nota não se cancela pelo ERP
     if (sit.cancelado !== true) { EXCLUIDOS.add('tiny|' + n.id);
       if (sit.cancelado === null) NAO_CONF.push({ emp: 'lufe', nf: n.numero, pedido: String(n.numero_ecommerce), canal: sit.canal, erro: sit.erro || null });
+      else if (await tinyPedidoAtivo(n.numero_ecommerce)) { /* pedido refeito no Tiny: o cancelado é o antigo e a nota autorizada é a do pedido novo, ativo — nada a analisar */ }
       else ANALISAR.push({ chave: 'an|tiny|' + n.id, emp: 'lufe', nf: n.numero, serie: n.serie, situacaoNf: 'autorizada', pedido: String(n.numero_ecommerce), pedidoErp: p.numero, cliente: n.nome, valor: +n.valor || null,
         motivo: motivo('Tiny', sit.canal, sit, true), link: 'https://erp.tiny.com.br/notas_fiscais#edit/' + n.id });
       continue; }   // só quando Tiny, site e nota concordam
