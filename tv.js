@@ -328,9 +328,13 @@ async function coletarAmazon(emp, hoje, erpLinhas) {
     let tipo = etapaErp[o.AmazonOrderId] || 'emitirNF';
     if (tipo === '_verificado') tipo = 'empacotado';
     if (tipo === 'enviado') tipo = 'empacotado';           // no ERP já saiu, na Amazon ainda não: aguardando coleta
+    // Amazon ainda esperando a NF-e ("Aguardando doc. fiscal"): fica em Emitir NF, mesmo que o ERP já tenha gerado a nota
+    // (nota emitida no ERP mas não enviada/aceita na Amazon — sem ela a Amazon não libera o agendamento da coleta).
+    let nfAmazon = false;
+    if (['NotFound', 'Errored'].includes(o.ElectronicInvoiceStatus) && tipo !== 'emitirNF') { tipo = 'emitirNF'; nfAmazon = true; }
     // prazo de envio da Amazon (LatestShipDate): passou = atrasado; hoje = hoje; amanhã em diante = próximos dias
     const lim = diaSP(o.LatestShipDate);
-    linhas.push({ tipo, canal: 'Amazon', num: o.AmazonOrderId, prazo: !lim ? 'hoje' : lim < hoje ? 'atrasado' : lim > hoje ? 'futuro' : 'hoje' });
+    linhas.push({ tipo, canal: 'Amazon', num: o.AmazonOrderId, prazo: !lim ? 'hoje' : lim < hoje ? 'atrasado' : lim > hoje ? 'futuro' : 'hoje', ...(nfAmazon ? { nfAmazon: true } : {}) });
   }
   for (const o of d.empacotados || []) linhas.push({ tipo: 'empacotado', canal: 'Amazon', prazo: 'hoje' });   // etiqueta gerada, aguardando coleta
   for (const o of d.enviadosHoje) linhas.push({ tipo: 'enviado', canal: 'Amazon', prazo: 'hoje' });
