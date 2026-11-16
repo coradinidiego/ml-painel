@@ -21,6 +21,7 @@ const DATA = require('./dados');
 
 const BASE = 'https://api.mercadolibre.com';
 const DIAS_JANELA = 12;                       // pedidos pagos dos últimos N dias
+const DIAS_ANTIGAS = 60;                      // além da janela: vendas de até N dias que ainda não foram despachadas
 const ARQ_CACHE = path.join(DATA, 'apuracao_cache', 'tv_ml_envios.json');
 const delay = ms => new Promise(r => setTimeout(r, ms));
 const hojeSP = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
@@ -52,6 +53,7 @@ function cache() { if (!_cache) { try { _cache = JSON.parse(fs.readFileSync(ARQ_
 function salvar() { try { fs.mkdirSync(path.dirname(ARQ_CACHE), { recursive: true }); fs.writeFileSync(ARQ_CACHE, JSON.stringify(_cache)); } catch (e) {} }
 function finalizado(s, hoje) {
   if (['delivered', 'cancelled', 'not_delivered'].includes(s.status)) return true;
+  if (s.logistica === 'fulfillment') return true;   // Full nunca entra na TV: não precisa consultar de novo
   if (s.status === 'shipped' && s.enviadoEm && s.enviadoEm < hoje) return true;
   if (s.status === 'ready_to_ship' && s.coletadoEm && s.coletadoEm < hoje) return true;   // já coletado em dia anterior
   return false;
@@ -69,6 +71,19 @@ async function pedidosPagos(conta) {
     for (const o of d.results || []) if (o.shipping?.id) ids.set(String(o.shipping.id), String(o.pack_id || o.id));
     if (!d.results?.length || offset + 50 >= (d.paging?.total || 0)) break;
     await delay(200);
+  }
+  // Vendas mais antigas que a janela e que AINDA não saíram (ex.: etiqueta impressa esperando estoque há 2 semanas):
+  // sem isto o pacote atrasado some da TV quando passa de DIAS_JANELA dias. São poucas — o filtro é feito pelo próprio ML.
+  const antigas = new Date(Date.now() - DIAS_ANTIGAS * 864e5).toISOString().replace('Z', '-00:00');
+  for (const st of ['ready_to_ship', 'handling']) {
+    try {
+      for (let offset = 0; offset < 300; offset += 50) {
+        const d = await get(conta, '/orders/search', { seller, 'order.status': 'paid', 'shipping.status': st, 'order.date_created.from': antigas, 'order.date_created.to': desde, sort: 'date_desc', limit: 50, offset });
+        for (const o of d.results || []) if (o.shipping?.id && !ids.has(String(o.shipping.id))) ids.set(String(o.shipping.id), String(o.pack_id || o.id));
+        if (!d.results?.length || offset + 50 >= (d.paging?.total || 0)) break;
+        await delay(200);
+      }
+    } catch (e) { if (e.response?.status === 401) throw e; console.warn('[tv] ML pendentes antigos', conta, st, e.message); }
   }
   return ids;
 }
