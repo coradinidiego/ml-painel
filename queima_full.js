@@ -130,6 +130,37 @@ async function conferir(x) {
   tg(`🔥 Queima Full — ${conta}\n${x.nome} (${x.id}): ${brl(antes)} → ${brl(ptw)}${lucroTxt} via ${via}.\nCatálogo: ${st === 'winning' ? 'GANHANDO' : 'ainda ' + st + ' (confiro de novo na próxima rodada)'}. Full: ${qtd} un.`);
 }
 
+// Ritmo de venda (Diego, 17/11): vendas do anúncio desde que entrou na queima (pedidos pagos do ML), saldo por dia,
+// média por dia e previsão de quando o Full acaba. Refeito no máximo a cada 6 h por item.
+const diaBR = (t = Date.now()) => horaBR(t).slice(0, 10);
+async function ritmo(x) {
+  x.saldo = x.saldo || {}; x.saldo[diaBR()] = x.full;
+  const ds = Object.keys(x.saldo).sort(); while (ds.length > 60) delete x.saldo[ds.shift()];
+  if (x.ritmoEm && Date.now() - Date.parse(x.ritmoEm) < 6 * 3600e3) return;
+  const uid = await F.uid(x.idx); let vend = 0, off = 0;
+  for (;;) {
+    const r = await F.ml(x.idx, '/orders/search', { seller: uid, item: x.id, 'order.date_created.from': new Date(Date.parse(x.desde)).toISOString().slice(0, 19) + '.000-00:00', sort: 'date_desc', limit: 50, offset: off });
+    for (const o of r.results || []) {
+      if (o.status !== 'paid') continue;
+      for (const i of o.order_items || []) if (i.item?.id === x.id && (!x.var || String(i.item.variation_id) === String(x.var))) vend += +i.quantity || 0;
+    }
+    off += 50; if (off >= (r.paging?.total || 0) || off >= 1000) break;
+    await delay(400);
+  }
+  const dias = Math.max(1, (Date.now() - Date.parse(x.desde)) / 864e5);
+  x.vendidos = vend; x.porDia = r2(vend / dias); x.diasRestantes = vend > 0 && x.full > 0 ? Math.ceil(x.full / (vend / dias)) : null; x.ritmoEm = new Date().toISOString();
+}
+// Resumo diário no Telegram (primeira rodada depois das 8h de Brasília)
+function resumoDiario() {
+  const hoje = diaBR(); if (S.resumoDia === hoje || +horaBR().slice(11, 13) < 8) return;
+  S.resumoDia = hoje;
+  const L = S.itens.filter(x => !x.acabou && x.full > 0); if (!L.length) return;
+  const lin = x => `• ${x.nome}: ${x.full} un no Full · vendeu ${x.vendidos ?? '?'} (${x.porDia ?? '?'}/dia)` + (x.diasRestantes ? ` · acaba em ~${x.diasRestantes} d` : x.vendidos === 0 ? ' · SEM VENDA' : '') + (x.catalogo && x.catalogo !== 'winning' ? ' · perdendo catálogo' : '');
+  let msg = '📦 Queima Full — resumo do dia';
+  for (const idx of [0, 1, 2]) { const l = L.filter(x => x.idx === idx); if (l.length) msg += `\n\n${CONTA[idx]}\n` + l.sort((a, b) => (a.diasRestantes || 9999) - (b.diasRestantes || 9999)).map(lin).join('\n'); }
+  tg(msg);
+}
+
 let rodando = false;
 async function rodar() {
   if (rodando || !F) return; rodando = true;
@@ -138,8 +169,10 @@ async function rodar() {
       if (x.acabou && Date.now() - Date.parse(x.acabou) > 3 * 864e5) continue;   // acabou há mais de 3 dias: não consulta mais
       try { await conferir(x); x.erro = null; }
       catch (e) { const d = e.response?.data; x.erro = d?.message || d?.error || e.message; x.situacao = 'erro: ' + x.erro; log(x, { acao: 'erro', erro: x.erro }); }
+      if (!x.acabou) { try { await ritmo(x); } catch (e) { x.ritmoErro = e.response?.data?.message || e.message; } }
       await delay(1200);
     }
+    try { resumoDiario(); } catch (e) {}
     S.rodadaEm = new Date().toISOString();
   } finally { salvar(); rodando = false; }
 }
