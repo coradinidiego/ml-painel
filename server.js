@@ -2208,17 +2208,28 @@ app.post('/ml/item-alterar/:idx/:id', express.json(), async (req, res) => {
   const idx = parseInt(req.params.idx), id = String(req.params.id); if (!/^MLB\d+$/.test(id)) return res.status(400).json({ erro: 'id' });
   const ok = ['status', 'deleted', 'category_id', 'attributes', 'family_name', 'title', 'pictures', 'price', 'available_quantity'], body = {};
   for (const k of ok) if (req.body?.[k] !== undefined) body[k] = req.body[k];
-  if (!Object.keys(body).length) return res.status(400).json({ erro: 'nada para alterar' });
-  try { res.json({ ok: true, item: (await mlReq(idx, 'put', '/items/' + id, body)).data }); }
+  // descricao: troca o texto da descrição (PUT /items/:id/description). Links e menção a outros sites são removidos — o ML põe o anúncio em revisão.
+  const desc = req.body?.descricao != null ? limparDescML(req.body.descricao) : null;
+  if (!Object.keys(body).length && desc == null) return res.status(400).json({ erro: 'nada para alterar' });
+  try {
+    const item = Object.keys(body).length ? (await mlReq(idx, 'put', '/items/' + id, body)).data : null;
+    let descricao = null;
+    if (desc != null) descricao = (await mlReq(idx, 'put', '/items/' + id + '/description?api_version=2', { plain_text: desc })).data;
+    res.json({ ok: true, item, descricao });
+  }
   catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
+// Descrição para o ML: sem links, sem menção a outros marketplaces (linha inteira sai) — senão o ML segura o anúncio em revisão.
+const limparDescML = t => String(t || '').split('\n').filter(l => !/https?:\/\/|www\.|shopee|shein|amazon|magalu|whats/i.test(l)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 // Admin: cria anúncio novo no ML (corpo = item da API /items) e grava a descrição. /ml/item-criar/1  { item, descricao? }
 app.post('/ml/item-criar/:idx', express.json({ limit: '2mb' }), async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   const idx = parseInt(req.params.idx), item = req.body?.item; if (!item) return res.status(400).json({ erro: 'item' });
+  // regra do Diego (17/11): foto com link de outro marketplace (Shopee etc.) não pode ir para o ML — hospedar antes em /fotos ou no branch fotos
+  if ((item.pictures || []).some(p => /shopee|susercontent|ltwebstatic|shein|media-amazon/i.test(p.source || ''))) return res.status(400).json({ erro: 'foto com link de outro marketplace: hospede a imagem antes (POST /fotos/<nome>.jpg) e use esse endereço' });
   try {
     const r = (await mlReq(idx, 'post', '/items' + (req.query.validar ? '/validate' : ''), item)).data;
-    if (!req.query.validar && req.body.descricao && r?.id) { try { await mlReq(idx, 'post', '/items/' + r.id + '/description', { plain_text: String(req.body.descricao) }); } catch (e) { r._descErro = e.response?.data || e.message; } }
+    if (!req.query.validar && req.body.descricao && r?.id) { try { await mlReq(idx, 'post', '/items/' + r.id + '/description', { plain_text: limparDescML(req.body.descricao) }); } catch (e) { r._descErro = e.response?.data || e.message; } }
     // regra do Diego: todo anúncio novo entra com Flex ativo (desligar só com flex:false no corpo)
     if (!req.query.validar && r?.id && req.body.flex !== false) { try { await mlReq(idx, 'post', '/flex/sites/MLB/items/' + r.id + '/v2', {}); r._flex = true; } catch (e) { r._flex = e.response?.data || e.message; } }
     // regra do Diego: todo anúncio novo ganha 1 campanha de ADS só dele — R$ 50/dia, ROAS 20 (ACOS 5), sem ajuste automático de orçamento;
