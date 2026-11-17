@@ -217,7 +217,8 @@ function planoConta(c, Q, S, L60) {   // Q = 15 dias, S = 7 dias, L60 = { dias, 
       }
       // dá lucro, mas o ADS fica com mais da metade do lucro das vendas dele → subir o ROAS objetivo 1 degrau (não pausa: continua vendendo)
       { const antes = (x.lucroAds ?? 0) + x.custo, parte = antes > 0 ? x.custo / antes : null, rAtual = b.campanha?.acosAlvo ? 100 / b.campanha.acosAlvo : null;
-        const recente = b.campanha && (MUD.some(u => u.idx === c.idx && String(u.campanha) === String(b.campanha.id) && u.tipo === 'roas' && diasDesde(u.data) < ESPERA) || !!emAprendizagem(b.campanha));
+        const aprend = b.campanha ? emAprendizagem(b.campanha) : null;
+        const recente = b.campanha && (!!aprend || MUD.some(u => u.idx === c.idx && String(u.campanha) === String(b.campanha.id) && u.tipo === 'roas' && diasDesde(u.data) < ESPERA));
         if (b.campanha?.individual && x.lucroAds > 0 && x.custo >= 10 && parte > 0.5 && rAtual && rAtual < 34.5 && !recente) {
           const prox = rAtual < 24.5 ? 25 : rAtual < 29.5 ? 30 : 35;
           recs.push({ ...b, tipo: 'apertar', peso: x.custo, pctAds: Math.round(parte * 100), sugestao: { acos_target: prox === 35 ? ACOS_MIN : r2(100 / prox) },
