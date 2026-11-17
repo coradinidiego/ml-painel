@@ -328,6 +328,9 @@ async function coletarAmazon(emp, hoje, erpLinhas) {
     let tipo = etapaErp[o.AmazonOrderId] || 'emitirNF';
     if (tipo === '_verificado') tipo = 'empacotado';
     if (tipo === 'enviado') tipo = 'empacotado';           // no ERP já saiu, na Amazon ainda não: aguardando coleta
+    // Envios Fácil ainda sem coleta agendada na Amazon (PendingSchedule = etiqueta não gerada lá): não está "a coletar",
+    // mesmo que o ERP já marque como embalado — falta gerar a guia de remessa na Amazon.
+    if (tipo === 'empacotado' && o.EasyShipShipmentStatus === 'PendingSchedule') tipo = 'aEmpacotar';
     // Amazon ainda esperando a NF-e ("Aguardando doc. fiscal"): fica em Emitir NF, mesmo que o ERP já tenha gerado a nota
     // (nota emitida no ERP mas não enviada/aceita na Amazon — sem ela a Amazon não libera o agendamento da coleta).
     let nfAmazon = false;
