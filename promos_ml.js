@@ -306,6 +306,15 @@ async function editar(idx, itemId, i, preco) {
   return { ok: true, resposta: r.data, item: x, tambem };
 }
 
+// Erros conhecidos do ML ao entrar/editar promoção, em português e com o que fazer
+function erroPromo(e, idx, itemId) {
+  const d = e.response?.data, bruto = JSON.stringify(d || '') + ' ' + (e.message || '');
+  const x = (ST[idx]?.itens || []).find(y => y.id === itemId), hoje = x?.precoAtual ? `R$ ${(+x.precoAtual).toFixed(2).replace('.', ',')}` : null;
+  if (/CREDIBILITY_DISCOUNTED_PRICE|not credible/i.test(bruto))
+    return { erro: `o ML não considera esse preço um desconto de verdade: ele precisa ser MENOR que o preço que o anúncio praticou nos últimos dias${hoje ? ` (hoje está saindo a ${hoje}${x?.ativa?.nome ? ', na promoção "' + x.ativa.nome + '"' : ''})` : ''}. Digite um preço abaixo disso ou deixe o anúncio na promoção em que já está.`, detalhe: null };
+  return { erro: d?.message || d?.error || e.message, detalhe: d?.cause || null };
+}
+
 function rotas(app, fontes) {
   F = fontes;
   for (const idx of [0, 1, 2]) try { const j = JSON.parse(fs.readFileSync(arq(idx))); ST[idx] = { status: 'pronto', em: j.em, itens: j.itens || [], feito: 0, total: 0, doDisco: true }; } catch (e) {}
@@ -344,11 +353,11 @@ function rotas(app, fontes) {
   app.post('/ml/promos/:idx/editar', require('express').json(), async (req, res) => {
     if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
     try { res.json(await editar(parseInt(req.params.idx), String(req.body?.item || ''), parseInt(req.body?.opcao), req.body?.preco)); }
-    catch (e) { const d = e.response?.data; res.status(400).json({ erro: d?.message || d?.error || e.message, detalhe: d?.cause || null }); }
+    catch (e) { res.status(400).json(erroPromo(e, parseInt(req.params.idx), String(req.body?.item || ''))); }
   });
   app.post('/ml/promos/:idx/entrar', require('express').json(), async (req, res) => {
     try { res.json(await entrar(parseInt(req.params.idx), String(req.body?.item || ''), parseInt(req.body?.opcao), req.body?.preco, +req.body?.qtd || 0)); }
-    catch (e) { const d = e.response?.data; res.status(400).json({ erro: d?.message || d?.error || e.message, detalhe: d?.cause || null }); }
+    catch (e) { res.status(400).json(erroPromo(e, parseInt(req.params.idx), String(req.body?.item || ''))); }
   });
   // admin: entra direto numa promoção (anúncio novo que ainda não está na lista). body: { item, promotion_id?, promotion_type, deal_price? }
   app.post('/ml/promos/:idx/entrar-direto', require('express').json(), async (req, res) => {
