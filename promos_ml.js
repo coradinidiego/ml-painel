@@ -60,7 +60,10 @@ async function opcoesItem(idx, uid, it, cat, erp) {
   const opcoes = [];
   for (const p of lista) {
     if (IGNORAR.has(p.type) || !STATUS[p.status]) continue;
-    const preco = +p.price > 0 ? +p.price : (+p.max_discounted_price || +p.suggested_discounted_price || 0);
+    let preco = +p.price > 0 ? +p.price : (+p.max_discounted_price || +p.suggested_discounted_price || 0);
+    // candidata com faixa: o "price" que o ML devolve às vezes fica FORA da faixa aceita (ex.: relâmpago com price 29,09 e faixa 6–27 → o ML recusa a entrada).
+    // Nesses casos vale o teto da faixa (o maior preço que o ML aceita).
+    if (p.status === 'candidate' && +p.max_discounted_price > 0 && (preco > +p.max_discounted_price + 0.001 || preco < (+p.min_discounted_price || 0) - 0.001)) preco = +p.max_discounted_price;
     if (!(preco > 0)) continue;
     // rebate do ML = meli_percentage × preço original (as % ML + seller somam o desconto total sobre o preço cheio)
     const orig = +p.original_price || it.price, pctM = +p.meli_percentage || 0;
