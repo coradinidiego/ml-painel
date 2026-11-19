@@ -2281,7 +2281,19 @@ app.post('/alertas/telegram', express.json(), async (req, res) => {
   if (require('./auth').ativo() && !req.usuario) return res.status(401).json({ erro: 'login' });
   const texto = String(req.body?.texto || '').slice(0, 1000);
   if (!texto) return res.status(400).json({ erro: 'sem texto' });
+  try {   // guarda de onde veio cada aviso (para achar cópia antiga da extensão/outro programa mandando)
+    const arq = require('path').join(require('./dados'), 'alertas_log.json'), fs = require('fs');
+    let L = []; try { L = JSON.parse(fs.readFileSync(arq)); } catch (e) {}
+    L.push({ em: new Date().toISOString(), usuario: req.usuario?.login || req.usuario?.nome || req.usuario?.usuario || (req.usuario ? JSON.stringify(req.usuario).slice(0, 80) : null),
+      ip: String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim(), agente: String(req.headers['user-agent'] || '').slice(0, 200),
+      origem: String(req.headers.origin || req.headers.referer || '').slice(0, 120), versao: req.body?.versao || null, texto: texto.slice(0, 200) });
+    fs.writeFileSync(arq, JSON.stringify(L.slice(-200)));
+  } catch (e) {}
   try { await require('./telegram').sendTelegram(texto); res.json({ ok: true }); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
+app.get('/alertas/telegram/log', (req, res) => {
+  if (require('./auth').ativo() && !req.usuario) return res.status(401).json({ erro: 'login' });
+  try { res.json(JSON.parse(require('fs').readFileSync(require('path').join(require('./dados'), 'alertas_log.json')))); } catch (e) { res.json([]); }
 });
 const _uidML = {};
 require('./promos_ml').rotas(app, { ml, mlReq, dados: () => dadosCache, uid: async idx => (_uidML[idx] ||= (await ml(idx, '/users/me')).id) }); // Promoções do ML com margem, rebate e catálogo
