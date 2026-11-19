@@ -50,6 +50,7 @@ const INICIAL = [
 
 const S = Object.assign({ itens: null, hist: [] }, ler(ARQ, {}));
 if (!Array.isArray(S.itens)) S.itens = INICIAL.map(x => ({ ...x, desde: new Date().toISOString() }));
+for (const x of S.itens) if (!x.precoAntes) { const h = S.hist.filter(y => y.id === x.id && y.acao === 'baixou' && y.de > 0).pop(); if (h) x.precoAntes = h.de; }
 const salvar = () => { S.hist = S.hist.slice(0, 300); try { fs.mkdirSync(path.dirname(ARQ), { recursive: true }); fs.writeFileSync(ARQ, JSON.stringify(S)); } catch (e) {} };
 const tg = msg => { try { require('./telegram').sendTelegram(msg); } catch (e) {} };
 const log = (x, o) => { S.hist.unshift({ em: new Date().toISOString(), id: x.id, nome: x.nome, ...o }); };
@@ -58,6 +59,20 @@ let F;   // { ml, mlReq, uid }
 
 async function margem(idx, it, preco) {
   try { const m = await cm.margemPreco(F.ml, idx, await F.uid(idx), it, preco, 0); return m && m.lucro != null ? m : null; } catch (e) { return null; }
+}
+
+// Menor preço com lucro >= 0 (Diego, 19/11: "coloca tudo no mínimo para zerar logo"). O frete grátis a partir de R$ 79
+// quebra a curva, então procura primeiro abaixo de R$ 79 e só depois de R$ 79 até o preço cheio. null = não existe.
+async function precoMinimo(idx, it, teto) {
+  const luc = async p => { const m = await margem(idx, it, p); await delay(200); return m ? m.lucro : null; };
+  const busca = async (lo, hi) => {   // menor preço em [lo, hi] com lucro >= 0 (lucro cresce com o preço dentro do trecho)
+    const lh = await luc(hi); if (lh == null) return undefined; if (lh < 0) return null;
+    for (let i = 0; i < 10 && hi - lo > 0.04; i++) { const mid = r2((lo + hi) / 2), l = await luc(mid); if (l == null) return undefined; if (l >= 0) hi = mid; else lo = mid; }
+    return r2(hi);
+  };
+  const lo = r2(Math.max(1, teto * 0.15));
+  if (teto >= 79) { const a = lo < 78.99 ? await busca(lo, 78.99) : null; if (a) return a; if (a === undefined) return undefined; return await busca(79, teto); }
+  return await busca(lo, teto);
 }
 
 // muda o preço do anúncio por uma promoção de preço livre (a mesma lógica da tela de Promoções)
@@ -87,47 +102,89 @@ async function conferir(x) {
   if (!it?.id) throw new Error('anúncio não encontrado');
   it._sku = (it.attributes || []).find(a => a.id === 'SELLER_SKU')?.value_name || it.seller_custom_field || '';
   const v = x.var ? (it.variations || []).find(y => String(y.id) === String(x.var)) : null;
-  const qtd = v ? +v.available_quantity || 0 : +it.available_quantity || 0;
-  x.full = qtd; x.cheio = +(it.original_price || it.price) || null; x.conferidoEm = new Date().toISOString();
-  // 1. Full acabou
+  const anuncio = v ? +v.available_quantity || 0 : +it.available_quantity || 0;
+  // preço que o comprador vê hoje (o /items traz o preço de lista, sem a promoção)
+  let cur = +(v?.price || it.price) || null;
+  try { const sp = await F.ml(x.idx, '/items/' + x.id + '/sale_price', { context: 'channel_marketplace' }); if (+sp?.amount > 0) cur = +sp.amount; } catch (e) {}
+  // estoque NO FULL: enquanto o anúncio está no Full, a quantidade dele é a do Full; se saiu do Full (passou a vender
+  // do estoque próprio), o Full acabou — aí não pode continuar no preço de queima
+  const qtd = it.shipping?.logistic_type === 'fulfillment' ? anuncio : 0;
+  x.full = qtd; x.anuncio = anuncio; x.cheio = +(it.original_price || it.price) || null; x.conferidoEm = new Date().toISOString();
+  // 1. Full acabou → volta o preço de antes da queima (não vende no preço baixo além do estoque do Full)
   if (qtd <= 0) {
     if (!x.acabou) {
-      x.acabou = new Date().toISOString(); x.situacao = 'Full acabou';
-      log(x, { acao: 'Full acabou' });
-      tg(`✅ Queima Full — ${conta}\n${x.nome} (${x.id}): o Full ACABOU.\nPode voltar o preço cheio${x.cheio ? ' (' + brl(x.cheio) + ')' : ''} / margem padrão.`);
+      x.acabou = new Date().toISOString(); x.situacao = 'Full acabou'; x.piso = null; x.pergunta = null;
+      let volta = `Pode voltar o preço cheio${x.cheio ? ' (' + brl(x.cheio) + ')' : ''} / margem padrão.`;
+      if (x.precoAntes && cur && cur < x.precoAntes - 0.05 && !x.var) {
+        try { const via = await aplicarPreco(x.idx, x.id, x.precoAntes); volta = `Voltei o preço para ${brl(x.precoAntes)} (${via}).`; x.situacao = 'Full acabou — preço voltou para ' + brl(x.precoAntes); x.preco = x.precoAntes; }
+        catch (e) { volta = `⚠️ NÃO consegui voltar o preço sozinho (${e.response?.data?.message || e.message}). Volte na mão para ${brl(x.precoAntes)}` + (anuncio > 0 ? ` — o anúncio ainda tem ${anuncio} un fora do Full vendendo a ${brl(cur)}!` : '.'); }
+      }
+      log(x, { acao: 'Full acabou', volta });
+      tg(`✅ Queima Full — ${conta}\n${x.nome} (${x.id}): o Full ACABOU.\n${volta}`);
     }
     return;
   }
   if (x.acabou) { x.acabou = null; }   // voltou a ter estoque (reposição): controla de novo
-  if (!it.catalog_listing) { x.situacao = 'sem catálogo — só acompanha o estoque'; return; }
+  // preço mínimo sem prejuízo (refeito a cada 6 h)
+  if (!x.var && x.cheio && (!x.minEm || Date.now() - Date.parse(x.minEm) > 6 * 3600e3)) { const mn = await precoMinimo(x.idx, it, x.cheio); if (mn !== undefined) { x.min = mn; x.minEm = new Date().toISOString(); } }
+  const baixar = async (alvo, motivo) => {
+    const antes = cur, m = await margem(x.idx, it, alvo); if (!x.precoAntes) x.precoAntes = antes;
+    let via = await aplicarPreco(x.idx, x.id, alvo);
+    try { const tb = await require('./promos_ml').entrarCampanhasMesmoPreco(x.idx, x.id, alvo, F); if (tb.length) via += ' + ' + tb.join(', '); } catch (e) {}
+    const lucroTxt = m ? ` (lucro ${brl(m.lucro)}/un, ${m.pct}%)` : '';
+    let st = null;
+    if (it.catalog_listing) { await delay(8000); try { const q = await F.ml(x.idx, '/items/' + x.id + '/price_to_win', { siteId: 'MLB', version: 'v2' }); st = q.status; } catch (e) {} x.catalogo = st; }
+    x.preco = alvo; x.avisoPiso = null; x.pergunta = null;
+    x.situacao = (st === 'winning' ? 'ganhando a ' : st ? 'baixado para ' : 'sem catálogo — baixado para ') + brl(alvo) + (motivo === 'minimo' ? ' (mínimo sem prejuízo)' : '');
+    log(x, { acao: 'baixou', de: antes, para: alvo, via, catalogo: st, lucro: m?.lucro ?? null, motivo });
+    tg(`🔥 Queima Full — ${conta}\n${x.nome} (${x.id}): ${brl(antes)} → ${brl(alvo)}${lucroTxt} via ${via}.\n${motivo === 'minimo' ? 'Preço mínimo sem prejuízo, para zerar o Full. ' : ''}${st ? 'Catálogo: ' + (st === 'winning' ? 'GANHANDO' : 'ainda ' + st) + '. ' : ''}Full: ${qtd} un.`);
+  };
+  const noMinimo = x.min > 0 && cur > x.min + 0.05;   // ainda dá para baixar sem prejuízo
+  if (!it.catalog_listing) {
+    x.preco = cur; x.catalogo = null;
+    if (x.var) { x.situacao = 'sem catálogo, anúncio com variação — não baixo sozinho (mudaria o preço dos outros tamanhos)'; return; }
+    if (noMinimo) return baixar(x.min, 'minimo');
+    x.situacao = 'sem catálogo — ' + (x.min > 0 ? 'no mínimo sem prejuízo (' + brl(cur) + ')' : 'não existe preço sem prejuízo até o preço cheio');
+    return;
+  }
   // 2. catálogo
   const p = await F.ml(x.idx, '/items/' + x.id + '/price_to_win', { siteId: 'MLB', version: 'v2' });
-  x.preco = +p.current_price || null; x.catalogo = p.status;
-  if (p.status === 'winning') { x.situacao = 'ganhando a ' + brl(x.preco); x.avisoPiso = null; return; }
+  x.preco = +p.current_price || cur; x.catalogo = p.status;
+  if (p.status === 'winning') {
+    if (noMinimo) return baixar(x.min, 'minimo');
+    x.situacao = 'ganhando a ' + brl(x.preco) + (x.min > 0 && x.preco <= x.min + 0.05 ? ' (no mínimo)' : ''); x.avisoPiso = null; x.pergunta = null; return;
+  }
   const ptw = r2(+p.price_to_win || 0);
-  if (!(ptw > 0) || !(ptw < x.preco - 0.005) || (p.reason || []).includes('no_improvement_price')) { x.situacao = 'perdendo — preço não resolve (ML não informa preço para ganhar)'; return; }
+  if (!(ptw > 0) || !(ptw < x.preco - 0.005) || (p.reason || []).includes('no_improvement_price')) {
+    if (noMinimo) return baixar(x.min, 'minimo');
+    x.situacao = 'perdendo — preço não resolve (ML não informa preço para ganhar)'; return;
+  }
   const m = await margem(x.idx, it, ptw);
   const pode = x.piso > 0 ? ptw >= x.piso - 0.001 : (m && m.lucro >= 0);
   const lucroTxt = m ? ` (lucro ${brl(m.lucro)}/un, ${m.pct}%)` : ' (sem custo no ERP para calcular o lucro)';
   if (!pode) {
-    x.situacao = `perdendo — para ganhar ${brl(ptw)}${lucroTxt}, abaixo do piso`;
-    if (!x.avisoPiso || Math.abs(x.avisoPiso - ptw) / ptw > 0.02) {   // avisa uma vez por preço (de novo só se mudar mais de 2%)
-      x.avisoPiso = ptw; log(x, { acao: 'abaixo do piso', ptw });
-      tg(`⚠️ Queima Full — ${conta}\n${x.nome} (${x.id}) está PERDENDO o catálogo a ${brl(x.preco)}.\nPara ganhar: ${brl(ptw)}${lucroTxt}.\n${x.piso > 0 ? 'Piso aprovado: ' + brl(x.piso) : 'Sem piso aprovado: só baixo sozinho com lucro >= 0'} — não baixei. Full: ${qtd} un.`);
+    if (noMinimo) await baixar(x.min, 'minimo');   // desce até onde não dá prejuízo; abaixo disso, só com o OK do Diego
+    x.situacao = `perdendo — para ganhar ${brl(ptw)}${lucroTxt}: aguardando seu OK no Telegram`;
+    if (!x.avisoPiso || Math.abs(x.avisoPiso - ptw) / ptw > 0.02) {   // pergunta uma vez por preço (de novo só se mudar mais de 2%)
+      x.avisoPiso = ptw; x.pergunta = { preco: ptw, em: new Date().toISOString() }; log(x, { acao: 'perguntou (prejuízo)', ptw, lucro: m?.lucro ?? null });
+      const cod = 'QF:' + x.id + ':' + Math.round(ptw * 100);
+      try { require('./telegram').sendTelegram(`⚠️ Queima Full — ${conta}\n${x.nome} (${x.id}) está PERDENDO o catálogo a ${brl(x.preco)}.\nPara ganhar: <b>${brl(ptw)}</b>${lucroTxt}.\nFull: ${qtd} un${m ? ' → prejuízo total de até ' + brl(Math.abs(m.lucro) * qtd) : ''}.\n\nBaixo para ${brl(ptw)}?\n${cod}`,
+        { inline_keyboard: [[{ text: '✅ Baixar para ' + brl(ptw), callback_data: cod + ':sim' }, { text: '❌ Não', callback_data: cod + ':nao' }]] }); } catch (e) {}
     }
     return;
   }
-  // 3. baixa para ganhar
-  const antes = x.preco; let via = await aplicarPreco(x.idx, x.id, ptw);
-  const tambem = await require('./promos_ml').entrarCampanhasMesmoPreco(x.idx, x.id, ptw, F);   // ex.: Black Friday, se aceitar o mesmo preço
-  if (tambem.length) via += ' + ' + tambem.join(', ');
-  await delay(8000);
-  let st = '?', agora = ptw;
-  try { const q = await F.ml(x.idx, '/items/' + x.id + '/price_to_win', { siteId: 'MLB', version: 'v2' }); st = q.status; agora = +q.current_price || ptw; } catch (e) {}
-  x.preco = agora; x.catalogo = st; x.avisoPiso = null;
-  x.situacao = (st === 'winning' ? 'ganhando a ' : 'baixado para ') + brl(agora);
-  log(x, { acao: 'baixou', de: antes, para: ptw, via, catalogo: st, lucro: m?.lucro ?? null });
-  tg(`🔥 Queima Full — ${conta}\n${x.nome} (${x.id}): ${brl(antes)} → ${brl(ptw)}${lucroTxt} via ${via}.\nCatálogo: ${st === 'winning' ? 'GANHANDO' : 'ainda ' + st + ' (confiro de novo na próxima rodada)'}. Full: ${qtd} un.`);
+  // 3. baixa para ganhar (direto no mínimo sem prejuízo, se ele for menor que o preço para ganhar)
+  await baixar(x.min > 0 && x.min < ptw - 0.05 && !(x.piso > 0) ? x.min : ptw, x.min > 0 && x.min < ptw - 0.05 && !(x.piso > 0) ? 'minimo' : 'catalogo');
+}
+
+/** Resposta do Telegram (botão ou "sim"/"não" respondendo a pergunta): aprova baixar com prejuízo só até aquele preço. */
+async function responder(id, preco, resp) {
+  const x = S.itens.find(y => y.id === id); if (!x) return 'Esse item não está mais na queima do Full.';
+  if (x.acabou) return 'O Full desse item já acabou — não baixei.';
+  if (resp !== 'sim') { x.pergunta = null; log(x, { acao: 'recusou baixar', preco }); salvar(); return '👌 Ok, não baixo ' + x.nome + '. Só pergunto de novo se o preço para ganhar mudar.'; }
+  x.piso = r2(preco); x.avisoPiso = null; x.pergunta = null; log(x, { acao: 'aprovou piso', piso: x.piso }); salvar();
+  const t = setInterval(async () => { if (rodando) return; clearInterval(t); rodando = true; try { await conferir(x); x.erro = null; } catch (e) { x.erro = e.response?.data?.message || e.message; tg('⚠️ Queima Full: não consegui baixar ' + x.nome + ' — ' + x.erro); } finally { salvar(); rodando = false; } }, 2000);
+  return '👍 Ok! Baixando ' + x.nome + ' para ' + brl(x.piso) + ' (só enquanto tiver Full)…';
 }
 
 // Ritmo de venda (Diego, 17/11): vendas do anúncio desde que entrou na queima (pedidos pagos do ML), saldo por dia,
@@ -203,4 +260,4 @@ function rotas(app, fontes) {
   setInterval(() => rodar().catch(() => {}), 30 * 60e3).unref?.();
 }
 
-module.exports = { rotas };
+module.exports = { rotas, responder };

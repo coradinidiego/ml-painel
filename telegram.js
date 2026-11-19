@@ -224,6 +224,12 @@ async function processarRespostas() {
           try { resp = await require('./full_agenda').responder(fm[1], fm[2]); } catch (e) { resp = 'Erro: ' + e.message; }
           await sendTelegram(esc(resp));
         }
+        // botões ✅ Baixar / ❌ Não da queima do Full (baixar com prejuízo para ganhar o catálogo)
+        const qf = String(cq.data || '').match(/^QF:(MLB\d+):(\d+):(sim|nao)$/);
+        if (qf && CHAT_IDS.map(x => String(x).trim()).includes(String(cq.message?.chat?.id))) {
+          try { resp = await require('./queima_full').responder(qf[1], +qf[2] / 100, qf[3]); } catch (e) { resp = 'Erro: ' + e.message; }
+          await sendTelegram(esc(resp));
+        }
         try { await axios.post('https://api.telegram.org/bot' + TOKEN + '/answerCallbackQuery', { callback_query_id: cq.id, text: resp.slice(0, 190) }); } catch (e) {}
         continue;
       }
@@ -236,6 +242,13 @@ async function processarRespostas() {
       if (fr && msg.text && CHAT_IDS.map(x => String(x).trim()).includes(String(msg.chat?.id))) {
         const sim = /^\s*(sim|s|ok|pode|reserva|reservar)\b/i.test(msg.text), nao = /^\s*(n[aã]o|n)\b/i.test(msg.text);
         if (sim || nao) { try { await sendTelegram(esc(await require('./full_agenda').responder(fr[1], sim ? 'sim' : 'nao'))); } catch (e) {} }
+        continue;
+      }
+      // resposta em texto ("sim"/"não") à pergunta da queima do Full
+      const qr = texto.match(/QF:(MLB\d+):(\d+)/);
+      if (qr && msg.text && CHAT_IDS.map(x => String(x).trim()).includes(String(msg.chat?.id))) {
+        const sim = /^\s*(sim|s|ok|pode|baixa|baixar)\b/i.test(msg.text), nao = /^\s*(n[aã]o|n)\b/i.test(msg.text);
+        if (sim || nao) { try { await sendTelegram(esc(await require('./queima_full').responder(qr[1], +qr[2] / 100, sim ? 'sim' : 'nao'))); } catch (e) {} }
         continue;
       }
       // Resposta a um chat da Shopee
