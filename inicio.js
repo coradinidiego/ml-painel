@@ -56,6 +56,10 @@ module.exports = function montar(app, ctx) {
           // volta a ficar não lida — um laço sem fim. Essas mensagens de cortesia da IA são lidas aqui e não contam.
           const fora = await cortesiaIA(e.idx, uid, L);
           if (fora.size) L = L.filter(x => !fora.has(x));
+          // Venda cancelada: o ML fecha a conversa (não dá para abrir nem responder), então a mensagem que o comprador
+          // manda depois fica "não lida" para sempre. Marca como lida e não conta como pendente.
+          const canc = await conversaDeVendaCancelada(e.idx, uid, L);
+          if (canc.size) L = L.filter(x => !canc.has(x));
           m.mensagens = L.length;                                   // conversas (pedidos) com mensagem não lida
           m.mensagensQtd = L.reduce((s, x) => s + (x.count || 0), 0);
         } catch (er) { m.erroMensagens = er.response?.status === 401 ? 'token ML expirado' : (er.response?.data?.message || er.message); }
@@ -90,6 +94,26 @@ module.exports = function montar(app, ctx) {
         const soCortesia = naoLidas.every(y => { const t = String(y.text || '').trim(); return t.length <= 140 && !t.includes('?') && CORTESIA.test(t); });
         if (!soCortesia) continue;
         await ml(idx, base, { tag: 'post_sale', limit: 20, offset: 0 });   // abrir sem mark_as_read=false = marca como lida
+        fora.add(x);
+      } catch (er) { /* em dúvida, continua contando como pendente */ }
+    }
+    return fora;
+  }
+
+  const packDe = x => (String(x.resource || x.resource_id || x.pack_id || '').match(/packs\/(\d+)/) || [])[1] || (/^\d+$/.test(String(x.pack_id || '')) ? String(x.pack_id) : null);
+  const CANC = {};   // pack -> true/false (cancelada não volta atrás; a não cancelada é reconferida)
+  async function conversaDeVendaCancelada(idx, uid, L) {
+    const fora = new Set();
+    for (const x of L) {
+      const pack = packDe(x); if (!pack) continue;
+      try {
+        if (CANC[pack] !== true) {
+          let st = null;
+          try { st = (await ml(idx, '/packs/' + pack)).status; } catch (e) { try { st = (await ml(idx, '/orders/' + pack)).status; } catch (e2) {} }
+          CANC[pack] = st === 'cancelled';
+        }
+        if (!CANC[pack]) continue;
+        await ml(idx, `/messages/packs/${pack}/sellers/${uid}`, { tag: 'post_sale', limit: 20, offset: 0 });   // abrir sem mark_as_read=false = marca como lida
         fora.add(x);
       } catch (er) { /* em dúvida, continua contando como pendente */ }
     }
