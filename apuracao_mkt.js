@@ -598,6 +598,17 @@ async function comporPeriodo(emp, ini, fim) {
   }
   return out;
 }
+// ─── Participação TikTok (variável da Rafaela): ADS do mês (digitado) e faixas progressivas sobre a margem ───
+const ARQ_PART = path.join(DATA, 'participacao_tiktok.json');
+const FAIXAS_PART = [[0, 10000, 0.10], [10000, 20000, 0.125], [20000, 40000, 0.15], [40000, 70000, 0.175], [70000, null, 0.20]];
+const lerPart = () => { try { return JSON.parse(fs.readFileSync(ARQ_PART)); } catch (e) { return {}; } };
+router.get('/participacao-tiktok', (req, res) => { const p = lerPart(); res.json({ ads: p.ads || {}, faixas: p.faixas || FAIXAS_PART }); });
+router.post('/participacao-tiktok', express.json(), (req, res) => {
+  const p = lerPart(), mes = String(req.body?.mes || '');
+  if (!/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ erro: 'mes' });
+  p.ads = p.ads || {}; p.ads[mes] = Math.max(0, Number(req.body.ads) || 0);
+  try { fs.writeFileSync(ARQ_PART, JSON.stringify(p)); res.json({ ok: true }); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
 router.get('/resultado', async (req, res) => {
   try { res.json(await resultado(req.query)); }
   catch (e) { res.status(400).json({ erro: e.message }); }

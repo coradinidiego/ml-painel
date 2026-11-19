@@ -346,7 +346,7 @@ body.pm-tipjs .pm-hastip:hover .pm-tip,body.pm-tipjs .pm-hastip:focus .pm-tip{di
 <!-- Apuração Amazon / Shein / TikTok — todas as empresas (ML e Shopee: Mercado Turbo) -->
 <div id="apmkt-content" style="display:none"><div class="content">
   <div id="am-topo"><h1>Apuração</h1><p>Lucro real por pedido em todos os canais, com tarifas, frete e repasse direto das APIs.</p></div>
-  <div style="display:flex;gap:6px;margin:-2px 0 14px"><button class="am-chip on" id="am-v-apu" onclick="amVista('apu')">📊 Apuração</button><button class="am-chip" id="am-v-dre" onclick="amVista('dre')">🧾 DRE / Ponto de equilíbrio</button><button class="am-chip" id="am-v-lanc" onclick="amVista('lanc')">✍️ Lançamentos</button></div>
+  <div style="display:flex;gap:6px;margin:-2px 0 14px"><button class="am-chip on" id="am-v-apu" onclick="amVista('apu')">📊 Apuração</button><button class="am-chip" id="am-v-dre" onclick="amVista('dre')">🧾 DRE / Ponto de equilíbrio</button><button class="am-chip" id="am-v-lanc" onclick="amVista('lanc')">✍️ Lançamentos</button><button class="am-chip" id="am-v-tk" onclick="amVista('tk')">🎵 Participação TikTok</button></div>
   <div id="am-apu">
   <div id="am-auto" style="font-size:12px;color:#666;margin:-4px 0 10px"></div>
   <div id="am-alerta"></div>
@@ -369,6 +369,7 @@ body.pm-tipjs .pm-hastip:hover .pm-tip,body.pm-tipjs .pm-hastip:focus .pm-tip{di
   </div>
   <div id="am-dre" style="display:none"></div>
   <div id="am-lanc" style="display:none"></div>
+  <div id="am-tk" style="display:none"></div>
 </div></div>
 
 <!-- Início: todas as empresas -->
@@ -4285,14 +4286,51 @@ async function amAuto(){
   amVer();amResumoCarregar();
 }
 
+// ══ Participação TikTok (variável da Rafaela): margem do TikTok no mês × faixas progressivas ══
+let _tk={mes:null,res:null,cfg:null,fim:null};
+async function tkCarregar(){
+  const m=_tk.mes,[a,mm]=m.split('-').map(Number),ult=new Date(a,mm,0),h=new Date(),z=n=>String(n).padStart(2,'0');
+  const hoje=h.getFullYear()+'-'+z(h.getMonth()+1)+'-'+z(h.getDate()),fimMes=m+'-'+z(ult.getDate()),fim=fimMes<hoje?fimMes:hoje;
+  el('am-tk').innerHTML='<div class="loading">Calculando a participação…</div>';
+  const [c,r]=await Promise.all([fetch('/apuracao-mkt/participacao-tiktok').then(x=>x.json()).catch(()=>({ads:{},faixas:[]})),
+    m+'-01'<=fim?fetch('/apuracao-mkt/resultado?emp=todas&ini='+m+'-01&fim='+fim).then(x=>x.json()).catch(e=>({erro:String(e)})):Promise.resolve({linhas:[]})]);
+  _tk.cfg=c;_tk.res=r;_tk.fim=fim;_tk.fechado=fimMes<hoje;tkRender();
+}
+function tkVariavel(mc,F){return F.reduce((s,[de,ate,p])=>s+Math.max(0,Math.min(mc,ate==null?Infinity:ate)-de)*p,0);}
+async function tkSalvarAds(v){
+  const ads=Math.max(0,Number(String(v).replace(/\./g,'').replace(',','.'))||0);_tk.cfg.ads[_tk.mes]=ads;tkRender();
+  await fetch('/apuracao-mkt/participacao-tiktok',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mes:_tk.mes,ads})}).catch(()=>{});
+}
+function tkRender(){
+  const r=_tk.res||{},F=_tk.cfg?.faixas||[],brl=v=>'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}),pc=v=>(Math.round(v*1000)/10).toLocaleString('pt-BR')+'%';
+  const h=new Date(),meses=[];for(let i=0;i<12;i++){const d=new Date(h.getFullYear(),h.getMonth()-i,1);meses.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}
+  let o='<div style="background:white;border-radius:10px;border:1px solid #eee;padding:14px 18px;margin-bottom:14px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end"><div><label class="tl-lbl">Mês</label><select class="tl-in" onchange="_tk.mes=this.value;tkCarregar()">'+
+    meses.map(x=>'<option value="'+x+'"'+(x===_tk.mes?' selected':'')+'>'+x.slice(5)+'/'+x.slice(0,4)+'</option>').join('')+'</select></div>'+
+    '<div><label class="tl-lbl">ADS do TikTok no mês (R$)</label><input class="tl-in" style="width:130px" value="'+String(_tk.cfg?.ads?.[_tk.mes]||0).replace('.',',')+'" onchange="tkSalvarAds(this.value)"></div>'+
+    '<div style="font-size:12px;color:#666;padding-bottom:6px">Vendas do TikTok de 01/'+_tk.mes.slice(5)+' até '+_tk.fim.slice(8)+'/'+_tk.fim.slice(5,7)+(_tk.fechado?' (mês fechado)':' — <b>parcial</b>, mês em andamento')+'</div></div>';
+  if(r.erro){el('am-tk').innerHTML=o+'<div class="loading" style="color:#c62828">'+shpEsc(r.erro)+'</div>';return;}
+  const L=(r.linhas||[]).filter(l=>l.canal==='TikTok'),E={},T={ped:new Set(),fat:0,cmv:0,imp:0,tx:0};
+  for(const l of L){const g=E[l.empresa]||(E[l.empresa]={ped:new Set(),fat:0,cmv:0,imp:0,tx:0});for(const x of [g,T]){x.ped.add(l.empresa+l.pedido);x.fat+=(l.receita||0)-(l.devolucao||0);x.cmv+=l.cmv||0;x.imp+=l.imposto||0;x.tx+=(l.comissao||0)+(l.taxa||0)+(l.frete||0);}}
+  const ads=_tk.cfg?.ads?.[_tk.mes]||0,mc=T.fat-T.cmv-T.imp-T.tx-ads,vr=tkVariavel(mc,F),card=(t,v,s,cor)=>'<div style="background:white;border:1px solid #eee;border-radius:10px;padding:12px 16px;min-width:170px;flex:1"><div style="font-size:12px;color:#888">'+t+'</div><div style="font-size:22px;font-weight:700;color:'+(cor||'#0d1b2a')+'">'+v+'</div><div style="font-size:12px;color:#888">'+(s||'')+'</div></div>';
+  o+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+card('Margem de contribuição',brl(mc),T.fat?pc(mc/T.fat)+' do faturamento':'',mc>=0?'#2e7d32':'#c62828')+card('Variável da Rafaela',brl(vr),mc>0?pc(vr/mc)+' da margem (efetivo)':'','#6a1b9a')+card('Fica na empresa',brl(mc-vr),mc>0?pc((mc-vr)/mc)+' da margem':'')+card('Pedidos TikTok',T.ped.size.toLocaleString('pt-BR'),'faturamento '+brl(T.fat))+'</div>';
+  const linha=(n,g,b)=>{const m=g.fat-g.cmv-g.imp-g.tx-(b?ads:0);return '<tr'+(b?' style="font-weight:700;border-top:2px solid #ddd"':'')+'><td class="l" style="text-align:left">'+n+'</td><td>'+g.ped.size+'</td><td>'+brl(g.fat)+'</td><td>'+brl(g.cmv)+'</td><td>'+brl(g.imp)+'</td><td>'+brl(g.tx)+'</td><td>'+(b?brl(ads):'—')+'</td><td style="color:'+(m>=0?'#2e7d32':'#c62828')+'">'+brl(m)+'</td></tr>';};
+  o+='<div style="background:white;border-radius:10px;border:1px solid #eee;padding:14px 18px;margin-bottom:14px;overflow:auto"><b>Entradas do mês</b><table class="tbl" style="width:100%;margin-top:8px"><thead><tr><th style="text-align:left">Empresa</th><th>Pedidos</th><th>Faturamento</th><th>Custo dos produtos</th><th>Impostos</th><th>Comissões / taxas / frete</th><th>ADS</th><th>Margem</th></tr></thead><tbody>'+
+    (Object.keys(E).length?Object.entries(E).sort((a,b)=>b[1].fat-a[1].fat).map(([n,g])=>linha(shpEsc(n),g)).join('')+linha('Total',T,true):'<tr><td colspan="8" style="text-align:center;color:#999;padding:1.5rem">Nenhuma venda do TikTok baixada neste mês. Use <b>Buscar dados</b> na aba Apuração.</td></tr>')+'</tbody></table>'+
+    '<div style="font-size:12px;color:#888;margin-top:8px">Margem = Faturamento (já sem devoluções) − Custo dos produtos − Impostos − Comissões/taxas − ADS. Embalagem não entra (regra da planilha).</div></div>';
+  o+='<div style="background:white;border-radius:10px;border:1px solid #eee;padding:14px 18px;overflow:auto"><b>Cálculo por faixa</b> <span style="font-size:12px;color:#888">— progressivo: atingir uma faixa maior não muda as anteriores</span><table class="tbl" style="width:100%;max-width:640px;margin-top:8px"><thead><tr><th style="text-align:left">Faixa de margem</th><th>%</th><th>Margem na faixa</th><th>Variável</th></tr></thead><tbody>'+
+    F.map(([de,ate,p])=>{const b=Math.max(0,Math.min(mc,ate==null?Infinity:ate)-de);return '<tr'+(b>0?'':' style="color:#aaa"')+'><td class="l" style="text-align:left">'+(ate==null?'Acima de '+brl(de):brl(de)+' a '+brl(ate))+'</td><td>'+pc(p)+'</td><td>'+brl(b)+'</td><td>'+brl(b*p)+'</td></tr>';}).join('')+
+    '<tr style="font-weight:700;border-top:2px solid #ddd"><td class="l" style="text-align:left">Variável da Rafaela</td><td>'+(mc>0?pc(vr/mc):'—')+'</td><td>'+brl(Math.max(0,mc))+'</td><td style="color:#6a1b9a">'+brl(vr)+'</td></tr></tbody></table></div>';
+  el('am-tk').innerHTML=o;
+}
 // ══ DRE e ponto de equilíbrio (aba auxiliar da Apuração) ══
 let _dre={mes:null,lanc:[],cats:[],res:null,edit:null};
 const DRE_EMP=[['zagodini','Zagodini'],['mae','Com Amor de Mãe'],['lufe','Lufe']];
 function amVista(v){
-  for(const k of ['apu','dre','lanc']){el('am-'+k).style.display=v===k?'':'none';el('am-v-'+k).classList.toggle('on',v===k);}
+  for(const k of ['apu','dre','lanc','tk']){el('am-'+k).style.display=v===k?'':'none';el('am-v-'+k).classList.toggle('on',v===k);}
   const h=new Date(),mAt=h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0');
   if(v==='dre'){if(!_dre.mes)_dre.mes=mAt;dreCarregar();}
   if(v==='lanc'){if(!_lc.mes)_lc.mes=mAt;lancCarregar();}
+  if(v==='tk'){if(!_tk.mes)_tk.mes=mAt;tkCarregar();}
 }
 const dreMeses=(antes,depois)=>{const h=new Date(),L=[];for(let i=-depois;i<antes;i++){const d=new Date(h.getFullYear(),h.getMonth()-i,1);L.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}return L;};
 const dreNomeMes=m=>new Date(m+'-15T12:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
