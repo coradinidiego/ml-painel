@@ -20,6 +20,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const DATA = require('./dados');
+const ARQ_TKREAL = path.join(DATA, 'tiktok_real.json');
 const bling = require('./bling');
 const amazon = require('./amazon');
 const cm = require('./custos_ml');
@@ -331,6 +332,7 @@ async function calcular(empKey, ini, fim) {
   // taxa real da SHEIN para o item (por unidade × qtd); null se o pedido não veio da API
   const sheinReal = (num, sku, q, receita, valPed) => { const P = SH[num]; const D = P?.itens?.[String(sku).toUpperCase()]; if (!D || !D.n) return null; const u = q / D.n; return { comissao: D.com * u, taxa: (D.fixo + D.serv) * u, frete: (P.frete || 0) * (valPed > 0 ? receita / valPed : 1), origem: 'SHEIN (real)' }; };
   const hist = lerJson(path.join(DIR, `amazon_anuncios_${E.amazon}.json`), {})?.hist?.porSku || {};
+  const TK = lerJson(ARQ_TKREAL, {});   // repasse real do TikTok por pedido (Finanças → Demonstrativos), ver /tiktok-real
   const linhas = [];
   const custoDe = (sku, canal, extra, data) => {
     // custo só do sistema (Bling / Tiny), vigente na data da venda: sem custo lá = alerta para corrigir no ERP (não usa planilha)
@@ -426,11 +428,14 @@ async function calcular(empKey, ini, fim) {
           t = canal === 'Shein' && sheinReal(p.numeroLoja, sku, q, receita, valPed) ? sheinReal(p.numeroLoja, sku, q, receita, valPed)
             : canal === 'Shein'
             ? { comissao: receita * SHEIN_PCT, taxa: (typeof fx === 'number' ? fx : 0) * q, frete: fre * prop, origem: '18%' + (typeof fx === 'number' ? ' + fixo planilha' : ' (sem fixo na planilha)') }
-            : { comissao: com * prop, taxa: 0, frete: fre * prop, origem: 'Bling' };
+            : { comissao: com * prop, taxa: 0, frete: fre * prop, origem: canal === 'TikTok' ? 'Bling (estimativa, sem repasse do TikTok)' : 'Bling' };
         }
+        // TikTok: venda líquida e taxas do repasse real (o Bling só estima 20% e ignora serviço/afiliado e desconto do vendedor)
+        let rec = receita; const tk = canal === 'TikTok' ? TK[String(p.numeroLoja || '')] : null;
+        if (tk && typeof tk.venda === 'number') { rec = r2(tk.venda * prop); t = { comissao: Math.abs(tk.taxas || 0) * prop, taxa: 0, frete: Math.abs(tk.frete || 0) * prop, origem: tk.status === 'liquidado' ? 'TikTok (repasse real)' : 'TikTok (estimativa do TikTok, aguardando liquidação)' }; }
         add({ empresa: E.nome, canal, data: (p.data || '').slice(0, 10), pedido: p.numero, pedidoCanal: p.numeroLoja || '', situacao: nomeSit || (p.situacao?.valor ?? ''),
-          cliente: p.contato?.nome || '', sku, descricao: it.descricao || '', qtd: q, precoUn: r2(pu), receita, custoUn: cu, origemCusto,
-          cmv: (cu || 0) * q, comissao: t.comissao, taxa: t.taxa, frete: t.frete, imposto: receita * aliq, embalagem: i === 0 ? emb : 0, origemTaxa: t.origem, _valPed: valPed });
+          cliente: p.contato?.nome || '', sku, descricao: it.descricao || '', qtd: q, precoUn: r2(pu), receita: rec, custoUn: cu, origemCusto,
+          cmv: (cu || 0) * q, comissao: t.comissao, taxa: t.taxa, frete: t.frete, imposto: rec * aliq, embalagem: i === 0 ? emb : 0, origemTaxa: t.origem, _valPed: valPed });
       });
     }
   } else {
@@ -598,6 +603,18 @@ async function comporPeriodo(emp, ini, fim) {
   }
   return out;
 }
+// ─── Repasse real do TikTok por pedido: { <id do pedido>: { venda, frete, taxas, liquido, status: liquidado|estimado, data, demonstrativo } } ───
+router.get('/tiktok-real', (req, res) => res.json(lerJson(ARQ_TKREAL, {})));
+router.post('/tiktok-real', express.json({ limit: '2mb' }), (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const T = lerJson(ARQ_TKREAL, {}); let n = 0;
+  for (const [id, v] of Object.entries(req.body?.pedidos || {})) {
+    if (!/^\d{15,20}$/.test(id) || typeof v?.venda !== 'number') continue;
+    if (T[id]?.status === 'liquidado' && v.status !== 'liquidado') continue;   // estimativa não sobrescreve o que já liquidou
+    T[id] = { venda: v.venda, frete: Number(v.frete) || 0, taxas: Number(v.taxas) || 0, liquido: Number(v.liquido) || 0, status: v.status === 'liquidado' ? 'liquidado' : 'estimado', data: v.data || null, demonstrativo: v.demonstrativo || null, em: new Date().toISOString() }; n++;
+  }
+  try { fs.writeFileSync(ARQ_TKREAL, JSON.stringify(T)); res.json({ ok: true, gravados: n, total: Object.keys(T).length }); } catch (e) { res.status(500).json({ erro: e.message }); }
+});
 // ─── Participação TikTok (variável da Rafaela): ADS do mês (digitado) e faixas progressivas sobre a margem ───
 const ARQ_PART = path.join(DATA, 'participacao_tiktok.json');
 const FAIXAS_PART = [[0, 10000, 0.10], [10000, 20000, 0.125], [20000, 40000, 0.15], [40000, 70000, 0.175], [70000, null, 0.20]];
