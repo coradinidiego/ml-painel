@@ -111,6 +111,31 @@ async function aplicarPreco(idx, id, preco) {
   return 'Desconto próprio';
 }
 
+// Diego, 20/11: além do catálogo, os itens da queima entram em TODAS as promoções disponíveis — sempre no MESMO preço da queima
+// (não baixa mais por causa da promoção). Campanhas com preço livre/faixa (ML e do vendedor) e oferta relâmpago.
+// Promoção de preço fixo do ML abaixo do preço da queima fica de fora (seria vender com prejuízo sem o seu OK).
+async function entrarTodas(x, preco, qtd) {
+  let L = await F.ml(x.idx, '/seller-promotions/items/' + x.id, { app_version: 'v2' }); if (!Array.isArray(L)) L = [];
+  const url = '/seller-promotions/items/' + x.id + '?app_version=v2', novas = [], fora = [];
+  x.promoErr = x.promoErr || {}; for (const k of Object.keys(x.promoErr)) if (Date.now() - x.promoErr[k].em > 6 * 3600e3) delete x.promoErr[k];
+  for (const p of L) {
+    if (p.status !== 'candidate' || !p.id) continue;
+    const nome = p.name || p.type, faixa = +p.max_discounted_price > 0, cabe = !faixa || (preco >= +p.min_discounted_price - 0.001 && preco <= +p.max_discounted_price + 0.001);
+    let body = null;
+    if (['DEAL', 'SELLER_CAMPAIGN'].includes(p.type)) { if (cabe) body = { promotion_id: p.id, promotion_type: p.type, deal_price: preco }; else fora.push(nome + ': só aceita de ' + brl(p.min_discounted_price) + ' a ' + brl(p.max_discounted_price)); }
+    else if (p.type === 'LIGHTNING') { if (faixa && cabe) body = { promotion_id: p.id, promotion_type: 'LIGHTNING', deal_price: preco, stock: Math.max(1, qtd) }; else fora.push(nome + ': faixa ' + brl(p.min_discounted_price) + ' a ' + brl(p.max_discounted_price)); }
+    else if (/COUPON/.test(p.type)) continue;   // cupom dá desconto por cima do preço: não entra sozinho
+    else { fora.push(nome + ' (' + p.type + ')' + (+p.price > 0 ? ': preço fixo ' + brl(p.price) : '')); continue; }
+    if (!body) continue;
+    if (x.promoErr[p.id]) { fora.push(nome + ': ML recusou (' + x.promoErr[p.id].erro + ')'); continue; }
+    try { await F.mlReq(x.idx, 'post', url, body); novas.push(nome); await delay(1200); }
+    catch (e) { const d = e.response?.data, er = String(d?.message || d?.error || e.message).slice(0, 120); x.promoErr[p.id] = { em: Date.now(), erro: er }; fora.push(nome + ': ML recusou (' + er + ')'); }
+  }
+  x.promos = L.filter(p => p.status === 'started').map(p => p.name || (p.type === 'PRICE_DISCOUNT' ? 'Desconto próprio' : p.type)).concat(novas);
+  x.promosFora = fora;
+  if (novas.length) { log(x, { acao: 'entrou em promoção', promos: novas, preco }); tg(`🏷️ Queima Full — ${CONTA[x.idx]}\n${x.nome} (${x.id}): entrou em ${novas.join(', ')} a ${brl(preco)} (mesmo preço da queima).`); }
+}
+
 // Sobe o preço de volta: o ML não deixa AUMENTAR o preço de uma promoção, então sai das promoções que estão abaixo do
 // alvo e entra de novo no preço de antes. Se a nova entrada for recusada, o anúncio fica no preço cheio (sem prejuízo).
 async function voltarPreco(idx, id, alvo) {
@@ -256,6 +281,7 @@ async function rodar() {
       try { await conferir(x); x.erro = null; }
       catch (e) { const d = e.response?.data; x.erro = d?.message || d?.error || e.message; x.situacao = 'erro: ' + x.erro; log(x, { acao: 'erro', erro: x.erro }); }
       if (!x.acabou) { try { await ritmo(x); } catch (e) { x.ritmoErro = e.response?.data?.message || e.message; } }
+      if (!x.acabou && !x.var && x.full > 0 && x.preco > 0 && !x.erro) { try { await entrarTodas(x, x.preco, x.full); } catch (e) { x.promosErro = e.response?.data?.message || e.message; } }
       await delay(1200);
     }
     try { resumoDiario(); } catch (e) {}
