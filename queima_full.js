@@ -182,6 +182,7 @@ async function conferir(x) {
         try { const r = await voltarPreco(x.idx, x.id, x.precoAntes); volta = `Voltei o preço para ${brl(r.preco || x.precoAntes)}` + (r.via ? ` (${r.via})` : r.preco > x.precoAntes + 0.05 ? ' (preço cheio: o ML não aceitou a promoção de antes, ' + brl(x.precoAntes) + ')' : '') + `. Saí de: ${r.sairam.join(', ') || '—'}.`; x.situacao += ' — preço voltou para ' + brl(r.preco || x.precoAntes); x.preco = r.preco || x.precoAntes; x.voltou = new Date().toISOString(); }
         catch (e) { volta = `⚠️ NÃO consegui voltar o preço sozinho (${e.response?.data?.message || e.message}). Volte na mão para ${brl(x.precoAntes)}` + (anuncio > 0 ? ` — o anúncio ainda tem ${anuncio} un fora do Full vendendo a ${brl(cur)}!` : '.'); }
       }
+      if (x.ads) volta += `\n📣 PAUSE o ADS deste anúncio (campanha ${x.id}, ROAS ${x.ads}x) — a queima acabou.`;
       log(x, { acao: 'Full acabou', volta });
       tg(`✅ Queima Full — ${conta}\n${x.nome} (${x.id}): ${x.limite != null && noFull > 0 ? 'o ESTOQUE ANTIGO acabou (ainda há ' + noFull + ' un novas no Full, que não entram na queima)' : 'o Full ACABOU'}.\n${volta}`);
     }
@@ -266,7 +267,7 @@ function resumoDiario() {
   const hoje = diaBR(); if (S.resumoDia === hoje || +horaBR().slice(11, 13) < 8) return;
   S.resumoDia = hoje;
   const L = S.itens.filter(x => !x.acabou && x.full > 0); if (!L.length) return;
-  const lin = x => `• ${x.nome}: ${x.full} un ${x.limite != null ? 'de estoque antigo' : 'no Full'} · vendeu ${x.vendidos ?? '?'} (${x.porDia ?? '?'}/dia)` + (x.diasRestantes ? ` · acaba em ~${x.diasRestantes} d` : x.vendidos === 0 ? ' · SEM VENDA' : '') + (x.catalogo && x.catalogo !== 'winning' ? ' · perdendo catálogo' : '');
+  const lin = x => `• ${x.nome}: ${x.full} un ${x.limite != null ? 'de estoque antigo' : 'no Full'} · vendeu ${x.vendidos ?? '?'} (${x.porDia ?? '?'}/dia)` + (x.diasRestantes ? ` · acaba em ~${x.diasRestantes} d` : x.vendidos === 0 ? ' · SEM VENDA' : '') + (x.catalogo && x.catalogo !== 'winning' ? ' · perdendo catálogo' : '') + (x.ads ? ` · ADS ${x.ads}x` : '');
   let msg = '📦 Queima Full — resumo do dia';
   for (const idx of [0, 1, 2]) { const l = L.filter(x => x.idx === idx); if (l.length) msg += `\n\n${CONTA[idx]}\n` + l.sort((a, b) => (a.diasRestantes || 9999) - (b.diasRestantes || 9999)).map(lin).join('\n'); }
   tg(msg);
@@ -303,6 +304,7 @@ function rotas(app, fontes) {
     if (b.nome) x.nome = String(b.nome); if (!x.nome) x.nome = id;
     if (b.piso !== undefined) x.piso = +b.piso > 0 ? r2(+b.piso) : null;
     if (b.var !== undefined) x.var = b.var || null;
+    if (b.ads !== undefined) x.ads = +b.ads > 0 ? +b.ads : null;   // ROAS combinado para o ADS da queima (o painel não mexe no ADS: só lembra de pausar)
     if (b.limite !== undefined) { x.limite = b.limite === null || b.limite === '' ? null : Math.max(0, parseInt(b.limite) || 0); x.limiteDesde = new Date().toISOString(); x.vendidosLimite = 0; }
     x.acabou = null; x.avisoPiso = null;
     salvar(); res.json({ ok: true, item: x });
