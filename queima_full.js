@@ -61,6 +61,21 @@ async function margem(idx, it, preco) {
   try { const m = await cm.margemPreco(F.ml, idx, await F.uid(idx), it, preco, 0); return m && m.lucro != null ? m : null; } catch (e) { return null; }
 }
 
+// unidades vendidas (pedidos pagos) do anúncio/variação desde uma data
+async function vendidosDesde(x, desde) {
+  const uid = await F.uid(x.idx); let vend = 0, off = 0;
+  for (;;) {
+    const r = await F.ml(x.idx, '/orders/search', { seller: uid, item: x.id, 'order.date_created.from': new Date(Date.parse(desde)).toISOString().slice(0, 19) + '.000-00:00', sort: 'date_desc', limit: 50, offset: off });
+    for (const o of r.results || []) {
+      if (o.status !== 'paid') continue;
+      for (const i of o.order_items || []) if (i.item?.id === x.id && (!x.var || String(i.item.variation_id) === String(x.var))) vend += +i.quantity || 0;
+    }
+    off += 50; if (off >= (r.paging?.total || 0) || off >= 1000) break;
+    await delay(400);
+  }
+  return vend;
+}
+
 // Menor preço com lucro >= 0 (Diego, 19/11: "coloca tudo no mínimo para zerar logo"). O frete grátis a partir de R$ 79
 // quebra a curva, então procura primeiro abaixo de R$ 79 e só depois de R$ 79 até o preço cheio. null = não existe.
 async function precoMinimo(idx, it, teto) {
@@ -108,19 +123,25 @@ async function conferir(x) {
   try { const sp = await F.ml(x.idx, '/items/' + x.id + '/sale_price', { context: 'channel_marketplace' }); if (+sp?.amount > 0) cur = +sp.amount; } catch (e) {}
   // estoque NO FULL: enquanto o anúncio está no Full, a quantidade dele é a do Full; se saiu do Full (passou a vender
   // do estoque próprio), o Full acabou — aí não pode continuar no preço de queima
-  const qtd = it.shipping?.logistic_type === 'fulfillment' ? anuncio : 0;
+  // Diego, 20/11: a queima vale só para o ESTOQUE ANTIGO (saldo da tela "Estoque antigo" do ML), não para tudo que está no Full
+  // (reposição nova não tem tempo de estoque). `limite` = unidades antigas a queimar; desconta o que vendeu desde que foi informado.
+  let restante = null;
+  if (x.limite != null) { try { x.vendidosLimite = await vendidosDesde(x, x.limiteDesde || x.desde); } catch (e) {} restante = Math.max(0, x.limite - (x.vendidosLimite || 0)); }
+  const noFull = it.shipping?.logistic_type === 'fulfillment' ? anuncio : 0;
+  const qtd = restante != null ? Math.min(noFull, restante) : noFull;
+  x.fullTotal = noFull;
   x.full = qtd; x.anuncio = anuncio; x.cheio = +(it.original_price || it.price) || null; x.conferidoEm = new Date().toISOString();
   // 1. Full acabou → volta o preço de antes da queima (não vende no preço baixo além do estoque do Full)
   if (qtd <= 0) {
     if (!x.acabou) {
-      x.acabou = new Date().toISOString(); x.situacao = 'Full acabou'; x.piso = null; x.pergunta = null;
+      x.acabou = new Date().toISOString(); x.situacao = x.limite != null && noFull > 0 ? 'estoque antigo acabou' : 'Full acabou'; x.piso = null; x.pergunta = null;
       let volta = `Pode voltar o preço cheio${x.cheio ? ' (' + brl(x.cheio) + ')' : ''} / margem padrão.`;
       if (x.precoAntes && cur && cur < x.precoAntes - 0.05 && !x.var) {
-        try { const via = await aplicarPreco(x.idx, x.id, x.precoAntes); volta = `Voltei o preço para ${brl(x.precoAntes)} (${via}).`; x.situacao = 'Full acabou — preço voltou para ' + brl(x.precoAntes); x.preco = x.precoAntes; }
+        try { const via = await aplicarPreco(x.idx, x.id, x.precoAntes); volta = `Voltei o preço para ${brl(x.precoAntes)} (${via}).`; x.situacao += ' — preço voltou para ' + brl(x.precoAntes); x.preco = x.precoAntes; }
         catch (e) { volta = `⚠️ NÃO consegui voltar o preço sozinho (${e.response?.data?.message || e.message}). Volte na mão para ${brl(x.precoAntes)}` + (anuncio > 0 ? ` — o anúncio ainda tem ${anuncio} un fora do Full vendendo a ${brl(cur)}!` : '.'); }
       }
       log(x, { acao: 'Full acabou', volta });
-      tg(`✅ Queima Full — ${conta}\n${x.nome} (${x.id}): o Full ACABOU.\n${volta}`);
+      tg(`✅ Queima Full — ${conta}\n${x.nome} (${x.id}): ${x.limite != null && noFull > 0 ? 'o ESTOQUE ANTIGO acabou (ainda há ' + noFull + ' un novas no Full, que não entram na queima)' : 'o Full ACABOU'}.\n${volta}`);
     }
     return;
   }
@@ -194,16 +215,7 @@ async function ritmo(x) {
   x.saldo = x.saldo || {}; x.saldo[diaBR()] = x.full;
   const ds = Object.keys(x.saldo).sort(); while (ds.length > 60) delete x.saldo[ds.shift()];
   if (x.ritmoEm && Date.now() - Date.parse(x.ritmoEm) < 6 * 3600e3) return;
-  const uid = await F.uid(x.idx); let vend = 0, off = 0;
-  for (;;) {
-    const r = await F.ml(x.idx, '/orders/search', { seller: uid, item: x.id, 'order.date_created.from': new Date(Date.parse(x.desde)).toISOString().slice(0, 19) + '.000-00:00', sort: 'date_desc', limit: 50, offset: off });
-    for (const o of r.results || []) {
-      if (o.status !== 'paid') continue;
-      for (const i of o.order_items || []) if (i.item?.id === x.id && (!x.var || String(i.item.variation_id) === String(x.var))) vend += +i.quantity || 0;
-    }
-    off += 50; if (off >= (r.paging?.total || 0) || off >= 1000) break;
-    await delay(400);
-  }
+  const vend = await vendidosDesde(x, x.desde);
   const dias = Math.max(1, (Date.now() - Date.parse(x.desde)) / 864e5);
   x.vendidos = vend; x.porDia = r2(vend / dias); x.diasRestantes = vend > 0 && x.full > 0 ? Math.ceil(x.full / (vend / dias)) : null; x.ritmoEm = new Date().toISOString();
 }
@@ -212,7 +224,7 @@ function resumoDiario() {
   const hoje = diaBR(); if (S.resumoDia === hoje || +horaBR().slice(11, 13) < 8) return;
   S.resumoDia = hoje;
   const L = S.itens.filter(x => !x.acabou && x.full > 0); if (!L.length) return;
-  const lin = x => `• ${x.nome}: ${x.full} un no Full · vendeu ${x.vendidos ?? '?'} (${x.porDia ?? '?'}/dia)` + (x.diasRestantes ? ` · acaba em ~${x.diasRestantes} d` : x.vendidos === 0 ? ' · SEM VENDA' : '') + (x.catalogo && x.catalogo !== 'winning' ? ' · perdendo catálogo' : '');
+  const lin = x => `• ${x.nome}: ${x.full} un ${x.limite != null ? 'de estoque antigo' : 'no Full'} · vendeu ${x.vendidos ?? '?'} (${x.porDia ?? '?'}/dia)` + (x.diasRestantes ? ` · acaba em ~${x.diasRestantes} d` : x.vendidos === 0 ? ' · SEM VENDA' : '') + (x.catalogo && x.catalogo !== 'winning' ? ' · perdendo catálogo' : '');
   let msg = '📦 Queima Full — resumo do dia';
   for (const idx of [0, 1, 2]) { const l = L.filter(x => x.idx === idx); if (l.length) msg += `\n\n${CONTA[idx]}\n` + l.sort((a, b) => (a.diasRestantes || 9999) - (b.diasRestantes || 9999)).map(lin).join('\n'); }
   tg(msg);
@@ -248,6 +260,7 @@ function rotas(app, fontes) {
     if (b.nome) x.nome = String(b.nome); if (!x.nome) x.nome = id;
     if (b.piso !== undefined) x.piso = +b.piso > 0 ? r2(+b.piso) : null;
     if (b.var !== undefined) x.var = b.var || null;
+    if (b.limite !== undefined) { x.limite = b.limite === null || b.limite === '' ? null : Math.max(0, parseInt(b.limite) || 0); x.limiteDesde = new Date().toISOString(); x.vendidosLimite = 0; }
     x.acabou = null; x.avisoPiso = null;
     salvar(); res.json({ ok: true, item: x });
   });
