@@ -111,6 +111,23 @@ async function aplicarPreco(idx, id, preco) {
   return 'Desconto próprio';
 }
 
+// Sobe o preço de volta: o ML não deixa AUMENTAR o preço de uma promoção, então sai das promoções que estão abaixo do
+// alvo e entra de novo no preço de antes. Se a nova entrada for recusada, o anúncio fica no preço cheio (sem prejuízo).
+async function voltarPreco(idx, id, alvo) {
+  let L = await F.ml(idx, '/seller-promotions/items/' + id, { app_version: 'v2' }); if (!Array.isArray(L)) L = [];
+  const baixas = L.filter(p => p.status === 'started' && +p.price > 0 && +p.price < alvo - 0.01), sairam = [];
+  for (const p of baixas) {
+    await F.mlReq(idx, 'delete', '/seller-promotions/items/' + id + '?app_version=v2&promotion_type=' + p.type + (p.id ? '&promotion_id=' + p.id : ''));
+    sairam.push(p.name || (p.type === 'PRICE_DISCOUNT' ? 'Desconto próprio' : p.type)); await delay(1500);
+  }
+  await delay(5000);
+  let sp = null; try { sp = +(await F.ml(idx, '/items/' + id + '/sale_price', { context: 'channel_marketplace' }))?.amount || null; } catch (e) {}
+  if (sp && sp < alvo - 0.01) throw new Error('saí de ' + (sairam.join(', ') || 'nenhuma promoção') + ' mas o preço ainda está em ' + brl(sp));
+  let via = null; try { if (!sp || sp > alvo + 0.05) via = await aplicarPreco(idx, id, alvo); } catch (e) {}
+  try { sp = +(await F.ml(idx, '/items/' + id + '/sale_price', { context: 'channel_marketplace' }))?.amount || sp; } catch (e) {}
+  return { preco: sp, via, sairam };
+}
+
 async function conferir(x) {
   const conta = CONTA[x.idx];
   const it = await F.ml(x.idx, '/items/' + x.id, { include_attributes: 'all' });
@@ -133,11 +150,11 @@ async function conferir(x) {
   x.full = qtd; x.anuncio = anuncio; x.cheio = +(it.original_price || it.price) || null; x.conferidoEm = new Date().toISOString();
   // 1. Full acabou → volta o preço de antes da queima (não vende no preço baixo além do estoque do Full)
   if (qtd <= 0) {
-    if (!x.acabou) {
-      x.acabou = new Date().toISOString(); x.situacao = x.limite != null && noFull > 0 ? 'estoque antigo acabou' : 'Full acabou'; x.piso = null; x.pergunta = null;
+    if (!x.acabou || (x.precoAntes && !x.voltou && cur && cur < x.precoAntes - 0.05 && !x.var)) {   // (repete enquanto o preço não tiver voltado)
+      x.acabou = x.acabou || new Date().toISOString(); x.situacao = x.limite != null && noFull > 0 ? 'estoque antigo acabou' : 'Full acabou'; x.piso = null; x.pergunta = null;
       let volta = `Pode voltar o preço cheio${x.cheio ? ' (' + brl(x.cheio) + ')' : ''} / margem padrão.`;
       if (x.precoAntes && cur && cur < x.precoAntes - 0.05 && !x.var) {
-        try { const via = await aplicarPreco(x.idx, x.id, x.precoAntes); volta = `Voltei o preço para ${brl(x.precoAntes)} (${via}).`; x.situacao += ' — preço voltou para ' + brl(x.precoAntes); x.preco = x.precoAntes; }
+        try { const r = await voltarPreco(x.idx, x.id, x.precoAntes); volta = `Voltei o preço para ${brl(r.preco || x.precoAntes)}` + (r.via ? ` (${r.via})` : r.preco > x.precoAntes + 0.05 ? ' (preço cheio: o ML não aceitou a promoção de antes, ' + brl(x.precoAntes) + ')' : '') + `. Saí de: ${r.sairam.join(', ') || '—'}.`; x.situacao += ' — preço voltou para ' + brl(r.preco || x.precoAntes); x.preco = r.preco || x.precoAntes; x.voltou = new Date().toISOString(); }
         catch (e) { volta = `⚠️ NÃO consegui voltar o preço sozinho (${e.response?.data?.message || e.message}). Volte na mão para ${brl(x.precoAntes)}` + (anuncio > 0 ? ` — o anúncio ainda tem ${anuncio} un fora do Full vendendo a ${brl(cur)}!` : '.'); }
       }
       log(x, { acao: 'Full acabou', volta });
@@ -145,7 +162,7 @@ async function conferir(x) {
     }
     return;
   }
-  if (x.acabou) { x.acabou = null; }   // voltou a ter estoque (reposição): controla de novo
+  if (x.acabou) { x.acabou = null; x.voltou = null; }   // voltou a ter estoque (reposição): controla de novo
   // preço mínimo sem prejuízo (refeito a cada 6 h)
   if (!x.var && x.cheio && (!x.minEm || Date.now() - Date.parse(x.minEm) > 6 * 3600e3)) { const mn = await precoMinimo(x.idx, it, x.cheio); if (mn !== undefined) { x.min = mn; x.minEm = new Date().toISOString(); } }
   const baixar = async (alvo, motivo) => {
