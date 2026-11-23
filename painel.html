@@ -1433,6 +1433,14 @@ async function carregarGeral(){
 let _iniEst=null,_iniEmp=[];
 const IDX_EMP={zagodini:0,mae:1,lufe:2};
 const CANAL_NOME={ml:'🟡 Mercado Livre',shopee:'🟠 Shopee',amazon:'📦 Amazon',shein:'⚫ Shein'};
+// Botão "ML mensagens": abre a conversa de pós-venda direto (a lista de vendas com filtro não abria as mensagens)
+const _iniMsgPos={};
+function iniAbrirMsgML(lista){
+  const P=String(lista||'').split(',').filter(Boolean);
+  if(!P.length){window.open('https://www.mercadolivre.com.br/vendas/omni/lista?filters=with_unread_messages','_blank');return;}
+  const i=(_iniMsgPos[lista]||0)%P.length;_iniMsgPos[lista]=i+1;
+  window.open('https://www.mercadolivre.com.br/vendas/novo/mensagens/'+P[i],'_blank');
+}
 async function carregarInicio(){
   try{
     const [r,pv,nfc]=await Promise.all([fetch('/inicio').then(r=>r.json()),fetch('/posvenda').then(r=>r.json()).catch(()=>null),fetch('/nfcancelar').then(r=>r.json()).catch(()=>null)]);_iniEmp=r.empresas;_pv=pv;_nfc=nfc;iniNfe();
@@ -1462,7 +1470,7 @@ async function carregarInicio(){
           Q(sp.ml,'Mercado Livre','a',"irML("+i+",'sempromo')")+(shpNC?Q('nc','Shopee'):Q(sp.shopee,'Shopee','a',"irShp("+i+",'sempromo')"))+'</div></div>'+
         '<div class="ini-grp"><div class="ini-grp-t">💬 Pendentes</div><div class="ini-sq c4">'+
           Q(p.ml.perguntas,'ML<br>perguntas','r',"irML("+i+",'perguntas')")+
-          (p.ml.mensagens==null&&p.ml.erroMensagens?Q('err','ML<br>mensagens','','',p.ml.erroMensagens):Q(p.ml.mensagens,'ML<br>mensagens','r',"window.open('https://www.mercadolivre.com.br/vendas/omni/lista?filters=with_unread_messages','_blank')",'Abre as vendas no site do ML (entre com a conta desta empresa)'))+
+          (p.ml.mensagens==null&&p.ml.erroMensagens?Q('err','ML<br>mensagens','','',p.ml.erroMensagens):Q(p.ml.mensagens,'ML<br>mensagens','r',"iniAbrirMsgML('"+(p.ml.packs||[]).join(',')+"')",(p.ml.packs||[]).length?'Abre direto a conversa no ML (entre com a conta desta empresa). Com mais de uma pendente, cada clique abre a próxima.':'Abre as vendas no site do ML (entre com a conta desta empresa)'))+
           (p.shopee.semAuth?Q('nc','Shopee<br>chat'):Q(p.shopee.chat,'Shopee<br>chat','r',"irShp("+i+",'chat')"))+amz+'</div></div>'+
         '<div class="ini-grp"><div class="ini-grp-t">📦 Estoque diferente do '+e.erp+'</div><div class="ini-sq">'+
           est('ml','Mercado Livre')+est('shopee','Shopee')+est('amazon','Amazon')+est('shein','Shein')+'</div></div>'+

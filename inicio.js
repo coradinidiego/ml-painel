@@ -62,6 +62,7 @@ module.exports = function montar(app, ctx) {
           if (canc.size) L = L.filter(x => !canc.has(x));
           m.mensagens = L.length;                                   // conversas (pedidos) com mensagem não lida
           m.mensagensQtd = L.reduce((s, x) => s + (x.count || 0), 0);
+          m.packs = [...new Set(L.map(packDe).filter(Boolean))];   // para o botão abrir direto a conversa no ML
         } catch (er) { m.erroMensagens = er.response?.status === 401 ? 'token ML expirado' : (er.response?.data?.message || er.message); }
         P.ml = m;
       }
@@ -673,7 +674,7 @@ module.exports = function montar(app, ctx) {
           shopeeStatus: S?.cache ? 'ok' : (S?.status || 'sem_auth'),
         },
         pend: {
-          ml: { perguntas: P.ml?.perguntas ?? (d ? d.perguntas.length : null), mensagens: P.ml?.mensagens ?? null, erroMensagens: P.ml?.erroMensagens || null },
+          ml: { perguntas: P.ml?.perguntas ?? (d ? d.perguntas.length : null), mensagens: P.ml?.mensagens ?? null, packs: P.ml?.packs || [], erroMensagens: P.ml?.erroMensagens || null },
           shopee: P.shopee?.semAuth || (!S?.cache && S?.status === 'sem_auth') ? { semAuth: true } : { chat: P.shopee?.chat ?? (S?.cache ? (S.cache.conversas || []).filter(c => c.pendente).length : null) },
           amazon: { conectada: amazon.loja(e.id).configurada() },
         },
