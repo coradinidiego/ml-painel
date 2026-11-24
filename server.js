@@ -1802,6 +1802,18 @@ app.delete('/amazon/item', express.json(), async (req, res) => {   // {loja, sku
   const b = req.body || {}; if (!b.sku || b.confirmar !== 'EXCLUIR') return res.status(400).json({ erro: 'sku e confirmar:"EXCLUIR" são obrigatórios' });
   try { res.json(await amazon.loja(String(b.loja || 'lufe')).excluirItem(String(b.sku))); } catch (e) { res.status(500).json({ erro: e.message }); }
 });
+// Admin (teste): lê a página pública de vendedores de um produto de catálogo do ML. /debug/ml-catalogo-pagina?id=MLB47252351
+app.get('/debug/ml-catalogo-pagina', async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const id = String(req.query.id || ''); if (!/^MLB\d+$/.test(id)) return res.status(400).json({ erro: 'id' });
+  try {
+    const r = await require('axios').get('https://www.mercadolivre.com.br/p/' + id + '/s', { timeout: 20000, validateStatus: () => true, maxRedirects: 3,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36', 'Accept-Language': 'pt-BR,pt;q=0.9', Accept: 'text/html' } });
+    const h = String(r.data || '');
+    res.json({ status: r.status, tamanho: h.length, final: r.request?.res?.responseUrl || null, titulo: (h.match(/<title>([^<]*)/) || [])[1] || null,
+      vendedores: [...h.matchAll(/"seller_name":"([^"]+)"|"sellerName":"([^"]+)"|"nickname":"([^"]+)"/g)].map(m => m[1] || m[2] || m[3]).slice(0, 20), trecho: req.query.raw ? h.slice(0, 1500) : undefined });
+  } catch (e) { res.status(500).json({ erro: e.message }); }
+});
 // Admin: anúncios da Amazon com problemas (uma página por chamada). /amazon/problemas?loja=zagodini&sev=ERROR&token=
 app.get('/amazon/problemas', async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
