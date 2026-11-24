@@ -404,7 +404,7 @@ async function carregarConta(idx) {
                 if (alvo > ptw.current_price + 0.009) it.preco_subir = alvo;
               }
             }
-          } catch(e2) {}
+          } catch(e2) { it.s2_indisponivel = true; }   // o ML passou a negar (403) a lista de anúncios do produto de catálogo
           ganhando.push(it);
         } else if (ptw.status === 'updating' || ptw.status === 'out_of_stock' || ptw.status) {
           atualizando.push(it);
