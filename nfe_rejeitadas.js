@@ -143,6 +143,7 @@ async function consultar({ minIdade = 0, por } = {}) {
     catch (e) { res.push({ empresa: E.nome, erro: erroTxt(e) }); continue; }
     for (const x of L) {
       if (minIdade && Date.now() - Date.parse(String(x.dataEmissao).replace(' ', 'T') + '-03:00') < minIdade) continue;
+      if (!por && jaTentou(E.id, x.numero)) continue;   // automático: não insiste na mesma nota
       const reg = { em: new Date().toISOString(), emp: E.id, empresa: E.nome, nota: x.numero, cliente: x.contato?.nome || '', por: por || 'automático', acao: 'consulta' };
       try {
         await breq(c, 'post', `/nfe/${x.id}/enviar`);
@@ -165,6 +166,42 @@ async function consultar({ minIdade = 0, por } = {}) {
   return res;
 }
 
+const jaTentou = (emp, nota, h = 3) => S.hist.some(x => x.emp === emp && x.nota === nota && Date.now() - Date.parse(x.em) < h * 3600e3);
+const avisar = reg => { try { if (!reg.ok && S.hist.some(h => h !== reg && h.emp === reg.emp && h.nota === reg.nota && !h.ok && h.em !== reg.em)) return;   // falha repetida: avisa só na primeira
+  const tg = require('./telegram'); if (tg.sendTelegram) tg.sendTelegram(reg.ok ? `✅ NF-e ${reg.nota} ${reg.empresa} (${reg.acao}) autorizada` : `⚠️ NF-e ${reg.nota} ${reg.empresa} (${reg.acao}): ${reg.erro || reg.situacao}`); } catch (e) {} };
+
+/** Notas de venda de marketplace paradas em "pendente" (1) — geradas e não transmitidas, de qualquer loja:
+ *  transmite à SEFAZ; se voltar rejeitada por endereço, corrige pelo CEP e transmite de novo. */
+async function pendentes({ minIdade = 20 * 60e3, por } = {}) {
+  const res = [];
+  for (const E of EMP) {
+    const c = bling.client(E.idx), de = new Date(Date.now() - 5 * 864e5).toISOString().slice(0, 10);
+    let L = [];
+    try { L = (await breq(c, 'get', '/nfe', { params: { situacao: 1, tipo: 1, dataEmissaoInicial: de + ' 00:00:00', limite: 100 } })).data?.data || []; }
+    catch (e) { res.push({ empresa: E.nome, erro: erroTxt(e) }); continue; }
+    for (const x of L) {
+      if (Number(x.tipo) !== 1 || !Number(x.loja?.id)) continue;   // só saída vinculada a uma loja (marketplace)
+      if (minIdade && Date.now() - Date.parse(String(x.dataEmissao).replace(' ', 'T') + '-03:00') < minIdade) continue;
+      if (!por && jaTentou(E.id, x.numero)) continue;
+      const reg = { em: new Date().toISOString(), emp: E.id, empresa: E.nome, nota: x.numero, cliente: x.contato?.nome || '', por: por || 'automático', acao: 'transmissão de nota pendente' };
+      try {
+        await breq(c, 'post', `/nfe/${x.id}/enviar`);
+        let n = null;
+        for (let t = 0; t < 5; t++) { await delay(4000); n = (await breq(c, 'get', '/nfe/' + x.id)).data?.data; if (![1, 3, 8, 10].includes(Number(n?.situacao))) break; }
+        if (Number(n?.situacao) === 4) {
+          const d = await diagnosticar(n);
+          if (d.novo) { const r = await corrigir({ emp: E.id, empresa: E.nome, idx: E.idx, id: x.id, numero: x.numero, cliente: reg.cliente }, por); res.push({ ...reg, situacao: 'rejeitada → corrigida: ' + r.situacao, ok: r.ok }); continue; }
+        }
+        reg.situacao = SIT[n?.situacao] || ('situação ' + n?.situacao); reg.ok = [5, 6, 7].includes(Number(n?.situacao));
+      } catch (e) { reg.situacao = 'erro'; reg.erro = erroTxt(e); }
+      S.hist.unshift(reg); salvar(); res.push(reg); avisar(reg);
+      await delay(1000);
+    }
+  }
+  S.pendentes = { em: new Date().toISOString(), res }; salvar();
+  return res;
+}
+
 let rodando = false;
 async function rodarAuto() {
   if (rodando) return; rodando = true;
@@ -175,6 +212,9 @@ async function rodarAuto() {
         if (S.hist.some(h => h.emp === p.emp && h.nota === p.numero && Date.now() - Date.parse(h.em) < 6 * 3600e3)) continue;   // já tentou há pouco: não insiste
         await corrigir(p); await delay(1500);
       }
+      // notas de qualquer marketplace paradas em "pendente" ou "consultar situação" há mais de 20 min
+      try { await pendentes(); } catch (e) { S.erro = 'pendentes: ' + e.message; }
+      try { const r = await consultar({ minIdade: 20 * 60e3 }); r.filter(x => x.nota).forEach(avisar); } catch (e) { S.erro = 'consulta: ' + e.message; }
       await listar();
     }
   } catch (e) { S.erro = e.message; }
@@ -183,7 +223,7 @@ async function rodarAuto() {
 
 module.exports = function (app) {
   const admin = (req, res) => { if (require('./auth').ativo() && !req.usuario?.admin) { res.status(403).json({ erro: 'só admin' }); return false; } return true; };
-  app.get('/nfe-rejeitadas', (req, res) => res.json({ modo: S.modo, listadoEm: S.listadoEm, rodando, lista: S.lista, hist: S.hist.slice(0, 60), consulta: S.consulta }));
+  app.get('/nfe-rejeitadas', (req, res) => res.json({ modo: S.modo, listadoEm: S.listadoEm, rodando, lista: S.lista, hist: S.hist.slice(0, 60), consulta: S.consulta, pendentes: S.pendentes, erro: S.erro }));
   app.post('/nfe-rejeitadas/atualizar', async (req, res) => { try { await listar(); res.json({ ok: true }); } catch (e) { res.status(500).json({ erro: e.message }); } });
   app.post('/nfe-rejeitadas/corrigir', require('express').json(), async (req, res) => {
     if (!admin(req, res)) return;
