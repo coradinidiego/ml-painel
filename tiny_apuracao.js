@@ -109,6 +109,8 @@ function calcular(lista, cfg) {
     if (b !== s && b in P.base) return [P.base[b] * q, 'Base x qtd kit'];
     const c = composto(s, P.base); if (c != null) return [c, 'Base (soma dos itens do kit)'];
     const v = s.match(/^(.+)-[A-Za-zÀ-ú]+$/); if (v && v[1] in P.base) return [P.base[v[1]], 'Base (variação de cor)'];   // "VEN0003-PRETO" = VEN0003
+    // fora da planilha: usa o custo cadastrado no Tiny (produto ou composição do kit)
+    if (cfg.erp) { try { const f = require('./custos_ml').custoComFonte(2, s, cfg.erp); if (f && f.fonte !== 'planilha') return [f.v, f.fonte]; } catch (e) {} }
     return [null, 'SEM CUSTO'];
   };
   const regra = (canal, s) => {
@@ -226,7 +228,7 @@ router.get('/status', (req, res) => {
   catch (e) { res.status(400).json({ erro: e.message }); }
 });
 
-router.get('/resultado', (req, res) => {
+router.get('/resultado', async (req, res) => {
   try {
     const [ini, fim] = periodo(req.query);
     let meta; try { meta = JSON.parse(fs.readFileSync(periodoFile(ini, fim))); } catch (e) {}
@@ -237,7 +239,8 @@ router.get('/resultado', (req, res) => {
       lista = Object.values(cache).filter(p => { const d = brToIso(p.data_pedido); return d >= ini && d <= fim; });
       if (!lista.length) return res.json({ ok: false, vazio: true });
     }
-    res.json({ ok: true, ini, fim, geradoEm: meta?.geradoEm || null, ...calcular(lista, { ...getConfig(), embalagem: require('./config_empresas').get().find(e => e.id === 'lufe')?.embalagem }) });
+    let erp = null; try { erp = await require('./custos_ml').custosErp(2); } catch (e) {}
+    res.json({ ok: true, ini, fim, geradoEm: meta?.geradoEm || null, ...calcular(lista, { ...getConfig(), erp, embalagem: require('./config_empresas').get().find(e => e.id === 'lufe')?.embalagem }) });
   } catch (e) { console.error('[apuracao-tiny]', e); res.status(500).json({ ok: false, erro: e.message }); }
 });
 
