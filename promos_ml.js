@@ -200,6 +200,27 @@ function aplicarEntrou(x) {
   }
 }
 
+// Depois de entrar/mudar preço: confere no ML se o anúncio de catálogo passou a ganhar (o card e a aba de catálogo
+// ficavam mostrando "perdendo" até a próxima recarga, de 6 em 6 horas).
+async function atualizarCatalogo(idx, itemId, x) {
+  if (!x?.catalogo) return;
+  try {
+    await delay(2500);   // o ML leva alguns segundos para refletir o preço novo
+    const p = (await F.mlReq(idx, 'get', '/items/' + itemId + '/price_to_win?siteId=MLB&version=v2')).data;
+    if (!p?.status) return;
+    const d = F.dados()[idx];
+    if (p.status === 'winning') {
+      x.catalogo = { status: 'winning', ptw: null, s2: x.catalogo.s2 || null };
+      const k = (d?.perdendo || []).findIndex(y => y.id === itemId);
+      if (k >= 0) { const [m] = d.perdendo.splice(k, 1); m.current_price = p.current_price; (d.ganhando = d.ganhando || []).push(m); }
+    } else {
+      x.catalogo = { ...x.catalogo, status: 'competing', ptw: p.price_to_win || x.catalogo.ptw };
+      const m = (d?.perdendo || []).find(y => y.id === itemId);
+      if (m) { m.current_price = p.current_price; if (p.price_to_win) m.price_to_win = p.price_to_win; m.diff = p.current_price && p.price_to_win ? p.current_price - p.price_to_win : m.diff; }
+    }
+  } catch (e) {}
+}
+
 async function entrar(idx, itemId, i, preco, qtd) {
   const E = ST[idx], x = E?.itens?.find(y => y.id === itemId), o0 = x?.opcoes?.[i];
   if (!o0) throw new Error('opção não encontrada — atualize a lista');
@@ -226,6 +247,7 @@ async function entrar(idx, itemId, i, preco, qtd) {
   }
   marcarEntrou(x, o0, o.preco);
   for (const o2 of x.opcoes || []) if (o2.tipo === 'DEAL' && tambem.includes(o2.nome)) marcarEntrou(x, o2, o.preco);
+  await atualizarCatalogo(idx, itemId, x);
   return { ok: true, resposta: r.data, item: x, qtd: o.qtd || null, tambem };
 }
 
@@ -303,6 +325,7 @@ async function editar(idx, itemId, i, preco) {
   }
   aplicarEntrou(x);
   for (const o2 of x.opcoes || []) if (o2.tipo === 'DEAL' && tambem.includes(o2.nome)) marcarEntrou(x, o2, p);
+  await atualizarCatalogo(idx, itemId, x);
   return { ok: true, resposta: r.data, item: x, tambem };
 }
 
