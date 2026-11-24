@@ -97,6 +97,8 @@ function lerPlanilha(cfg) {
   return { base, peso, kits, regras, padrao, faixas, tabela };
 }
 
+const BRINDES_SKU = ['SOFLENS59-200'];
+const BRINDES_DESC = /vetnil\s+enterex/i;
 function calcular(lista, cfg) {
   const P = lerPlanilha(cfg);
   // "SKU-3" = 3 × SKU (só sufixo de 1 a 100); sufixo maior é outro código (kit "A-B" de dois produtos), não quantidade
@@ -137,7 +139,9 @@ function calcular(lista, cfg) {
     (p.itens || []).forEach((it, idx) => {
       const i = it.item, s = K(i.codigo) || '', q = f(i.quantidade), pu = f(i.valor_unitario) * fator;
       const receita = r2(q * pu);
-      const [cu, origCusto] = custo(s);
+      // brindes (definidos pelo Diego em 24/11): custo zero
+      const brinde = BRINDES_SKU.includes(s) || (!s && BRINDES_DESC.test(String(i.descricao || '')));
+      const [cu, origCusto] = brinde ? [0, 'Brinde (custo zero)'] : custo(s);
       const [rg, origTaxa] = regra(canal, s);
       const cmv = (cu || 0) * q, imposto = receita * cfg.imposto, comissao = receita * (rg.rate || 0);
       let taxa;
