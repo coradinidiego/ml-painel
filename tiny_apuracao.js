@@ -108,6 +108,7 @@ function calcular(lista, cfg) {
     const [b, q] = semSufixo(s);
     if (b !== s && b in P.base) return [P.base[b] * q, 'Base x qtd kit'];
     const c = composto(s, P.base); if (c != null) return [c, 'Base (soma dos itens do kit)'];
+    const v = s.match(/^(.+)-[A-Za-zÀ-ú]+$/); if (v && v[1] in P.base) return [P.base[v[1]], 'Base (variação de cor)'];   // "VEN0003-PRETO" = VEN0003
     return [null, 'SEM CUSTO'];
   };
   const regra = (canal, s) => {
@@ -302,7 +303,7 @@ function planilhaLufe() {
   const semSufixo = s => { const m = s.match(/^(.*)-(\d+)$/); return m && parseInt(m[2]) >= 1 && parseInt(m[2]) <= 100 ? [m[1], parseInt(m[2])] : [s, 1]; };
   const composto = (s, T) => { const p = s.split('-'); return p.length >= 2 && p.every(x => x && x in T) ? p.reduce((t, x) => t + T[x], 0) : null; };
   return {
-    custo: s => { if (s in P.base) return P.base[s]; if (s in P.kits) return P.kits[s]; const [b, q] = semSufixo(s); if (b !== s && b in P.base) return P.base[b] * q; return composto(s, P.base); },
+    custo: s => { if (s in P.base) return P.base[s]; if (s in P.kits) return P.kits[s]; const [b, q] = semSufixo(s); if (b !== s && b in P.base) return P.base[b] * q; const c = composto(s, P.base); if (c != null) return c; const v = s.match(/^(.+)-[A-Za-zÀ-ú]+$/); return v && v[1] in P.base ? P.base[v[1]] : null; },
     regra: (canal, s) => { const rr = P.regras[canal] || {}; if (s in rr) return rr[s]; const [b] = semSufixo(s); return rr[b] || P.padrao[canal] || P.padrao['Outros'] || {}; },
   };
 }
