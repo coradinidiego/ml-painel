@@ -232,6 +232,14 @@ function criar(chave) {
     if (!id) throw new Error('não consegui descobrir o ID de vendedor da Amazon');
     return (_seller = id);
   }
+  /** Uma página dos anúncios com problemas (issues) — Listings API searchListingsItems. */
+  async function problemas(pageToken, severidade) {
+    const seller = await sellerId('B07HGLN8R5');
+    const q = { marketplaceIds: MARKETPLACE_BR, includedData: 'summaries,issues', pageSize: 20 };
+    if (severidade) q.withIssueSeverity = severidade;
+    if (pageToken) q.pageToken = pageToken;
+    return get('/listings/2021-08-01/items/' + encodeURIComponent(seller), q);
+  }
   /** Muda a quantidade (envio pelo vendedor / DBA, não FBA) de um SKU pela Listings API. */
   async function atualizarEstoque(sku, asin, qtd) {
     const seller = await sellerId(asin);
@@ -295,7 +303,7 @@ function criar(chave) {
   }
   async function participacoes() { return (await get('/sellers/v1/marketplaceParticipations')).payload || []; }
 
-  return { chave, nome: L.nome, configurada, get, post, relatorio, tsv, ofertas, catalogo, tarifas, historicoTarifas, pedidos, pedidosCache, participacoes, atualizarEstoque, restricoes, lerOferta, criarOferta, criarItem, patchItem, sellerId, MARKETPLACE_BR };
+  return { chave, nome: L.nome, configurada, get, post, relatorio, tsv, ofertas, catalogo, tarifas, historicoTarifas, pedidos, pedidosCache, participacoes, atualizarEstoque, restricoes, lerOferta, criarOferta, criarItem, patchItem, problemas, sellerId, MARKETPLACE_BR };
 }
 
 const _l = {};
