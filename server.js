@@ -2275,6 +2275,26 @@ require('./turbo')(app, { dadosCache });
 require('./tiny3')(app);
 require('./fornecedores').iniciar(); require('./fornecedores').rotas(app); // fornecedor por SKU (apuração por fornecedor)
 require('./nfe_shein')(app); // NF-e automática dos pedidos SHEIN no Bling
+// Vigia (24/11): o ML passou a negar (403) a lista de vendedores do produto de catálogo (/products/<id>/items),
+// por isso o painel deixou de mostrar o ganhador e o 2º colocado. Testa 2x por dia e avisa no Telegram quando voltar
+// (ou se cair de novo). O carregamento normal já volta a preencher os concorrentes sozinho.
+(function vigiaCatalogoVendedores() {
+  const arq = require('path').join(require('./dados'), 'apuracao_cache', 'vigia_catalogo.json');
+  const fs = require('fs');
+  let st = { ok: null, em: null }; try { st = JSON.parse(fs.readFileSync(arq)); } catch (e) {}
+  const testar = async () => {
+    try {
+      const d = dadosCache[0]; const it = [...(d?.perdendo || []), ...(d?.ganhando || [])].find(x => x.catalogo_url);
+      const pid = (it?.catalogo_url || '').match(/\/p\/(MLB\d+)/)?.[1]; if (!pid) return;
+      let ok = false; try { const r = await ml(0, '/products/' + pid + '/items', { limit: 1 }); ok = Array.isArray(r?.results); } catch (e) { ok = false; }
+      if (st.ok !== null && ok !== st.ok) { try { await require('./telegram').sendTelegram(ok ? '✅ <b>Catálogo ML</b>: a lista de vendedores por catálogo voltou a funcionar. O painel volta a mostrar o ganhador e o 2º colocado na próxima atualização.' : '⚠️ <b>Catálogo ML</b>: o ML voltou a bloquear a lista de vendedores por catálogo. O painel fica sem o nome do ganhador e sem o 2º colocado.'); } catch (e) {} }
+      st = { ok, em: new Date().toISOString() }; try { fs.mkdirSync(require('path').dirname(arq), { recursive: true }); fs.writeFileSync(arq, JSON.stringify(st)); } catch (e) {}
+    } catch (e) {}
+  };
+  app.get('/debug/vigia-catalogo', (req, res) => res.json(st));
+  setTimeout(testar, 20 * 60e3); setInterval(testar, 12 * 3600e3).unref?.();
+})();
+
 require('./nfe_rejeitadas')(app); // NF-e rejeitadas: corrige bairro/município pelo CEP e retransmite
 require('./nfe_shopee')(app); // Shopee: NF-e autorizada no Bling e pendente na Shopee → manda a nota e organiza o envio
 require('./despesas')(app); // despesas fixas → DRE e ponto de equilíbrio
