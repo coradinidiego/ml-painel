@@ -254,6 +254,23 @@ module.exports = function (app) {
       const depois = (await breq(c, 'get', '/nfe/' + req.body.id)).data?.data; res.json({ ok: true, status: r.status, antes: { valor: nf.valorNota, itens: nf.itens.length, end: e }, depois: { valor: depois.valorNota, itens: depois.itens.length, end: depois.contato.endereco, sit: depois.situacao } }); }
     catch (e) { res.status(500).json({ erro: erroTxt(e), body: e.response?.data }); }
   });
+  // admin: preenche o NCM dos itens sem NCM de uma nota pendente e transmite. { emp, id, ncm }
+  app.post('/nfe-rejeitadas/ncm', require('express').json(), async (req, res) => {
+    if (!admin(req, res)) return;
+    try {
+      const E = EMP.find(e => e.id === req.body?.emp), c = bling.client(E.idx), ncm = String(req.body?.ncm || '').trim();
+      if (!/^\d{4}\.\d{2}\.\d{2}$/.test(ncm)) return res.status(400).json({ erro: 'ncm no formato 0000.00.00' });
+      const nf = (await breq(c, 'get', '/nfe/' + req.body.id)).data?.data;
+      if (![1, 4].includes(Number(nf?.situacao))) return res.status(400).json({ erro: 'nota não está pendente/rejeitada' });
+      const b = JSON.parse(JSON.stringify(nf)); for (const k of ['id', 'situacao', 'chaveAcesso', 'xml', 'linkDanfe', 'linkPDF']) delete b[k];
+      let n = 0; for (const it of b.itens || []) if (!String(it.classificacaoFiscal || '').trim()) { it.classificacaoFiscal = ncm; n++; }
+      await breq(c, 'put', '/nfe/' + req.body.id, b); await delay(1500);
+      await breq(c, 'post', `/nfe/${req.body.id}/enviar`);
+      let d = null; for (let t = 0; t < 6; t++) { await delay(4000); d = (await breq(c, 'get', '/nfe/' + req.body.id)).data?.data; if (![1, 3, 8, 10].includes(Number(d?.situacao))) break; }
+      const reg = { em: new Date().toISOString(), emp: E.id, empresa: E.nome, nota: nf.numero, cliente: nf.contato?.nome || '', por: req.usuario?.nome || 'painel', acao: 'NCM ' + ncm + ' + transmissão', situacao: SIT[d?.situacao] || ('situação ' + d?.situacao), ok: [5, 6, 7].includes(Number(d?.situacao)) };
+      S.hist.unshift(reg); salvar(); res.json({ ...reg, itensAlterados: n });
+    } catch (e) { res.status(500).json({ erro: erroTxt(e), body: e.response?.data }); }
+  });
   // diagnóstico sem alterar nada: GET /nfe-rejeitadas/diagnostico?emp=mae&id=123
   app.get('/nfe-rejeitadas/diagnostico', async (req, res) => {
     try {
