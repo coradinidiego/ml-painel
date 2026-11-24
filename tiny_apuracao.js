@@ -99,12 +99,15 @@ function lerPlanilha(cfg) {
 
 function calcular(lista, cfg) {
   const P = lerPlanilha(cfg);
-  const semSufixo = s => { const m = s.match(/^(.*)-(\d+)$/); return m ? [m[1], parseInt(m[2])] : [s, 1]; };
+  // "SKU-3" = 3 × SKU (só sufixo de 1 a 100); sufixo maior é outro código (kit "A-B" de dois produtos), não quantidade
+  const semSufixo = s => { const m = s.match(/^(.*)-(\d+)$/); return m && parseInt(m[2]) >= 1 && parseInt(m[2]) <= 100 ? [m[1], parseInt(m[2])] : [s, 1]; };
+  const composto = (s, T) => { const p = s.split('-'); return p.length >= 2 && p.every(x => x && x in T) ? p.reduce((t, x) => t + T[x], 0) : null; };
   const custo = s => {
     if (s in P.base) return [P.base[s], 'Base'];
     if (s in P.kits) return [P.kits[s], 'Kit (aba canal)'];
     const [b, q] = semSufixo(s);
-    if (b in P.base) return [P.base[b] * q, 'Base x qtd kit'];
+    if (b !== s && b in P.base) return [P.base[b] * q, 'Base x qtd kit'];
+    const c = composto(s, P.base); if (c != null) return [c, 'Base (soma dos itens do kit)'];
     return [null, 'SEM CUSTO'];
   };
   const regra = (canal, s) => {
@@ -295,9 +298,11 @@ function pedidosPeriodo(ini, fim) {
 }
 function planilhaLufe() {
   let P; try { P = lerPlanilha(getConfig()); } catch (e) { P = { base: {}, kits: {}, regras: {}, padrao: { Outros: { rate: 0, fixo: 0, insumos: 0, frete: 0 } } }; }
-  const semSufixo = s => { const m = s.match(/^(.*)-(\d+)$/); return m ? [m[1], parseInt(m[2])] : [s, 1]; };
+  // "SKU-3" = 3 × SKU (só sufixo de 1 a 100); sufixo maior é outro código (kit "A-B" de dois produtos), não quantidade
+  const semSufixo = s => { const m = s.match(/^(.*)-(\d+)$/); return m && parseInt(m[2]) >= 1 && parseInt(m[2]) <= 100 ? [m[1], parseInt(m[2])] : [s, 1]; };
+  const composto = (s, T) => { const p = s.split('-'); return p.length >= 2 && p.every(x => x && x in T) ? p.reduce((t, x) => t + T[x], 0) : null; };
   return {
-    custo: s => { if (s in P.base) return P.base[s]; if (s in P.kits) return P.kits[s]; const [b, q] = semSufixo(s); return b in P.base ? P.base[b] * q : null; },
+    custo: s => { if (s in P.base) return P.base[s]; if (s in P.kits) return P.kits[s]; const [b, q] = semSufixo(s); if (b !== s && b in P.base) return P.base[b] * q; return composto(s, P.base); },
     regra: (canal, s) => { const rr = P.regras[canal] || {}; if (s in rr) return rr[s]; const [b] = semSufixo(s); return rr[b] || P.padrao[canal] || P.padrao['Outros'] || {}; },
   };
 }
