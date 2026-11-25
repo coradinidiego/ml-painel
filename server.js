@@ -2263,6 +2263,18 @@ app.post('/bling/post/:idx', express.json({ limit: '1mb' }), async (req, res) =>
     res.json({ ok: true, status: r.status, data: r.data }); }
   catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
 });
+// Admin: lançamento de estoque no Bling v3 (B = balanço, E = entrada, S = saída). /bling/estoque/0  { produto, deposito, operacao, quantidade, observacoes?, preco?, custo? }
+app.post('/bling/estoque/:idx', express.json(), async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const b = req.body || {}, op = String(b.operacao || '');
+  if (!+b.produto || !+b.deposito || !['B', 'E', 'S'].includes(op) || !(+b.quantidade >= 0)) return res.status(400).json({ erro: 'informe produto, deposito, operacao (B/E/S) e quantidade' });
+  try {
+    const data = { produto: { id: +b.produto }, deposito: { id: +b.deposito }, operacao: op, quantidade: +b.quantidade, observacoes: String(b.observacoes || '').slice(0, 200) };
+    if (b.preco != null) data.preco = +b.preco; if (b.custo != null) data.custo = +b.custo;
+    const r = await bling.client(parseInt(req.params.idx)).post('/estoques', data);
+    res.json({ ok: true, status: r.status, data: r.data });
+  } catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
+});
 // Admin: cria (POST) ou altera (PUT) produto no Bling v3. /bling/produto/1  { id?, produto }
 app.post('/bling/produto/:idx', express.json({ limit: '2mb' }), async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
