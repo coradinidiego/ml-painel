@@ -389,19 +389,20 @@ async function calcular(empKey, ini, fim) {
     if (F && (F.com || F.tarifas || F.frete)) {
       // só as taxas de serviço já lançadas (a venda/comissão a Amazon lança depois): comissão estimada
       if (F.venda === false || (!F.com && F.venda !== true)) {
-        // venda ainda não lançada: abaixo de R$ 79 o cliente paga o frete (a etiqueta volta como ShippingCharge)
-        const fr = valPed < 79 ? 0 : F.frete;
-        return { comissao: valItem * pct, taxa: F.tarifas * p, frete: fr * p, origem: 'Amazon (taxa real, comissão estimada ' + Math.round(pct * 1000) / 10 + '%' + (valPed < 79 && F.frete ? ', frete pago pelo cliente' : '') + ')' };
+        // venda ainda não lançada: produto abaixo de R$ 79 só paga a tarifa fixa por unidade (a etiqueta volta como ShippingCharge).
+        // A regra é pelo PREÇO DO PRODUTO, não pelo total do pedido: 8 un. de R$ 22,90 = R$ 183,20 continua sem frete do vendedor
+        const fr = precoUn < 79 ? 0 : F.frete;
+        return { comissao: valItem * pct, taxa: F.tarifas * p, frete: fr * p, origem: 'Amazon (taxa real, comissão estimada ' + Math.round(pct * 1000) / 10 + '%' + (precoUn < 79 && F.frete ? ', sem frete: produto abaixo de R$ 79' : '') + ')' };
       }
       const frLiq = F.freteCliente != null ? Math.max(0, F.frete - F.freteCliente) : F.frete;
       return { comissao: F.com * p, taxa: F.tarifas * p, frete: frLiq * p, origem: 'Amazon (real)' };
     }
-    // sem lançamento ainda: comissão do histórico + tarifa fixa da faixa de preço; abaixo de R$ 79 o frete é do cliente
+    // sem lançamento ainda: comissão do histórico + tarifa fixa da faixa de preço; produto abaixo de R$ 79 não tem frete do vendedor (regra por produto, não por pedido)
     // (o histórico de "frete" inclui a etiqueta que a Amazon cobra e o cliente repõe — usar ele dobrava o custo)
     const fixo = precoUn < 30 ? 4.5 : precoUn < 50 ? 6.5 : precoUn < 79 ? 6.75 : 0;
     const fp = fretePedAmz(valPed);
-    const frete = valPed < 79 ? 0 : fp != null ? fp * p : (h?.freteUn ?? 0);
-    return { comissao: valItem * pct, taxa: (h?.outrasUn > 0 ? h.outrasUn : fixo) * qtd, frete, origem: 'estimada (sem lançamento ainda' + (valPed < 79 ? ', frete pago pelo cliente' : '') + ')' };
+    const frete = precoUn < 79 ? 0 : fp != null ? fp * p : (h?.freteUn ?? 0);
+    return { comissao: valItem * pct, taxa: (h?.outrasUn > 0 ? h.outrasUn : fixo) * qtd, frete, origem: 'estimada (sem lançamento ainda' + (precoUn < 79 ? ', sem frete: produto abaixo de R$ 79' : '') + ')' };
   };
 
   if (E.erp === 'bling') {
