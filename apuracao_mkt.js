@@ -331,7 +331,10 @@ async function calcular(empKey, ini, fim) {
   const SH = (() => { try { const sh = require('./shein'); return sh.autorizada(empKey) ? sh.pedidosCache(empKey) : {}; } catch (e) { return {}; } })();
   // taxa real da SHEIN para o item (por unidade × qtd); null se o pedido não veio da API
   const sheinReal = (num, sku, q, receita, valPed) => { const P = SH[num]; const D = P?.itens?.[String(sku).toUpperCase()]; if (!D || !D.n) return null; const u = q / D.n; return { comissao: D.com * u, taxa: (D.fixo + D.serv) * u, frete: (P.frete || 0) * (valPed > 0 ? receita / valPed : 1), origem: 'SHEIN (real)' }; };
-  const hist = lerJson(path.join(DIR, `amazon_anuncios_${E.amazon}.json`), {})?.hist?.porSku || {};
+  const histAmz = lerJson(path.join(DIR, `amazon_anuncios_${E.amazon}.json`), {})?.hist || {};
+  const hist = histAmz.porSku || {};
+  // frete estimado de um pedido Amazon ainda sem lançamento: 1 etiqueta por pedido (média real da faixa de valor), nunca frete-por-unidade × quantidade
+  const fretePedAmz = valPed => { const f = (histAmz.freteFaixas || []).find(x => x.ate == null || valPed < x.ate); return f?.medio ?? histAmz.freteMedioPedido ?? null; };
   const TK = lerJson(ARQ_TKREAL, {});   // repasse real do TikTok por pedido (Finanças → Demonstrativos), ver /tiktok-real
   const linhas = [];
   const custoDe = (sku, canal, extra, data) => {
@@ -396,7 +399,8 @@ async function calcular(empKey, ini, fim) {
     // sem lançamento ainda: comissão do histórico + tarifa fixa da faixa de preço; abaixo de R$ 79 o frete é do cliente
     // (o histórico de "frete" inclui a etiqueta que a Amazon cobra e o cliente repõe — usar ele dobrava o custo)
     const fixo = precoUn < 30 ? 4.5 : precoUn < 50 ? 6.5 : precoUn < 79 ? 6.75 : 0;
-    const frete = valPed < 79 ? 0 : (h?.freteUn ?? 0) * qtd;
+    const fp = fretePedAmz(valPed);
+    const frete = valPed < 79 ? 0 : fp != null ? fp * p : (h?.freteUn ?? 0);
     return { comissao: valItem * pct, taxa: (h?.outrasUn > 0 ? h.outrasUn : fixo) * qtd, frete, origem: 'estimada (sem lançamento ainda' + (valPed < 79 ? ', frete pago pelo cliente' : '') + ')' };
   };
 
