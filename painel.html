@@ -736,6 +736,9 @@ CONTAS.forEach((c,i)=>{
 {const a=document.createElement('button');a.className='conta-tab geral';a.id='cb-apuracao';
  a.innerHTML='<span class="ct-logo" style="font-size:24px">📊</span><span class="ct-txt"><b>Apuração</b><small>ML · Shopee · Amazon · Shein · TikTok</small></span>';
  a.onclick=()=>abrirApuracao();bar.appendChild(a);}
+{const a=document.createElement('button');a.className='conta-tab geral';a.id='cb-precificacao';
+ a.innerHTML='<span class="ct-logo" style="font-size:24px">💲</span><span class="ct-txt"><b>Precificação</b><small>Custos e margens por canal</small></span>';
+ a.onclick=()=>{location.href='/precificacao';};bar.appendChild(a);}
 // Shopee fica dentro da Zagodini: chave Mercado Livre | Shopee
 // Cada conta tem a chave Mercado Livre | Shopee
 const SHP_LOJAS=['zagodini','mae','lufe'];
