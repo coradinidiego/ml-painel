@@ -132,9 +132,10 @@ async function montar(idx) {
     const R = A.resumo = { linhas: A.linhas.length, iguais: 0, diferentes: 0, semErp: 0 };
     for (const L of A.linhas) {
       const e = custoErp(idx, L, erp, cm);
-      if (!e) { L.situacao = 'sem custo no ' + erpNome; R.semErp++; continue; }
-      L.custoErp = r2(e.v); L.fonteErp = e.fonte; L.kit = e.fonte !== 'item'; L.dif = L.custo != null ? r2(e.v - L.custo) : null;
-      if (L.custo == null) { L.situacao = 'sem custo na planilha'; R.diferentes++; }
+      if (!e) { L.situacao = 'sem custo no ' + erpNome; R.semErp++; L.kit = !!(cm.kits(idx)[L.sku]?.length) || /-/.test(L.sku) && L.qtd > 1; }
+      else { L.custoErp = r2(e.v); L.fonteErp = e.fonte; L.kit = e.fonte !== 'item'; L.dif = L.custo != null ? r2(e.v - L.custo) : null; }
+      if (!e) {}
+      else if (L.custo == null) { L.situacao = 'sem custo na planilha'; R.diferentes++; }
       else if (Math.abs(L.dif) < 0.015) { L.situacao = 'igual'; R.iguais++; }
       else { L.situacao = 'diferente'; R.diferentes++; }
       // Margem do painel: custo do ERP + imposto e insumos da empresa (Conta); tarifas do canal (comissão, taxa fixa,
