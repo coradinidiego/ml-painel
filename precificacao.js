@@ -214,14 +214,26 @@ async function gravarCusto(idx, sku, custo, quem) {
   if (Array.isArray(cm.kits(idx)[sku]) && cm.kits(idx)[sku].length) throw new Error('é kit: o custo é a soma dos componentes — altere o custo dos itens');
   let de = null;
   if (idx === 2) {
-    const t3 = require('./tiny3');
-    const r = await t3.get('/produtos', { codigo: sku, limit: 5 });
-    const p = (r.itens || r.data || []).find(x => K(x.sku || x.codigo) === sku);
-    if (!p) throw new Error('produto ' + sku + ' não encontrado no Tiny');
-    const det = await t3.get('/produtos/' + p.id);
-    if ((det.tipo || '').toUpperCase() === 'K') throw new Error('é kit no Tiny: altere o custo dos componentes');
-    de = det.precos?.precoCusto ?? null;
-    await t3.put('/produtos/' + p.id, { sku: det.sku || det.codigo || sku, descricao: det.descricao, precos: { ...(det.precos || {}), precoCusto: custo } });
+    // Tiny v2: produto.alterar.php regrava o cadastro inteiro — reenvia tudo o que veio do produto.obter.php
+    // (descrição complementar, anexos etc.) e confere depois que nada sumiu
+    const tiny = require('./tiny');
+    const pq = await tiny.chamar('produtos.pesquisa.php', { pesquisa: sku });
+    const achado = (pq.produtos || []).map(x => x.produto).find(x => K(x.codigo) === sku);
+    if (!achado) throw new Error('produto ' + sku + ' não encontrado no Tiny');
+    const ob = (await tiny.chamar('produto.obter.php', { id: achado.id })).produto;
+    if (!ob) throw new Error('não consegui ler o produto no Tiny');
+    if (String(ob.classe_produto).toUpperCase() === 'K' || ob.kit?.length) throw new Error('é kit no Tiny: altere o custo dos componentes');
+    if (ob.variacoes?.length || String(ob.classe_produto).toUpperCase() === 'V') throw new Error('produto com variações no Tiny: altere o custo direto no Tiny');
+    de = num(ob.preco_custo);
+    const prod = { ...ob, preco_custo: custo };
+    for (const k of ['id_produto_pai', 'data_criacao', 'imagens_externas', 'mapeamentos', 'preco_custo_medio']) delete prod[k];
+    const r = await tiny.chamar('produto.alterar.php', { produto: JSON.stringify({ produtos: [{ produto: { sequencia: '1', ...prod } }] }) });
+    const st = r.registros?.[0]?.registro || r.registros?.registro;
+    if (st && st.status && st.status !== 'OK') throw new Error('Tiny recusou: ' + JSON.stringify(st.erros || st).slice(0, 200));
+    const dep = (await tiny.chamar('produto.obter.php', { id: achado.id })).produto || {};
+    if (Math.abs(num(dep.preco_custo) - custo) > 0.005) throw new Error('o Tiny não gravou o custo (ficou ' + dep.preco_custo + ')');
+    if ((ob.anexos || []).length !== (dep.anexos || []).length || String(ob.descricao_complementar || '') !== String(dep.descricao_complementar || ''))
+      console.warn('[precificacao] ATENÇÃO Tiny ' + sku + ': anexos/descrição mudaram depois de alterar o custo');
   } else {
     const c0 = require('./bling').client(idx);
     const tenta = async (m, ...a) => { for (let i = 0; ; i++) { try { return await c0[m](...a); } catch (e) { if (e.response?.status === 429 && i < 8) { await new Promise(r => setTimeout(r, 700)); continue; } throw e; } } };
