@@ -126,6 +126,14 @@ function custoErp(idx, L, erp, cm) {
     if (base !== L.sku && d(base) != null) return { v: d(base) * L.qtd, fonte: base + ' × ' + L.qtd };
   }
   const v = d(L.sku); if (v != null) return { v: L.qtd > 1 && L.custoUn && Math.abs(v - L.custoUn) < Math.abs(v - L.custo) ? v * L.qtd : v, fonte: 'item' };
+  // produto pai sem custo (ex.: Tiny "15" / "000000001"): usa o custo das variações (15-Bege, 15-Preto...), sem contar kits;
+  // se as variações tiverem custos diferentes, usa o maior (margem mais conservadora)
+  const base = L.sku.replace(/^0+(?=.)/, ''), kits = cm.kits(idx);
+  const vars = Object.keys(erp).filter(k => k.includes('-') && !kits[k] && k.split('-')[0].replace(/^0+(?=.)/, '') === base && erp[k] > 0);
+  if (vars.length) {
+    const vs = vars.map(k => erp[k]), mn = Math.min(...vs), mx = Math.max(...vs);
+    return { v: mx * (L.qtd || 1), fonte: vars.length + ' variações' + (mn !== mx ? ' (R$ ' + mn.toFixed(2).replace('.', ',') + ' a ' + mx.toFixed(2).replace('.', ',') + ')' : ''), variacoes: true };
+  }
   return null;
 }
 
@@ -162,7 +170,7 @@ async function montar(idx) {
     for (const L of A.linhas) {
       const e = custoErp(idx, L, erp, cm);
       if (!e) { L.situacao = 'sem custo no ' + erpNome; R.semErp++; L.kit = !!(cm.kits(idx)[L.sku]?.length) || /-/.test(L.sku) && L.qtd > 1; }
-      else { L.custoErp = r2(e.v); L.fonteErp = e.fonte; L.kit = e.fonte !== 'item'; L.dif = L.custo != null ? r2(e.v - L.custo) : null; }
+      else { L.custoErp = r2(e.v); L.fonteErp = e.fonte; L.kit = e.fonte !== 'item' && !e.variacoes; L.variacoes = !!e.variacoes; L.dif = L.custo != null ? r2(e.v - L.custo) : null; }
       if (!e) {}
       else if (L.custo == null) { L.situacao = 'sem custo na planilha'; R.diferentes++; }
       else if (Math.abs(L.dif) < 0.015) { L.situacao = 'igual'; R.iguais++; }
@@ -224,7 +232,7 @@ function render(){if(!D||D.erro)return;info();const a=D.abas[A],s=$('sit').value
  $('lista').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:8px">'+L.length+' de '+a.linhas.length+' linhas · colunas de preço lidas: '+esc((a.colunas.precos||[]).join(', ')||'—')+'</div><table><tr><th></th><th class="l">Código</th><th class="l">Produto</th><th>Qtd</th><th>Custo</th><th>Custo ERP</th><th>Diferença</th>'+
  (base?'':'<th>Preço</th><th>Margem</th><th>Preço p/ meta</th><th>Promoção</th><th>Margem</th><th>Preço p/ meta</th>')+'</tr>'+
  L.slice(0,2000).map(l=>'<tr><td><span class="ed" style="color:#c62828" title="Excluir este item da aba" onclick="excluir(\\''+esc(l.sku)+'\\')">🗑</span></td><td class="l">'+esc(l.sku)+'<br><small>linha '+l.linha+(l.skuPlanilha?' · na planilha: '+esc(l.skuPlanilha):'')+'</small></td><td class="l">'+esc(l.nome)+'</td><td>'+l.qtd+'</td><td>'+brl(l.custo)+'</td>'+
- '<td>'+(l.custoErp!=null?brl(l.custoErp)+(l.fonteErp&&l.fonteErp!=='item'?'<br><small>'+esc(l.fonteErp)+'</small>':''):'<span class="sem">sem custo no '+D.erp+'</span>')+(!l.kit?'<span class="ed" title="Alterar o custo no '+D.erp+'" onclick="editar(\\''+esc(l.sku)+'\\','+(l.custoErp??l.custo??0)+','+l.qtd+')">✎</span>':'')+'</td>'+
+ '<td>'+(l.custoErp!=null?brl(l.custoErp)+(l.fonteErp&&l.fonteErp!=='item'?'<br><small>'+esc(l.fonteErp)+'</small>':''):'<span class="sem">sem custo no '+D.erp+'</span>')+(!l.kit&&!l.variacoes?'<span class="ed" title="Alterar o custo no '+D.erp+'" onclick="editar(\\''+esc(l.sku)+'\\','+(l.custoErp??l.custo??0)+','+l.qtd+')">✎</span>':'')+'</td>'+
  '<td class="'+(l.situacao==='diferente'?'dif':'')+'">'+(l.dif==null?'—':(l.dif>0?'+':'')+brl(l.dif))+'</td>'+
  (base?'':'<td>'+brl(l.preco)+'</td><td>'+pc(l.margemPainel)+'</td><td>'+brl(l.precoMeta)+'</td><td>'+brl(l.promo)+'</td><td>'+pc(l.margemPromoPainel)+'</td><td>'+brl(l.precoMetaPromo)+'</td>')+'</tr>').join('')+'</table>';}
 async function excluir(sku){const a=D.abas[A];if(!confirm('Excluir '+sku+' da aba '+a.aba+' no painel?\\n\\nNão mexe na planilha nem no ERP, e continua fora se a planilha for importada de novo.'))return;
