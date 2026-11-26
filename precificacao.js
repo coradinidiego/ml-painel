@@ -130,7 +130,11 @@ function custoErp(idx, L, erp, cm) {
   // se as variações tiverem custos diferentes, usa o maior (margem mais conservadora)
   const base = L.sku.replace(/^0+(?=.)/, ''), kits = cm.kits(idx);
   const vars = Object.keys(erp).filter(k => k.includes('-') && !kits[k] && k.split('-')[0].replace(/^0+(?=.)/, '') === base && erp[k] > 0);
-  if (vars.length) {
+  // sufixo só numérico pode ser pacote (1801-10 = 10 un.), não variação: só aceita se não for "-N" sozinho com N ≥ 2
+  // e se os custos forem parecidos (até 1,5×)
+  const numericos = vars.every(k => /^\d+$/.test(k.split('-').slice(1).join('-')));
+  const pacote = numericos && (vars.length === 1 ? parseInt(vars[0].split('-')[1]) >= 2 : Math.max(...vars.map(k => erp[k])) > 1.5 * Math.min(...vars.map(k => erp[k])));
+  if (vars.length && !pacote) {
     const vs = vars.map(k => erp[k]), mn = Math.min(...vs), mx = Math.max(...vs);
     return { v: mx * (L.qtd || 1), fonte: vars.length + ' variações' + (mn !== mx ? ' (R$ ' + mn.toFixed(2).replace('.', ',') + ' a ' + mx.toFixed(2).replace('.', ',') + ')' : ''), variacoes: true };
   }
