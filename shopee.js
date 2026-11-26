@@ -265,10 +265,11 @@ async function listarConversas(dias = 30, max = 300) {
       let ultCliente = 0, ultHumano = 0;
       for (const m of M) {
         if (String(m.from_id) === String(c.cliente_id)) {
-          if (!['product', 'item', 'order', 'return_refund_card'].includes(m.message_type)) ultCliente = m.t;
+          // bundle_message é gerado pela Shopee junto com a resposta do atendente: desconta 2 min para não passar na frente dela
+          if (!['product', 'item', 'order', 'return_refund_card'].includes(m.message_type)) ultCliente = Math.max(ultCliente, m.message_type === 'bundle_message' ? m.t - 120 : m.t);
         } else if (Number(m.message_option || 0) === 0 && m.message_type !== 'notification') ultHumano = m.t;
       }
-      if (ultCliente && ultCliente >= ultHumano) { c.pendente = true; c.texto = '[respondido só pelo automático/IA da Shopee] ' + (c.texto || ''); }
+      if (ultCliente && ultCliente > ultHumano) { c.pendente = true; c.texto = '[respondido só pelo automático/IA da Shopee] ' + (c.texto || ''); }
     } catch (e) { /* deixa como está */ }
   }
   for (const c of out) delete c._conferir;
