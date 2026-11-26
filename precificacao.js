@@ -29,9 +29,9 @@ const arq = idx => path.join(DIR, `emp_${idx}.json`);
 /** Tipo da aba: base | ml | shopee | amazon | shein | tiktok | null (ignorada) */
 function tipoAba(nome) {
   const n = nome.trim().toLowerCase();
-  if (/cam[aã]e|frete|viabilidade|simplificada|planilha\d|custo (lyor|meio)|custos atelie|magalu|12%/.test(n)) return null;
+  if (/cam[aã]e|frete|full|viabilidade|simplificada|planilha\d|custo (lyor|meio)|custos atelie|magalu|12%/.test(n)) return null;
   if (/^(base|custos)$/.test(n)) return 'base';
-  if (/^(ml|full\s*ml|mercado)/.test(n)) return 'ml';
+  if (/^(ml|mercado)/.test(n)) return 'ml';
   if (/^shopee/.test(n)) return 'shopee';
   if (/^amazon/.test(n)) return 'amazon';
   if (/^shein/.test(n)) return 'shein';
@@ -85,7 +85,7 @@ function importar(idx) {
   const f = path.join(DATA, nomeArq);
   let st; try { st = fs.statSync(f); } catch (e) { throw new Error('planilha não encontrada no servidor: ' + nomeArq); }
   const wb = XLSX.readFile(f);
-  const out = { versao: 3, empresa: EMP[idx].nome, arquivo: nomeArq, planilhaEm: new Date(st.mtimeMs).toISOString(), importadoEm: new Date().toISOString(), abas: [] };
+  const out = { versao: 4, empresa: EMP[idx].nome, arquivo: nomeArq, planilhaEm: new Date(st.mtimeMs).toISOString(), importadoEm: new Date().toISOString(), abas: [] };
   for (const aba of wb.SheetNames) {
     const tipo = tipoAba(aba); if (!tipo) continue;
     const r = lerAba(wb.Sheets[aba], tipo); if (!r || !r.linhas.length) continue;
@@ -121,7 +121,7 @@ function dados(idx) {
 }
 async function montar(idx) {
   let F = fotografia(idx);
-  if (!F || F.versao !== 3) F = importar(idx);   // versão 3: imposto/insumos e colunas de lucro por bloco (cheio × promoção)
+  if (!F || F.versao !== 4) F = importar(idx);   // versão 3: imposto/insumos e colunas de lucro por bloco (cheio × promoção)
   const cm = require('./custos_ml');
   const erp = await cm.custosErp(idx);
   const erpNome = idx === 2 ? 'Tiny' : 'Bling';
