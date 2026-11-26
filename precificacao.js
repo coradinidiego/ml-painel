@@ -93,7 +93,7 @@ function importar(idx) {
   }
   // itens excluídos no painel continuam fora numa nova importação
   const exc = excluidos(idx);
-  for (const A of out.abas) A.linhas = A.linhas.filter(L => !exc[A.aba + '|' + L.sku]);
+  for (const A of out.abas) A.linhas = A.linhas.filter(L => !exc[A.aba + '|' + L.sku] && !exc[A.aba + '|' + L.sku.replace(/^0+(?=.)/, '')]);
   // base primeiro, depois a ordem da planilha
   out.abas.sort((a, b) => (a.tipo === 'base' ? 0 : 1) - (b.tipo === 'base' ? 0 : 1));
   fs.mkdirSync(DIR, { recursive: true });
@@ -107,10 +107,11 @@ function excluidos(idx) { try { return JSON.parse(fs.readFileSync(arqExc(idx)));
 function excluir(idx, aba, sku, quem) {
   const F = fotografia(idx); if (!F) throw new Error('precificação ainda não importada');
   const A = F.abas.find(a => a.aba === aba); if (!A) throw new Error('aba não encontrada');
-  const antes = A.linhas.length; A.linhas = A.linhas.filter(L => L.sku !== K(sku));
+  const z = v => String(v).replace(/^0+(?=.)/, ''), alvo = z(K(sku));
+  const antes = A.linhas.length; A.linhas = A.linhas.filter(L => z(L.sku) !== alvo);
   if (A.linhas.length === antes) throw new Error('item não encontrado na aba');
   fs.writeFileSync(arq(idx), JSON.stringify(F));
-  const E = excluidos(idx); E[aba + '|' + K(sku)] = { quando: new Date().toISOString(), quem }; fs.writeFileSync(arqExc(idx), JSON.stringify(E));
+  const E = excluidos(idx); E[aba + '|' + K(sku)] = E[aba + '|' + alvo] = { quando: new Date().toISOString(), quem }; fs.writeFileSync(arqExc(idx), JSON.stringify(E));
   delete _cache[idx];
   console.log(`[precificacao] excluído ${EMP[idx].nome} / ${aba} / ${sku} (${quem})`);
   return antes - A.linhas.length;
