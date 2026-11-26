@@ -221,9 +221,11 @@ async function gravarCusto(idx, sku, custo, quem) {
     const det = await t3.get('/produtos/' + p.id);
     if ((det.tipo || '').toUpperCase() === 'K') throw new Error('é kit no Tiny: altere o custo dos componentes');
     de = det.precos?.precoCusto ?? null;
-    await t3.put('/produtos/' + p.id, { precos: { ...(det.precos || {}), precoCusto: custo } });
+    await t3.put('/produtos/' + p.id, { sku: det.sku || det.codigo || sku, descricao: det.descricao, precos: { ...(det.precos || {}), precoCusto: custo } });
   } else {
-    const c = require('./bling').client(idx);
+    const c0 = require('./bling').client(idx);
+    const tenta = async (m, ...a) => { for (let i = 0; ; i++) { try { return await c0[m](...a); } catch (e) { if (e.response?.status === 429 && i < 8) { await new Promise(r => setTimeout(r, 700)); continue; } throw e; } } };
+    const c = { get: (...a) => tenta('get', ...a), put: (...a) => tenta('put', ...a) };
     const r = await c.get('/produtos', { params: { codigo: sku } });
     const p = (r.data?.data || []).find(x => K(x.codigo) === sku);
     if (!p) throw new Error('produto ' + sku + ' não encontrado no Bling');
