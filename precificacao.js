@@ -218,7 +218,7 @@ button{background:#0d1b2a;color:#fff;border:none;cursor:pointer;font-weight:600}
 <select id="emp" onchange="carregar()"><option value="0">Zagodini</option><option value="1">Com Amor de Mãe</option><option value="2">Lufe</option></select>
 <select id="sit" onchange="render()"><option value="">Tudo</option><option value="dif">Custo diferente do ERP</option><option value="sem">Sem custo no ERP</option><option value="meta">Abaixo da meta</option></select>
 <input id="q" placeholder="Buscar código ou produto" oninput="render()">
-<a href="/painel.html">← Painel</a></div>
+<button id="aterp" onclick="atualizarErp()">↻ Atualizar custos do ERP</button><a href="/painel.html">← Painel</a></div>
 <div class="box" id="info">Carregando… (a primeira leitura dos custos do ERP pode levar 1–2 min)</div><div class="box"><div class="abas" id="abas"></div><div id="lista"></div></div>
 <script>
 let D=null,A=0;const $=id=>document.getElementById(id);const esc=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -240,6 +240,11 @@ function render(){if(!D||D.erro)return;info();const a=D.abas[A],s=$('sit').value
  '<td>'+(l.custoErp!=null?brl(l.custoErp)+(l.fonteErp&&l.fonteErp!=='item'?'<br><small>'+esc(l.fonteErp)+'</small>':''):'<span class="sem">sem custo no '+D.erp+'</span>')+(!l.kit&&!l.variacoes?'<span class="ed" title="Alterar o custo no '+D.erp+'" onclick="editar(\\''+esc(l.sku)+'\\','+(l.custoErp??l.custo??0)+','+l.qtd+')">✎</span>':'')+'</td>'+
  '<td class="'+(l.situacao==='diferente'?'dif':'')+'">'+(l.dif==null?'—':(l.dif>0?'+':'')+brl(l.dif))+'</td>'+
  (base?'':'<td>'+brl(l.preco)+'</td><td>'+pc(l.margemPainel)+'</td><td>'+brl(l.precoMeta)+'</td><td>'+brl(l.promo)+'</td><td>'+pc(l.margemPromoPainel)+'</td><td>'+brl(l.precoMetaPromo)+'</td>')+'</tr>').join('')+'</table>';}
+async function atualizarErp(){const b=$('aterp'),e=$('emp').value;b.disabled=true;b.textContent='Atualizando custos…';
+ await fetch('/precificacao/atualizar-erp?emp='+e,{method:'POST'});
+ let st;for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,3000));st=await fetch('/precificacao/atualizar-erp?emp='+e).then(r=>r.json());if(!st.rodando)break;}
+ b.disabled=false;b.textContent='↻ Atualizar custos do ERP';if(st&&st.erro)alert('Erro: '+st.erro);
+ const aba=A;D=await (await fetch('/precificacao/dados?emp='+e)).json();A=aba;render();}
 async function excluir(sku){const a=D.abas[A];if(!confirm('Excluir '+sku+' da aba '+a.aba+' no painel?\\n\\nNão mexe na planilha nem no ERP, e continua fora se a planilha for importada de novo.'))return;
  const r=await fetch('/precificacao/excluir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emp:$('emp').value,aba:a.aba,sku})}).then(r=>r.json());
  if(r.erro)return alert(r.erro);const aba=A;const x=await fetch('/precificacao/dados?emp='+$('emp').value);D=await x.json();A=aba;render();}
@@ -308,6 +313,21 @@ async function gravarCusto(idx, sku, custo, quem) {
   return { sku, de, para: custo };
 }
 
+// ─── Atualizar custos do ERP agora (sem esperar o ciclo de 6 h) ─────────────
+const _atual = {};
+function atualizarErp(idx) {
+  if (_atual[idx]?.rodando) return _atual[idx];
+  const st = _atual[idx] = { rodando: true, inicio: new Date().toISOString() };
+  (async () => {
+    const cm = require('./custos_ml');
+    if (idx !== 2) { try { const m = await require('./bling').getKits(idx); if (Object.keys(m).length) cm.salvarKits(idx, m); st.kits = Object.keys(m).length; } catch (e) { st.erroKits = e.message; } }
+    cm.recarregarErp(idx);
+    const mapa = await cm.custosErp(idx);
+    st.produtos = Object.keys(mapa).length;
+  })().catch(e => { st.erro = e.message; }).finally(() => { st.rodando = false; st.fim = new Date().toISOString(); delete _cache[idx]; });
+  return st;
+}
+
 function rotas(app) {
   const admin = req => !require('./auth').ativo() || !!req.usuario?.admin;
   app.get('/precificacao', (req, res) => res.send(pagina(admin(req))));
@@ -325,6 +345,11 @@ function rotas(app) {
     try { res.json({ ok: true, removidas: excluir(idx, String(req.body.aba || ''), req.body.sku, req.usuario?.email || 'local') }); }
     catch (e) { res.status(400).json({ erro: e.message }); }
   });
+  app.post('/precificacao/atualizar-erp', (req, res) => {
+    const idx = parseInt(req.query.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' });
+    res.json(atualizarErp(idx));
+  });
+  app.get('/precificacao/atualizar-erp', (req, res) => res.json(_atual[parseInt(req.query.emp)] || {}));
   app.get('/precificacao/edicoes', (req, res) => { try { res.json(JSON.parse(fs.readFileSync(ARQ_ED)).slice(-300).reverse()); } catch (e) { res.json([]); } });
 }
 module.exports = { rotas, importar, dados, lerAba, tipoAba };
