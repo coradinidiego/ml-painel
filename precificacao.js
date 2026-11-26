@@ -136,7 +136,7 @@ function custoErp(idx, L, erp, cm) {
   const pacote = numericos && (vars.length === 1 ? parseInt(vars[0].split('-')[1]) >= 2 : Math.max(...vars.map(k => erp[k])) > 1.5 * Math.min(...vars.map(k => erp[k])));
   if (vars.length && !pacote) {
     const vs = vars.map(k => erp[k]), mn = Math.min(...vs), mx = Math.max(...vs);
-    return { v: mx * (L.qtd || 1), fonte: vars.length + ' variações' + (mn !== mx ? ' (R$ ' + mn.toFixed(2).replace('.', ',') + ' a ' + mx.toFixed(2).replace('.', ',') + ')' : ''), variacoes: true };
+    return { v: mx * (L.qtd || 1), codigo: vars[0].split('-')[0], fonte: vars.length + ' variações' + (mn !== mx ? ' (R$ ' + mn.toFixed(2).replace('.', ',') + ' a ' + mx.toFixed(2).replace('.', ',') + ')' : ''), variacoes: true };
   }
   return null;
 }
@@ -174,7 +174,7 @@ async function montar(idx) {
     for (const L of A.linhas) {
       const e = custoErp(idx, L, erp, cm);
       if (!e) { L.situacao = 'sem custo no ' + erpNome; R.semErp++; L.kit = !!(cm.kits(idx)[L.sku]?.length) || /-/.test(L.sku) && L.qtd > 1; }
-      else { L.custoErp = r2(e.v); L.fonteErp = e.fonte; L.kit = e.fonte !== 'item' && !e.variacoes; L.variacoes = !!e.variacoes; L.dif = L.custo != null ? r2(e.v - L.custo) : null; }
+      else { L.custoErp = r2(e.v); L.fonteErp = e.fonte; L.kit = e.fonte !== 'item' && !e.variacoes; L.variacoes = !!e.variacoes; if (e.codigo && e.codigo !== L.sku) { L.skuPlanilha = L.skuPlanilha || L.sku; L.sku = e.codigo; } L.dif = L.custo != null ? r2(e.v - L.custo) : null; }
       if (!e) {}
       else if (L.custo == null) { L.situacao = 'sem custo na planilha'; R.diferentes++; }
       else if (Math.abs(L.dif) < 0.015) { L.situacao = 'igual'; R.iguais++; }
