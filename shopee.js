@@ -246,6 +246,8 @@ async function listarConversas(dias = 30, max = 300) {
         // última mensagem é do cliente; só o "cartão do produto" (cliente abriu o chat e não escreveu) não conta
         pendente: String(c.latest_message_from_id) === String(c.to_id) && !['product', 'item', 'order', 'return_refund_card'].includes(c.latest_message_type),   // cartão de pedido sozinho = cliente só abriu o chat pelo pedido   // cartão de devolução é automático: a devolução vai pelo pós-venda
         soAbriu: String(c.latest_message_from_id) === String(c.to_id) && ['product', 'item', 'order'].includes(c.latest_message_type),
+        // última mensagem é da loja, mas automática (resposta automática, Assistente de IA, aviso): precisa conferir as mensagens
+        _conferir: String(c.latest_message_from_id) !== String(c.to_id) && Number(c.last_message_option || 0) !== 0,
       });
     }
     const pr = d.response?.page_result;
@@ -253,6 +255,23 @@ async function listarConversas(dias = 30, max = 300) {
     next = pr.next_cursor?.next_message_time_nano;
     if (!next || next === '0') break;
   }
+  // Conversas em que a loja "respondeu" só com mensagem automática (resposta automática, IA da Shopee repassando
+  // para atendente): é pendente se a última mensagem do cliente veio depois da última resposta humana da loja.
+  const conferir = out.filter(c => c._conferir && c.quando > Date.now() - 7 * 864e5).slice(0, 40);
+  for (const c of conferir) {
+    try {
+      const d = await shopeeGet('/api/v2/sellerchat/get_message', { conversation_id: c.id, page_size: 25 });
+      const M = (d.response?.messages || []).map(m => ({ ...m, t: Number(m.created_timestamp) })).sort((a, b) => a.t - b.t);
+      let ultCliente = 0, ultHumano = 0;
+      for (const m of M) {
+        if (String(m.from_id) === String(c.cliente_id)) {
+          if (!['product', 'item', 'order', 'return_refund_card'].includes(m.message_type)) ultCliente = m.t;
+        } else if (Number(m.message_option || 0) === 0 && m.message_type !== 'notification') ultHumano = m.t;
+      }
+      if (ultCliente && ultCliente >= ultHumano) { c.pendente = true; c.texto = '[respondido só pelo automático/IA da Shopee] ' + (c.texto || ''); }
+    } catch (e) { /* deixa como está */ }
+  }
+  for (const c of out) delete c._conferir;
   return out;
 }
 
