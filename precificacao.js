@@ -49,8 +49,11 @@ function lerAba(ws, tipo) {
   const cNome = acha(/^(produto|descri[çc][aã]o)$/i), cQtd = acha(/^(qtd|qnde|quantidade)$/i), cPeso = acha(/^peso$/i);
   const cUn = acha(/^(custo\s*(un|und|unit[aá]rio)\.?|unit[aá]rio)$/i), cTot = acha(/^custo\s*total$/i);
   const precos = cab.map((c, i) => (/pre[çc]o|^venda/i.test(c) && !/lucro|%|comiss|desc|custo|oficial|campanha|final/i.test(c)) ? i : -1).filter(i => i >= 0);
-  const lucros = cab.map((c, i) => /^lucro/i.test(c) && !/%/.test(c) ? i : -1).filter(i => i >= 0);
+  const lucros = cab.map((c, i) => /^(lucro|bruto)/i.test(c) && !/%|\bms\b/i.test(c) ? i : -1).filter(i => i >= 0);
   const margens = cab.map((c, i) => /%\s*(de\s*)?(lucro|bruto)/i.test(c) ? i : -1).filter(i => i >= 0);
+  // bloco do preço cheio termina na 1ª coluna de % de lucro; o da promoção vem depois dela (só se houver 2º preço)
+  const fimCheio = margens[0] ?? lucros[0] ?? 1e9, temPromo = precos[1] != null;
+  const cheio = lista => lista.find(i => i <= fimCheio), promoC = lista => temPromo ? lista.find(i => i > fimCheio) : undefined;
   const imps = cab.map((c, i) => /^imposto$/i.test(c) ? i : -1).filter(i => i >= 0);
   const inss = cab.map((c, i) => /^insumos/i.test(c) ? i : -1).filter(i => i >= 0);
   const linhas = [];
@@ -64,11 +67,12 @@ function lerAba(ws, tipo) {
     if (tipo !== 'base') {
       const pos = v => (v = num(v)) > 0 ? r2(v) : null;
       L.preco = pos(r[precos[0]]); L.promo = pos(r[precos[1]]);
-      L.lucro = r2(num(r[lucros[0]])); L.margem = num(r[margens[0]]);
-      L.lucroPromo = r2(num(r[lucros[1]])); L.margemPromo = num(r[margens[1]]);
+      L.lucro = r2(num(r[cheio(lucros)])); L.margem = num(r[cheio(margens)]);
+      const depoisPromo = lista => temPromo ? lista.find(i => i > precos[1]) : undefined;   // lucro/% da promoção vêm depois do 2º preço
+      L.lucroPromo = r2(num(r[depoisPromo(lucros)])); L.margemPromo = num(r[depoisPromo(margens)]);
       // imposto e insumos da planilha (para separar das tarifas do canal); promo usa a 2ª coluna quando existe
-      L.imp = num(r[imps[0]]); L.ins = num(r[inss[0]]);
-      L.impPromo = num(r[imps[1]]); L.insPromo = inss[1] != null ? num(r[inss[1]]) : L.ins;
+      L.imp = num(r[cheio(imps)]); L.ins = num(r[cheio(inss)]);
+      L.impPromo = num(r[promoC(imps)]); L.insPromo = promoC(inss) != null ? num(r[promoC(inss)]) : L.ins;
       if (!(L.preco > 0) && !(L.custo > 0)) return;
     } else if (!(L.custo > 0) && !nome) return;
     linhas.push(L);
@@ -81,7 +85,7 @@ function importar(idx) {
   const f = path.join(DATA, nomeArq);
   let st; try { st = fs.statSync(f); } catch (e) { throw new Error('planilha não encontrada no servidor: ' + nomeArq); }
   const wb = XLSX.readFile(f);
-  const out = { versao: 2, empresa: EMP[idx].nome, arquivo: nomeArq, planilhaEm: new Date(st.mtimeMs).toISOString(), importadoEm: new Date().toISOString(), abas: [] };
+  const out = { versao: 3, empresa: EMP[idx].nome, arquivo: nomeArq, planilhaEm: new Date(st.mtimeMs).toISOString(), importadoEm: new Date().toISOString(), abas: [] };
   for (const aba of wb.SheetNames) {
     const tipo = tipoAba(aba); if (!tipo) continue;
     const r = lerAba(wb.Sheets[aba], tipo); if (!r || !r.linhas.length) continue;
@@ -117,7 +121,7 @@ function dados(idx) {
 }
 async function montar(idx) {
   let F = fotografia(idx);
-  if (!F || F.versao !== 2) F = importar(idx);   // versão 2: lê também imposto e insumos da planilha
+  if (!F || F.versao !== 3) F = importar(idx);   // versão 3: imposto/insumos e colunas de lucro por bloco (cheio × promoção)
   const cm = require('./custos_ml');
   const erp = await cm.custosErp(idx);
   const erpNome = idx === 2 ? 'Tiny' : 'Bling';
@@ -167,7 +171,7 @@ button{background:#0d1b2a;color:#fff;border:none;cursor:pointer;font-weight:600}
 .l{text-align:left;white-space:normal}small{color:#888}.ok{color:#2e7d32}.dif{color:#c62828;font-weight:600}.sem{color:#E65100}.neg{color:#c62828}.cards{display:flex;gap:10px;flex-wrap:wrap}
 .mg{display:inline-block;min-width:54px;text-align:center;padding:2px 6px;border-radius:6px;font-weight:600}.m0{background:#ffcdd2;color:#b71c1c}.m1{background:#fff59d;color:#7a5d00}.m2{background:#c8e6c9;color:#1b5e20}.m3{background:#2e7d32;color:#fff}
 .ed{cursor:pointer;color:#1565c0;margin-left:4px;font-size:12px}.card{flex:1;min-width:150px;border:1px solid #eee;border-radius:10px;padding:10px 12px;font-size:13px}.card b{font-size:20px}</style></head><body>
-<div class="top"><b>💲 Precificação</b><span style="font-size:12px;opacity:.75">Etapa 1 · planilha importada × custo do ERP</span><span style="flex:1"></span>
+<div class="top"><b>💲 Precificação</b><span style="font-size:12px;opacity:.75">planilha importada × custo do ERP · margens do painel</span><span style="flex:1"></span>
 <select id="emp" onchange="carregar()"><option value="0">Zagodini</option><option value="1">Com Amor de Mãe</option><option value="2">Lufe</option></select>
 <select id="sit" onchange="render()"><option value="dif">Só custos diferentes</option><option value="sem">Sem custo no ERP</option><option value="">Tudo</option></select>
 <input id="q" placeholder="Buscar código ou produto" oninput="render()">
