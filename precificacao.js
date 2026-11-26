@@ -91,12 +91,29 @@ function importar(idx) {
     const r = lerAba(wb.Sheets[aba], tipo); if (!r || !r.linhas.length) continue;
     out.abas.push({ aba: tipo === 'base' ? 'Custos' : aba, abaPlanilha: aba, tipo, ...r });   // aba de custos sempre com o nome "Custos"
   }
+  // itens excluídos no painel continuam fora numa nova importação
+  const exc = excluidos(idx);
+  for (const A of out.abas) A.linhas = A.linhas.filter(L => !exc[A.aba + '|' + L.sku]);
   // base primeiro, depois a ordem da planilha
   out.abas.sort((a, b) => (a.tipo === 'base' ? 0 : 1) - (b.tipo === 'base' ? 0 : 1));
   fs.mkdirSync(DIR, { recursive: true });
   fs.writeFileSync(arq(idx), JSON.stringify(out));
   console.log(`[precificacao] importada ${nomeArq}: ${out.abas.map(a => a.aba + ' ' + a.linhas.length).join(', ')}`);
   return out;
+}
+const arqExc = idx => path.join(DIR, `excluidos_${idx}.json`);
+function excluidos(idx) { try { return JSON.parse(fs.readFileSync(arqExc(idx))); } catch (e) { return {}; } }
+/** Exclui um item de uma aba da precificação do painel (não mexe na planilha nem no ERP) */
+function excluir(idx, aba, sku, quem) {
+  const F = fotografia(idx); if (!F) throw new Error('precificação ainda não importada');
+  const A = F.abas.find(a => a.aba === aba); if (!A) throw new Error('aba não encontrada');
+  const antes = A.linhas.length; A.linhas = A.linhas.filter(L => L.sku !== K(sku));
+  if (A.linhas.length === antes) throw new Error('item não encontrado na aba');
+  fs.writeFileSync(arq(idx), JSON.stringify(F));
+  const E = excluidos(idx); E[aba + '|' + K(sku)] = { quando: new Date().toISOString(), quem }; fs.writeFileSync(arqExc(idx), JSON.stringify(E));
+  delete _cache[idx];
+  console.log(`[precificacao] excluído ${EMP[idx].nome} / ${aba} / ${sku} (${quem})`);
+  return antes - A.linhas.length;
 }
 function fotografia(idx) { try { return JSON.parse(fs.readFileSync(arq(idx))); } catch (e) { return null; } }
 
@@ -191,12 +208,15 @@ function info(){const t={l:0,i:0,d:0,s:0};D.abas.forEach(a=>{t.l+=a.resumo.linha
 function render(){if(!D||D.erro)return;info();const a=D.abas[A],s=$('sit').value,q=$('q').value.toLowerCase();
  let L=a.linhas.filter(l=>(!s||(s==='dif'?/diferente|sem custo na/.test(l.situacao):/sem custo no/.test(l.situacao)))&&(!q||(l.sku+' '+l.nome).toLowerCase().includes(q)));
  const base=a.tipo==='base';
- $('lista').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:8px">'+L.length+' de '+a.linhas.length+' linhas · colunas de preço lidas: '+esc((a.colunas.precos||[]).join(', ')||'—')+'</div><table><tr><th class="l">Código</th><th class="l">Produto</th><th>Qtd</th><th>Custo planilha</th><th>Custo ERP</th><th>Diferença</th>'+
+ $('lista').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:8px">'+L.length+' de '+a.linhas.length+' linhas · colunas de preço lidas: '+esc((a.colunas.precos||[]).join(', ')||'—')+'</div><table><tr><th></th><th class="l">Código</th><th class="l">Produto</th><th>Qtd</th><th>Custo planilha</th><th>Custo ERP</th><th>Diferença</th>'+
  (base?'':'<th>Preço</th><th>Margem planilha</th><th>Margem painel</th><th>Preço p/ meta</th><th>Promoção</th><th>Margem planilha</th><th>Margem painel</th><th>Preço p/ meta</th>')+'</tr>'+
- L.slice(0,2000).map(l=>'<tr><td class="l">'+esc(l.sku)+'<br><small>linha '+l.linha+'</small></td><td class="l">'+esc(l.nome)+'</td><td>'+l.qtd+'</td><td>'+brl(l.custo)+'</td>'+
+ L.slice(0,2000).map(l=>'<tr><td><span class="ed" style="color:#c62828" title="Excluir este item da aba" onclick="excluir(\\''+esc(l.sku)+'\\')">🗑</span></td><td class="l">'+esc(l.sku)+'<br><small>linha '+l.linha+'</small></td><td class="l">'+esc(l.nome)+'</td><td>'+l.qtd+'</td><td>'+brl(l.custo)+'</td>'+
  '<td>'+(l.custoErp!=null?brl(l.custoErp)+(l.fonteErp&&l.fonteErp!=='item'?'<br><small>'+esc(l.fonteErp)+'</small>':''):'<span class="sem">'+esc(l.situacao)+'</span>')+(!l.kit?'<span class="ed" title="Alterar o custo no '+D.erp+'" onclick="editar(\\''+esc(l.sku)+'\\','+(l.custoErp??l.custo??0)+','+l.qtd+')">✎</span>':'')+'</td>'+
  '<td class="'+(l.situacao==='diferente'?'dif':'')+'">'+(l.dif==null?'—':(l.dif>0?'+':'')+brl(l.dif))+'</td>'+
  (base?'':'<td>'+brl(l.preco)+'</td><td>'+pc(l.margem)+'</td><td>'+pc(l.margemPainel)+'</td><td>'+brl(l.precoMeta)+'</td><td>'+brl(l.promo)+'</td><td>'+pc(l.margemPromo)+'</td><td>'+pc(l.margemPromoPainel)+'</td><td>'+brl(l.precoMetaPromo)+'</td>')+'</tr>').join('')+'</table>';}
+async function excluir(sku){const a=D.abas[A];if(!confirm('Excluir '+sku+' da aba '+a.aba+' no painel?\\n\\nNão mexe na planilha nem no ERP, e continua fora se a planilha for importada de novo.'))return;
+ const r=await fetch('/precificacao/excluir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emp:$('emp').value,aba:a.aba,sku})}).then(r=>r.json());
+ if(r.erro)return alert(r.erro);const aba=A;const x=await fetch('/precificacao/dados?emp='+$('emp').value);D=await x.json();A=aba;render();}
 async function editar(sku,atual,qtd){
  if(qtd>1&&!confirm('Esta linha é de '+qtd+' unidades. O custo alterado é o do código '+sku+' no '+D.erp+'. Continuar?'))return;
  const v=prompt('Novo custo de '+sku+' no '+D.erp+' (R$):',String(atual).replace('.',','));if(v==null)return;
@@ -275,6 +295,11 @@ function rotas(app) {
     const idx = parseInt(req.body?.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' });
     try { res.json({ ok: true, ...(await gravarCusto(idx, req.body.sku, num(req.body.custo), req.usuario?.email || 'local')) }); }
     catch (e) { res.status(400).json({ erro: e.response?.data?.error?.description || e.message }); }
+  });
+  app.post('/precificacao/excluir', require('express').json(), (req, res) => {
+    const idx = parseInt(req.body?.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' });
+    try { res.json({ ok: true, removidas: excluir(idx, String(req.body.aba || ''), req.body.sku, req.usuario?.email || 'local') }); }
+    catch (e) { res.status(400).json({ erro: e.message }); }
   });
   app.get('/precificacao/edicoes', (req, res) => { try { res.json(JSON.parse(fs.readFileSync(ARQ_ED)).slice(-300).reverse()); } catch (e) { res.json([]); } });
   app.post('/precificacao/importar', (req, res) => {
