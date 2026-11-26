@@ -85,11 +85,11 @@ function importar(idx) {
   const f = path.join(DATA, nomeArq);
   let st; try { st = fs.statSync(f); } catch (e) { throw new Error('planilha não encontrada no servidor: ' + nomeArq); }
   const wb = XLSX.readFile(f);
-  const out = { versao: 5, empresa: EMP[idx].nome, arquivo: nomeArq, planilhaEm: new Date(st.mtimeMs).toISOString(), importadoEm: new Date().toISOString(), abas: [] };
+  const out = { versao: 6, empresa: EMP[idx].nome, arquivo: nomeArq, planilhaEm: new Date(st.mtimeMs).toISOString(), importadoEm: new Date().toISOString(), abas: [] };
   for (const aba of wb.SheetNames) {
     const tipo = tipoAba(aba); if (!tipo) continue;
     const r = lerAba(wb.Sheets[aba], tipo); if (!r || !r.linhas.length) continue;
-    out.abas.push({ aba, tipo, ...r });
+    out.abas.push({ aba: tipo === 'base' ? 'Custos' : aba, abaPlanilha: aba, tipo, ...r });   // aba de custos sempre com o nome "Custos"
   }
   // base primeiro, depois a ordem da planilha
   out.abas.sort((a, b) => (a.tipo === 'base' ? 0 : 1) - (b.tipo === 'base' ? 0 : 1));
@@ -121,7 +121,7 @@ function dados(idx) {
 }
 async function montar(idx) {
   let F = fotografia(idx);
-  if (!F || F.versao !== 5) F = importar(idx);   // versão 3: imposto/insumos e colunas de lucro por bloco (cheio × promoção)
+  if (!F || F.versao !== 6) F = importar(idx);   // versão 3: imposto/insumos e colunas de lucro por bloco (cheio × promoção)
   const cm = require('./custos_ml');
   const erp = await cm.custosErp(idx);
   const erpNome = idx === 2 ? 'Tiny' : 'Bling';
