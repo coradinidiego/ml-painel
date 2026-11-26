@@ -269,12 +269,12 @@ function paginaConta(u, msg, hostBase = '') {
   <div style="display:flex;gap:10px;flex-wrap:wrap"><a href="/tv/config"><button type="button">Configurar situações</button></a>
   <form method="post" action="/conta/tv-nova-chave" style="margin:0" onsubmit="return confirm('Gerar nova chave? A TV atual vai perder o acesso até abrir o link novo.')"><button style="background:#c62828">Gerar nova chave</button></form></div></div>` : ''}
 
-  <div class="box"><h2>🧾 Impostos e embalagem</h2><p class="s">Usados no lucro do "preço para ganhar" do catálogo e nas apurações. A embalagem é o custo por pedido (caixa, fita, etiqueta).</p>
-  <form method="post" action="/conta/empresas"><table><tr><th>Empresa</th><th>Imposto (%)</th><th>Embalagem por pedido (R$)</th></tr>
+  <div class="box"><h2>🧾 Impostos e insumos</h2><p class="s">Usados no lucro do "preço para ganhar" do catálogo e nas apurações. Insumos são o custo por pedido (embalagem, etiqueta, fita) e valem para a empresa toda, como o imposto.</p>
+  <form method="post" action="/conta/empresas"><table><tr><th>Empresa</th><th>Imposto (%)</th><th>Insumos por pedido (R$)<br><small style="font-weight:400;color:#999">embalagem, etiqueta, fita</small></th></tr>
   ${require('./config_empresas').get().map(e => `<tr><td>${esc(e.nome)}</td>
     <td><input name="imp_${e.id}" type="number" step="0.01" min="0" max="99" value="${+(e.imposto * 100).toFixed(2)}" ${u.admin ? '' : 'disabled'} style="max-width:110px"></td>
     <td><input name="emb_${e.id}" type="number" step="0.01" min="0" value="${(+e.embalagem).toFixed(2)}" ${u.admin ? '' : 'disabled'} style="max-width:130px"></td></tr>`).join('')}
-  </table>${u.admin ? '<button>Salvar impostos e embalagem</button>' : '<p class="s">Só o administrador altera.</p>'}</form></div>
+  </table>${u.admin ? '<button>Salvar impostos e insumos</button>' : '<p class="s">Só o administrador altera.</p>'}</form></div>
 
   <div class="box"><h2>🔑 Trocar minha senha</h2><form method="post" action="/conta/senha"><div class="row">
     <div><label>Senha atual</label><input name="atual" type="password" required></div><div><label>Nova senha</label><input name="nova" type="password" minlength="8" required></div><div><label>Repita a nova</label><input name="nova2" type="password" minlength="8" required></div></div>
