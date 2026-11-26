@@ -151,7 +151,7 @@ function dados(idx) {
 }
 async function montar(idx) {
   let F = fotografia(idx);
-  if (!F || F.versao !== 6) F = importar(idx);   // versão 3: imposto/insumos e colunas de lucro por bloco (cheio × promoção)
+  if (!F) F = importar(idx);   // a planilha só foi a origem: depois da 1ª importação a precificação é editada no painel   // versão 3: imposto/insumos e colunas de lucro por bloco (cheio × promoção)
   const cm = require('./custos_ml');
   const erp = await cm.custosErp(idx);
   const erpNome = idx === 2 ? 'Tiny' : 'Bling';
@@ -214,11 +214,11 @@ button{background:#0d1b2a;color:#fff;border:none;cursor:pointer;font-weight:600}
 .l{text-align:left;white-space:normal}small{color:#888}.ok{color:#2e7d32}.dif{color:#c62828;font-weight:600}.sem{color:#E65100}.neg{color:#c62828}.cards{display:flex;gap:10px;flex-wrap:wrap}
 .mg{display:inline-block;min-width:54px;text-align:center;padding:2px 6px;border-radius:6px;font-weight:600}.m0{background:#ffcdd2;color:#b71c1c}.m1{background:#fff59d;color:#7a5d00}.m2{background:#c8e6c9;color:#1b5e20}.m3{background:#2e7d32;color:#fff}
 .ed{cursor:pointer;color:#1565c0;margin-left:4px;font-size:12px}.card{flex:1;min-width:150px;border:1px solid #eee;border-radius:10px;padding:10px 12px;font-size:13px}.card b{font-size:20px}</style></head><body>
-<div class="top"><b>💲 Precificação</b><span style="font-size:12px;opacity:.75">planilha importada × custo do ERP · margens do painel</span><span style="flex:1"></span>
+<div class="top"><b>💲 Precificação</b><span style="font-size:12px;opacity:.75">custos e margens por canal</span><span style="flex:1"></span>
 <select id="emp" onchange="carregar()"><option value="0">Zagodini</option><option value="1">Com Amor de Mãe</option><option value="2">Lufe</option></select>
 <select id="sit" onchange="render()"><option value="">Tudo</option><option value="dif">Custo diferente do ERP</option><option value="sem">Sem custo no ERP</option><option value="meta">Abaixo da meta</option></select>
 <input id="q" placeholder="Buscar código ou produto" oninput="render()">
-${admin ? '<button id="imp" onclick="importar()">⟳ Importar planilha de novo</button>' : ''}<a href="/painel.html">← Painel</a></div>
+<a href="/painel.html">← Painel</a></div>
 <div class="box" id="info">Carregando… (a primeira leitura dos custos do ERP pode levar 1–2 min)</div><div class="box"><div class="abas" id="abas"></div><div id="lista"></div></div>
 <script>
 let D=null,A=0;const $=id=>document.getElementById(id);const esc=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -250,8 +250,6 @@ async function editar(sku,atual,qtd){
  const r=await fetch('/precificacao/custo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emp:$('emp').value,sku,custo:n})}).then(r=>r.json());
  if(r.erro)return alert('Não gravou: '+r.erro);
  const aba=A;const x=await fetch('/precificacao/dados?emp='+$('emp').value);D=await x.json();A=aba;render();}
-async function importar(){if(!confirm('Importar de novo a planilha desta empresa? A fotografia atual no painel é substituída.'))return;$('imp').disabled=true;
- const r=await fetch('/precificacao/importar?emp='+$('emp').value,{method:'POST'}).then(r=>r.json());$('imp').disabled=false;if(r.erro)return alert(r.erro);carregar();}
 carregar();
 </script></body></html>`;
 }
@@ -328,10 +326,5 @@ function rotas(app) {
     catch (e) { res.status(400).json({ erro: e.message }); }
   });
   app.get('/precificacao/edicoes', (req, res) => { try { res.json(JSON.parse(fs.readFileSync(ARQ_ED)).slice(-300).reverse()); } catch (e) { res.json([]); } });
-  app.post('/precificacao/importar', (req, res) => {
-    if (!admin(req)) return res.status(403).json({ erro: 'só o administrador importa a planilha' });
-    const idx = parseInt(req.query.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' });
-    try { const F = importar(idx); delete _cache[idx]; res.json({ ok: true, abas: F.abas.map(a => ({ aba: a.aba, linhas: a.linhas.length })) }); } catch (e) { res.status(500).json({ erro: e.message }); }
-  });
 }
 module.exports = { rotas, importar, dados, lerAba, tipoAba };
