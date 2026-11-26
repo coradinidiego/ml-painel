@@ -44,6 +44,35 @@ function bootstrap() {
 }
 const ativo = () => lerUsuarios().length > 0;
 
+// ─── Perfis de acesso ──────────────────────────────────────────────────────
+// admin: tudo · completo: todas as abas, menos a Apuração (apuração, DRE, lançamentos, relatório diário)
+const perfil = u => !u ? 'admin' : u.admin ? 'admin' : (u.perfil || 'completo');
+const NOME_PERFIL = { admin: 'Administrador', completo: 'Completo (sem Apuração)' };
+const BLOQ_COMPLETO = /^\/(apuracao-bling|apuracao-progress|apuracao-tiny|apuracao-mkt|despesas|relatorio\/diario)(\/|\.|$)/;
+const podeAcessar = (u, caminho) => perfil(u) === 'admin' || !BLOQ_COMPLETO.test(caminho);
+
+// ─── Log de acessos ────────────────────────────────────────────────────────
+// logins.json: entradas e tentativas (últimas 2000) · acessos.json: último uso do painel por usuário
+const ARQ_LOG = path.join(DATA, 'logins.json'), ARQ_ACESSO = path.join(DATA, 'acessos.json');
+const lerJ = (f, d) => { try { return JSON.parse(fs.readFileSync(f)); } catch (e) { return d; } };
+function registrarLogin(req, email, ok, motivo) {
+  try {
+    const L = lerJ(ARQ_LOG, []);
+    L.push({ quando: new Date().toISOString(), email, ok, motivo: motivo || undefined, ip: req.ip, navegador: String(req.headers['user-agent'] || '').slice(0, 160) });
+    fs.writeFileSync(ARQ_LOG, JSON.stringify(L.slice(-2000)));
+  } catch (e) { console.warn('[auth] log de login:', e.message); }
+}
+const ultimoAcesso = lerJ(ARQ_ACESSO, {});
+let _gravarAcesso = null;
+function marcarAcesso(req, u) {
+  const agora = Date.now(), a = ultimoAcesso[u.email];
+  if (a && agora - Date.parse(a.quando) < 5 * 60e3) return;   // atualiza no máximo a cada 5 min
+  ultimoAcesso[u.email] = { quando: new Date(agora).toISOString(), ip: req.ip };
+  clearTimeout(_gravarAcesso); _gravarAcesso = setTimeout(() => { try { fs.writeFileSync(ARQ_ACESSO, JSON.stringify(ultimoAcesso)); } catch (e) {} }, 2000);
+}
+const dataBR = iso => iso ? new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+const navCurto = ua => { ua = String(ua || ''); const so = /iPhone|iPad/.test(ua) ? 'iPhone/iPad' : /Android/.test(ua) ? 'Android' : /Mac OS/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : ''; const nv = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : /Firefox\//.test(ua) ? 'Firefox' : ''; return [nv, so].filter(Boolean).join(' · ') || ua.slice(0, 40); };
+
 // ─── Chave da TV (acesso só à tela /tv, sem login) ─────────────────────────
 const ARQ_TV = path.join(DATA, 'tv_chave.txt');
 function chaveTv(nova = false) {
@@ -225,11 +254,15 @@ function paginaConta(u, msg, hostBase = '') {
   });
   </script></div>
 
-  ${u.admin ? `<div class="box"><h2>👥 Usuários</h2><p class="s">Todos os usuários têm acesso completo ao painel.</p>
-  <table><tr><th>Nome</th><th>E-mail</th><th></th></tr>${usuarios.map(x => `<tr><td>${esc(x.nome)}${x.admin ? ' <small style="color:#999">(admin)</small>' : ''}</td><td>${esc(x.email)}</td><td style="text-align:right;white-space:nowrap">${x.email === u.email ? '' : `<form method="post" action="/conta/admin" style="margin:0 6px 0 0;display:inline" onsubmit="return confirm('${x.admin ? 'Tirar o acesso de administrador de' : 'Tornar administrador:'} ${esc(x.email)}?')"><input type="hidden" name="email" value="${esc(x.email)}"><input type="hidden" name="admin" value="${x.admin ? '0' : '1'}"><button type="submit" style="width:auto;padding:4px 10px;font-size:12px">${x.admin ? 'Tirar admin' : 'Tornar admin'}</button></form><form method="post" action="/conta/remover" style="margin:0;display:inline" onsubmit="return confirm('Remover ${esc(x.email)}?')"><input type="hidden" name="email" value="${esc(x.email)}"><button class="del">Remover</button></form>`}</td></tr>`).join('')}</table>
+  ${u.admin ? `<div class="box"><h2>👥 Usuários</h2><p class="s"><b>Administrador</b>: tudo. <b>Completo</b>: todas as abas, menos a Apuração (apuração, DRE, lançamentos e relatório diário).</p>
+  <table><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Último acesso</th><th></th></tr>${usuarios.map(x => `<tr><td>${esc(x.nome)}</td><td>${esc(x.email)}</td><td>${esc(NOME_PERFIL[perfil(x)] || perfil(x))}</td><td style="white-space:nowrap">${esc(dataBR(ultimoAcesso[x.email]?.quando))}</td><td style="text-align:right;white-space:nowrap">${x.email === u.email ? '' : `<form method="post" action="/conta/admin" style="margin:0 6px 0 0;display:inline" onsubmit="return confirm('${x.admin ? 'Tirar o acesso de administrador de' : 'Tornar administrador:'} ${esc(x.email)}?')"><input type="hidden" name="email" value="${esc(x.email)}"><input type="hidden" name="admin" value="${x.admin ? '0' : '1'}"><button type="submit" style="width:auto;padding:4px 10px;font-size:12px">${x.admin ? 'Tirar admin' : 'Tornar admin'}</button></form><form method="post" action="/conta/remover" style="margin:0;display:inline" onsubmit="return confirm('Remover ${esc(x.email)}?')"><input type="hidden" name="email" value="${esc(x.email)}"><button class="del">Remover</button></form>`}</td></tr>`).join('')}</table>
   <form method="post" action="/conta/usuarios" style="margin-top:12px"><div class="row">
     <div><label>Nome</label><input name="nome" required></div><div><label>E-mail</label><input name="email" type="email" required></div><div><label>Senha inicial</label><input name="senha" type="text" minlength="8" required></div></div>
     <button>Adicionar usuário</button></form></div>` : ''}
+
+  ${u.admin ? (() => { const L = lerJ(ARQ_LOG, []).slice(-150).reverse(); const nomes = Object.fromEntries(usuarios.map(x => [x.email, x.nome]));
+    return `<div class="box"><h2>🕑 Log de logins</h2><p class="s">Últimas ${L.length} entradas no painel (com senha certa e tentativas erradas). O login vale por ${DIAS_SESSAO} dias no mesmo navegador; o uso do dia a dia aparece em "Último acesso" acima.</p>
+    ${L.length ? `<div style="max-height:420px;overflow:auto"><table><tr><th>Quando</th><th>Usuário</th><th>Resultado</th><th>Aparelho</th><th>IP</th></tr>${L.map(x => `<tr><td style="white-space:nowrap">${esc(dataBR(x.quando))}</td><td>${esc(nomes[x.email] || x.email)}</td><td style="color:${x.ok ? '#2e7d32' : '#c62828'}">${x.ok ? 'entrou' : esc(x.motivo || 'senha errada')}</td><td>${esc(navCurto(x.navegador))}</td><td style="color:#999">${esc(x.ip || '')}</td></tr>`).join('')}</table></div>` : '<p class="s">Nenhum login registrado ainda (o registro começou agora).</p>'}</div>`; })() : ''}
 
   ${u.admin ? `<div class="box"><h2>📺 Painel da TV</h2><p class="s">Abra este link uma vez no navegador da TV — ela fica com acesso só à tela de expedição, sem precisar de senha. Não compartilhe fora da empresa.</p>
   <input readonly value="${esc(hostBase)}/tv?chave=${esc(chaveTv())}" onclick="this.select()" style="font-family:monospace;font-size:13px">
@@ -260,8 +293,8 @@ function montar(app) {
     const ip = req.ip;
     if (bloqueado(ip)) return res.status(429).send(paginaLogin('Muitas tentativas. Aguarde 15 minutos.'));
     const u = lerUsuarios().find(x => x.email === normEmail(req.body.email));
-    if (!u || !confere(u, req.body.senha || '')) { falhou(ip); return res.status(401).send(paginaLogin('E-mail ou senha incorretos.', req.body.next)); }
-    tentativas.delete(ip);
+    if (!u || !confere(u, req.body.senha || '')) { falhou(ip); registrarLogin(req, normEmail(req.body.email), false, u ? 'senha errada' : 'e-mail não cadastrado'); return res.status(401).send(paginaLogin('E-mail ou senha incorretos.', req.body.next)); }
+    tentativas.delete(ip); registrarLogin(req, u.email, true);
     setCookie(req, res, criarCookie(u.email), DIAS_SESSAO * 86400);
     const next = String(req.body.next || '/');
     res.redirect(next.startsWith('/') && !next.startsWith('//') ? next : '/');
@@ -272,7 +305,14 @@ function montar(app) {
   app.use((req, res, next) => {
     if (!ativo()) { req.usuario = null; return next(); }
     const u = lerCookie(req);
-    if (u) { req.usuario = u; return next(); }
+    if (u) {
+      req.usuario = u; marcarAcesso(req, u);
+      if (!podeAcessar(u, req.path)) {
+        const querHtml = req.method === 'GET' && (req.headers.accept || '').includes('text/html');
+        return querHtml ? res.status(403).send('Seu usuário não tem acesso a esta área do painel.') : res.status(403).json({ ok: false, erro: 'Seu usuário não tem acesso a esta área do painel (Apuração).' });
+      }
+      return next();
+    }
     // imagens e fontes usadas na tela de login (não têm dado sensível)
     if (req.method === 'GET' && /^\/(logo\/[\w-]+|tv\/fontes\/[\w.-]+|tv\/marca\/[\w-]+|fotos\/[\w.-]+\.(jpg|png))$/.test(req.path)) { req.usuario = null; return next(); }
     if (acessoTv(req, res)) { req.usuario = null; return next(); }
@@ -281,7 +321,7 @@ function montar(app) {
     res.status(401).json({ ok: false, erro: 'Sessão expirada — faça login novamente', login: '/login' });
   });
 
-  app.get('/conta/eu', (req, res) => res.json(req.usuario ? { ativo: true, email: req.usuario.email, nome: req.usuario.nome, admin: !!req.usuario.admin } : { ativo: false }));
+  app.get('/conta/eu', (req, res) => res.json(req.usuario ? { ativo: true, email: req.usuario.email, nome: req.usuario.nome, admin: !!req.usuario.admin, perfil: perfil(req.usuario) } : { ativo: false }));
   const exigeLogin = (req, res, next) => req.usuario ? next() : res.redirect('/');
   app.get('/conta', exigeLogin, (req, res) => res.send(paginaConta(req.usuario, req.query.ok ? { tipo: 'ok', texto: req.query.ok } : req.query.erro ? { tipo: 'err', texto: req.query.erro } : null, `${req.protocol}://${req.get('host')}`)));
   const volta = (res, tipo, texto) => res.redirect('/conta?' + tipo + '=' + encodeURIComponent(texto));
@@ -354,4 +394,4 @@ function montar(app) {
   });
 }
 
-module.exports = { montar, ativo };
+module.exports = { montar, ativo, perfil };

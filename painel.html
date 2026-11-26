@@ -694,6 +694,10 @@ body.pm-tipjs .pm-hastip:hover .pm-tip,body.pm-tipjs .pm-hastip:focus .pm-tip{di
   window.fetch = async function(...a){ const r = await _f.apply(this,a); if (r.status === 401 && r.headers.get('content-type')?.includes('json')) { const c = r.clone(); try { const j = await c.json(); if (j.login) location.href = '/login?next=' + encodeURIComponent(location.pathname); } catch(e){} } return r; };
   _f('/conta/eu').then(r=>r.json()).then(u=>{
     if(!u.ativo) return;
+    window._perfil=u.perfil||'admin';
+    if(u.perfil&&u.perfil!=='admin'){ // perfil Completo: sem Apuração
+      const esc=()=>{const b=document.getElementById('cb-apuracao');if(b)b.style.display='none';else setTimeout(esc,200);};esc();
+    }
     const d=document.createElement('div'); d.id='painel-conta-barra';
     d.style.cssText='position:fixed;top:10px;right:16px;z-index:9999;display:flex;gap:8px;align-items:center;font:12px -apple-system,sans-serif';
     d.innerHTML='<span style="color:#cfd8dc">'+(u.nome||u.email).replace(/[<>&]/g,'')+'</span>'+
@@ -4141,6 +4145,7 @@ function adsExportQueue(){
 async function alertaCustos(grupo, semCusto) {
   const box = el('alerta-custos-' + grupo); if (!box) return;
   let d; try { d = await (await fetch('/apuracao-tiny/planilhas?grupo=' + grupo)).json(); } catch (e) { return; }
+  if (!d || !d.planilhas) return;   // perfil sem acesso à Apuração
   const velhas = d.planilhas.filter(p => !p.existe || p.dias >= d.diasAlerta);
   const pendentes = d.planilhas.filter(p => p.naoRecarregada);
   const grave = velhas.length || pendentes.length || semCusto > 0;
