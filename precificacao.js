@@ -145,6 +145,18 @@ async function montar(idx) {
   const ce = require('./config_empresas').porMlIdx(idx) || {};
   const cfg = { imposto: ce.imposto ?? 0, insumos: ce.embalagem ?? 0, meta: idx === 2 ? 0.20 : 0.15 };
   const kits = cm.kits(idx);
+  // Excel tira o 0 da frente dos códigos numéricos (09923 → 9923): acha o código certo no ERP (e nos kits)
+  // e corrige na precificação do painel — o código passa a ser o do ERP
+  const semZero = {}; const reg = c => { const z = String(c).replace(/^0+(?=.)/, ''); (semZero[z] ||= new Set()).add(c); };
+  Object.keys(erp).forEach(reg); Object.keys(kits).forEach(reg);
+  let corrigidos = 0;
+  for (const A of F.abas) for (const L of A.linhas) {
+    if (!/^\d+$/.test(L.sku) || erp[L.sku] > 0 || kits[L.sku]) continue;
+    const c = semZero[L.sku.replace(/^0+(?=.)/, '')]; if (!c || c.size !== 1) continue;
+    const certo = [...c][0]; if (certo === L.sku) continue;
+    L.skuPlanilha = L.skuPlanilha || L.sku; L.sku = certo; corrigidos++;
+  }
+  if (corrigidos) { try { fs.writeFileSync(arq(idx), JSON.stringify(F)); } catch (e) {} console.log(`[precificacao] ${EMP[idx].nome}: ${corrigidos} códigos com 0 na frente corrigidos`); }
   for (const A of F.abas) {
     const R = A.resumo = { linhas: A.linhas.length, iguais: 0, diferentes: 0, semErp: 0 };
     for (const L of A.linhas) {
@@ -210,7 +222,7 @@ function render(){if(!D||D.erro)return;info();const a=D.abas[A],s=$('sit').value
  const base=a.tipo==='base';
  $('lista').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:8px">'+L.length+' de '+a.linhas.length+' linhas · colunas de preço lidas: '+esc((a.colunas.precos||[]).join(', ')||'—')+'</div><table><tr><th></th><th class="l">Código</th><th class="l">Produto</th><th>Qtd</th><th>Custo planilha</th><th>Custo ERP</th><th>Diferença</th>'+
  (base?'':'<th>Preço</th><th>Margem planilha</th><th>Margem painel</th><th>Preço p/ meta</th><th>Promoção</th><th>Margem planilha</th><th>Margem painel</th><th>Preço p/ meta</th>')+'</tr>'+
- L.slice(0,2000).map(l=>'<tr><td><span class="ed" style="color:#c62828" title="Excluir este item da aba" onclick="excluir(\\''+esc(l.sku)+'\\')">🗑</span></td><td class="l">'+esc(l.sku)+'<br><small>linha '+l.linha+'</small></td><td class="l">'+esc(l.nome)+'</td><td>'+l.qtd+'</td><td>'+brl(l.custo)+'</td>'+
+ L.slice(0,2000).map(l=>'<tr><td><span class="ed" style="color:#c62828" title="Excluir este item da aba" onclick="excluir(\\''+esc(l.sku)+'\\')">🗑</span></td><td class="l">'+esc(l.sku)+'<br><small>linha '+l.linha+(l.skuPlanilha?' · na planilha: '+esc(l.skuPlanilha):'')+'</small></td><td class="l">'+esc(l.nome)+'</td><td>'+l.qtd+'</td><td>'+brl(l.custo)+'</td>'+
  '<td>'+(l.custoErp!=null?brl(l.custoErp)+(l.fonteErp&&l.fonteErp!=='item'?'<br><small>'+esc(l.fonteErp)+'</small>':''):'<span class="sem">'+esc(l.situacao)+'</span>')+(!l.kit?'<span class="ed" title="Alterar o custo no '+D.erp+'" onclick="editar(\\''+esc(l.sku)+'\\','+(l.custoErp??l.custo??0)+','+l.qtd+')">✎</span>':'')+'</td>'+
  '<td class="'+(l.situacao==='diferente'?'dif':'')+'">'+(l.dif==null?'—':(l.dif>0?'+':'')+brl(l.dif))+'</td>'+
  (base?'':'<td>'+brl(l.preco)+'</td><td>'+pc(l.margem)+'</td><td>'+pc(l.margemPainel)+'</td><td>'+brl(l.precoMeta)+'</td><td>'+brl(l.promo)+'</td><td>'+pc(l.margemPromo)+'</td><td>'+pc(l.margemPromoPainel)+'</td><td>'+brl(l.precoMetaPromo)+'</td>')+'</tr>').join('')+'</table>';}
