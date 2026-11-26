@@ -116,6 +116,22 @@ function excluir(idx, aba, sku, quem) {
   console.log(`[precificacao] excluído ${EMP[idx].nome} / ${aba} / ${sku} (${quem})`);
   return antes - A.linhas.length;
 }
+/** Altera o "Custo" da precificação do painel (não mexe no ERP). lista = [{sku, custo}] — vale para o código em todas as abas */
+function custoPainel(idx, lista, quem) {
+  const F = fotografia(idx); if (!F) throw new Error('precificação ainda não importada');
+  const z = v => K(v).replace(/^0+(?=.)/, ''); const mapa = {};
+  for (const x of lista) { const c = num(x.custo); if (!(c > 0)) throw new Error('custo inválido para ' + x.sku); mapa[z(x.sku)] = r2(c); }
+  let n = 0;
+  for (const A of F.abas) for (const L of A.linhas) {
+    const c = mapa[z(L.sku)] ?? (L.skuPlanilha ? mapa[z(L.skuPlanilha)] : undefined); if (c == null) continue;
+    L.custo = c; L.custoUn = r2(c / (L.qtd || 1)); n++;
+  }
+  fs.writeFileSync(arq(idx), JSON.stringify(F)); delete _cache[idx];
+  let E = []; try { E = JSON.parse(fs.readFileSync(ARQ_ED)); } catch (e) {}
+  for (const x of lista) E.push({ quando: new Date().toISOString(), quem, emp: idx, sku: K(x.sku), para: num(x.custo), onde: 'painel' });
+  fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(ARQ_ED, JSON.stringify(E.slice(-5000)));
+  return n;
+}
 function fotografia(idx) { try { return JSON.parse(fs.readFileSync(arq(idx))); } catch (e) { return null; } }
 
 /** Custo do ERP para a linha: kit pela composição; item simples pelo código (× qtd quando o código é de kit sem composição). */
@@ -218,7 +234,7 @@ button{background:#0d1b2a;color:#fff;border:none;cursor:pointer;font-weight:600}
 <select id="emp" onchange="carregar()"><option value="0">Zagodini</option><option value="1">Com Amor de Mãe</option><option value="2">Lufe</option></select>
 <select id="sit" onchange="render()"><option value="">Tudo</option><option value="dif">Custo diferente do ERP</option><option value="sem">Sem custo no ERP</option><option value="meta">Abaixo da meta</option></select>
 <input id="q" placeholder="Buscar código ou produto" oninput="render()">
-<button id="aterp" onclick="atualizarErp()">↻ Atualizar custos do ERP</button><a href="/painel.html">← Painel</a></div>
+<button id="aterp" onclick="atualizarErp()">↻ Atualizar custos do ERP</button><button onclick="igualarTodos()" style="background:#1565c0">⇐ Usar custo do ERP nos diferentes</button><a href="/painel.html">← Painel</a></div>
 <div class="box" id="info">Carregando… (a primeira leitura dos custos do ERP pode levar 1–2 min)</div><div class="box"><div class="abas" id="abas"></div><div id="lista"></div></div>
 <script>
 let D=null,A=0;const $=id=>document.getElementById(id);const esc=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -236,7 +252,7 @@ function render(){if(!D||D.erro)return;info();const a=D.abas[A],s=$('sit').value
  const base=a.tipo==='base';
  $('lista').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:8px">'+L.length+' de '+a.linhas.length+' linhas · colunas de preço lidas: '+esc((a.colunas.precos||[]).join(', ')||'—')+'</div><table><tr><th></th><th class="l">Código</th><th class="l">Produto</th><th>Qtd</th><th>Custo</th><th>Custo ERP</th><th>Diferença</th>'+
  (base?'':'<th>Preço</th><th>Margem</th><th>Preço p/ meta</th><th>Promoção</th><th>Margem</th><th>Preço p/ meta</th>')+'</tr>'+
- L.slice(0,2000).map(l=>'<tr><td><span class="ed" style="color:#c62828" title="Excluir este item da aba" onclick="excluir(\\''+esc(l.sku)+'\\')">🗑</span></td><td class="l">'+esc(l.sku)+'<br><small>linha '+l.linha+(l.skuPlanilha?' · na planilha: '+esc(l.skuPlanilha):'')+'</small></td><td class="l">'+esc(l.nome)+'</td><td>'+l.qtd+'</td><td>'+brl(l.custo)+'</td>'+
+ L.slice(0,2000).map(l=>'<tr><td><span class="ed" style="color:#c62828" title="Excluir este item da aba" onclick="excluir(\\''+esc(l.sku)+'\\')">🗑</span></td><td class="l">'+esc(l.sku)+'<br><small>linha '+l.linha+(l.skuPlanilha?' · na planilha: '+esc(l.skuPlanilha):'')+'</small></td><td class="l">'+esc(l.nome)+'</td><td>'+l.qtd+'</td><td>'+brl(l.custo)+'<span class="ed" title="Alterar o Custo do painel" onclick="editarPainel(\\''+esc(l.sku)+'\\','+(l.custo??0)+')">✎</span>'+(l.situacao==='diferente'?'<br><span class="ed" style="margin:0" title="Usar o custo do ERP" onclick="igualar(\\''+esc(l.sku)+'\\','+l.custoErp+')">⇐ usar ERP</span>':'')+'</td>'+
  '<td>'+(l.custoErp!=null?brl(l.custoErp)+(l.fonteErp&&l.fonteErp!=='item'?'<br><small>'+esc(l.fonteErp)+'</small>':''):'<span class="sem">sem custo no '+D.erp+'</span>')+(!l.kit&&!l.variacoes?'<span class="ed" title="Alterar o custo no '+D.erp+'" onclick="editar(\\''+esc(l.sku)+'\\','+(l.custoErp??l.custo??0)+','+l.qtd+')">✎</span>':'')+'</td>'+
  '<td class="'+(l.situacao==='diferente'?'dif':'')+'">'+(l.dif==null?'—':(l.dif>0?'+':'')+brl(l.dif))+'</td>'+
  (base?'':'<td>'+brl(l.preco)+'</td><td>'+pc(l.margemPainel)+'</td><td>'+brl(l.precoMeta)+'</td><td>'+brl(l.promo)+'</td><td>'+pc(l.margemPromoPainel)+'</td><td>'+brl(l.precoMetaPromo)+'</td>')+'</tr>').join('')+'</table>';}
@@ -245,6 +261,12 @@ async function atualizarErp(){const b=$('aterp'),e=$('emp').value;b.disabled=tru
  let st;for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,3000));st=await fetch('/precificacao/atualizar-erp?emp='+e).then(r=>r.json());if(!st.rodando)break;}
  b.disabled=false;b.textContent='↻ Atualizar custos do ERP';if(st&&st.erro)alert('Erro: '+st.erro);
  const aba=A;D=await (await fetch('/precificacao/dados?emp='+e)).json();A=aba;render();}
+async function salvarPainel(lista){const r=await fetch('/precificacao/custo-painel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emp:$('emp').value,lista})}).then(r=>r.json());
+ if(r.erro)return alert(r.erro);const aba=A;D=await (await fetch('/precificacao/dados?emp='+$('emp').value)).json();A=aba;render();}
+async function editarPainel(sku,atual){const v=prompt('Custo de '+sku+' na precificação (R$):',String(atual).replace('.',','));if(v==null)return;const n=parseFloat(String(v).replace(',','.'));if(!(n>0))return alert('Valor inválido');salvarPainel([{sku,custo:n}]);}
+function igualar(sku,v){salvarPainel([{sku,custo:v}]);}
+async function igualarTodos(){const m={};D.abas.forEach(a=>a.linhas.forEach(l=>{if(l.situacao==='diferente'&&l.custoErp>0)m[l.sku]=l.custoErp;}));const lista=Object.entries(m).map(([sku,custo])=>({sku,custo}));
+ if(!lista.length)return alert('Nenhum custo diferente do ERP.');if(!confirm('Trocar o Custo de '+lista.length+' códigos pelo custo do '+D.erp+' (todas as abas desta empresa)?'))return;salvarPainel(lista);}
 async function excluir(sku){const a=D.abas[A];if(!confirm('Excluir '+sku+' da aba '+a.aba+' no painel?\\n\\nNão mexe na planilha nem no ERP, e continua fora se a planilha for importada de novo.'))return;
  const r=await fetch('/precificacao/excluir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emp:$('emp').value,aba:a.aba,sku})}).then(r=>r.json());
  if(r.erro)return alert(r.erro);const aba=A;const x=await fetch('/precificacao/dados?emp='+$('emp').value);D=await x.json();A=aba;render();}
@@ -344,6 +366,10 @@ function rotas(app) {
     const idx = parseInt(req.body?.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' });
     try { res.json({ ok: true, removidas: excluir(idx, String(req.body.aba || ''), req.body.sku, req.usuario?.email || 'local') }); }
     catch (e) { res.status(400).json({ erro: e.message }); }
+  });
+  app.post('/precificacao/custo-painel', require('express').json({ limit: '2mb' }), (req, res) => {
+    const idx = parseInt(req.body?.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' });
+    try { res.json({ ok: true, linhas: custoPainel(idx, req.body.lista || [], req.usuario?.email || 'local') }); } catch (e) { res.status(400).json({ erro: e.message }); }
   });
   app.post('/precificacao/atualizar-erp', (req, res) => {
     const idx = parseInt(req.query.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' });
