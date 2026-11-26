@@ -223,17 +223,19 @@ async function gravarCusto(idx, sku, custo, quem) {
     const ob = (await tiny.chamar('produto.obter.php', { id: achado.id })).produto;
     if (!ob) throw new Error('não consegui ler o produto no Tiny');
     if (String(ob.classe_produto).toUpperCase() === 'K' || ob.kit?.length) throw new Error('é kit no Tiny: altere o custo dos componentes');
-    if (ob.variacoes?.length || String(ob.classe_produto).toUpperCase() === 'V') throw new Error('produto com variações no Tiny: altere o custo direto no Tiny');
+    if ((Array.isArray(ob.variacoes) && ob.variacoes.length) || String(ob.classe_produto).toUpperCase() === 'V') throw new Error('produto pai com variações no Tiny: altere o custo de cada variação');
     de = num(ob.preco_custo);
-    const prod = { ...ob, preco_custo: custo };
-    for (const k of ['id_produto_pai', 'data_criacao', 'imagens_externas', 'mapeamentos', 'preco_custo_medio']) delete prod[k];
+    // o obter devolve a embalagem em camelCase e o alterar espera snake_case (senão zera as medidas)
+    const prod = { ...ob, preco_custo: custo, tipo_embalagem: ob.tipoEmbalagem, altura_embalagem: ob.alturaEmbalagem, comprimento_embalagem: ob.comprimentoEmbalagem, largura_embalagem: ob.larguraEmbalagem, diametro_embalagem: ob.diametroEmbalagem };
+    for (const k of ['id_produto_pai', 'data_criacao', 'imagens_externas', 'mapeamentos', 'preco_custo_medio', 'tipoEmbalagem', 'alturaEmbalagem', 'comprimentoEmbalagem', 'larguraEmbalagem', 'diametroEmbalagem']) delete prod[k];
     const r = await tiny.chamar('produto.alterar.php', { produto: JSON.stringify({ produtos: [{ produto: { sequencia: '1', ...prod } }] }) });
     const st = r.registros?.[0]?.registro || r.registros?.registro;
     if (st && st.status && st.status !== 'OK') throw new Error('Tiny recusou: ' + JSON.stringify(st.erros || st).slice(0, 200));
     const dep = (await tiny.chamar('produto.obter.php', { id: achado.id })).produto || {};
     if (Math.abs(num(dep.preco_custo) - custo) > 0.005) throw new Error('o Tiny não gravou o custo (ficou ' + dep.preco_custo + ')');
-    if ((ob.anexos || []).length !== (dep.anexos || []).length || String(ob.descricao_complementar || '') !== String(dep.descricao_complementar || ''))
-      console.warn('[precificacao] ATENÇÃO Tiny ' + sku + ': anexos/descrição mudaram depois de alterar o custo');
+    const mud = ['alturaEmbalagem', 'comprimentoEmbalagem', 'larguraEmbalagem', 'peso_liquido', 'peso_bruto', 'descricao_complementar', 'idProdutoPai', 'gtin', 'preco']
+      .filter(k => String(ob[k] ?? '') !== String(dep[k] ?? '')).concat((ob.anexos || []).length !== (dep.anexos || []).length ? ['anexos'] : []);
+    if (mud.length) console.warn('[precificacao] ATENÇÃO Tiny ' + sku + ': mudou ' + mud.join(', ') + ' ao alterar o custo');
   } else {
     const c0 = require('./bling').client(idx);
     const tenta = async (m, ...a) => { for (let i = 0; ; i++) { try { return await c0[m](...a); } catch (e) { if (e.response?.status === 429 && i < 8) { await new Promise(r => setTimeout(r, 700)); continue; } throw e; } } };
