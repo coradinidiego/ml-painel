@@ -51,6 +51,8 @@ function lerAba(ws, tipo) {
   const precos = cab.map((c, i) => (/pre[çc]o|^venda/i.test(c) && !/lucro|%|comiss|desc|custo|oficial|campanha|final/i.test(c)) ? i : -1).filter(i => i >= 0);
   const lucros = cab.map((c, i) => /^lucro/i.test(c) && !/%/.test(c) ? i : -1).filter(i => i >= 0);
   const margens = cab.map((c, i) => /%\s*(de\s*)?(lucro|bruto)/i.test(c) ? i : -1).filter(i => i >= 0);
+  const imps = cab.map((c, i) => /^imposto$/i.test(c) ? i : -1).filter(i => i >= 0);
+  const inss = cab.map((c, i) => /^insumos/i.test(c) ? i : -1).filter(i => i >= 0);
   const linhas = [];
   rows.slice(h + 1).forEach((r, j) => {
     if (!r) return;
@@ -64,6 +66,9 @@ function lerAba(ws, tipo) {
       L.preco = pos(r[precos[0]]); L.promo = pos(r[precos[1]]);
       L.lucro = r2(num(r[lucros[0]])); L.margem = num(r[margens[0]]);
       L.lucroPromo = r2(num(r[lucros[1]])); L.margemPromo = num(r[margens[1]]);
+      // imposto e insumos da planilha (para separar das tarifas do canal); promo usa a 2ª coluna quando existe
+      L.imp = num(r[imps[0]]); L.ins = num(r[inss[0]]);
+      L.impPromo = num(r[imps[1]]); L.insPromo = inss[1] != null ? num(r[inss[1]]) : L.ins;
       if (!(L.preco > 0) && !(L.custo > 0)) return;
     } else if (!(L.custo > 0) && !nome) return;
     linhas.push(L);
@@ -76,7 +81,7 @@ function importar(idx) {
   const f = path.join(DATA, nomeArq);
   let st; try { st = fs.statSync(f); } catch (e) { throw new Error('planilha não encontrada no servidor: ' + nomeArq); }
   const wb = XLSX.readFile(f);
-  const out = { empresa: EMP[idx].nome, arquivo: nomeArq, planilhaEm: new Date(st.mtimeMs).toISOString(), importadoEm: new Date().toISOString(), abas: [] };
+  const out = { versao: 2, empresa: EMP[idx].nome, arquivo: nomeArq, planilhaEm: new Date(st.mtimeMs).toISOString(), importadoEm: new Date().toISOString(), abas: [] };
   for (const aba of wb.SheetNames) {
     const tipo = tipoAba(aba); if (!tipo) continue;
     const r = lerAba(wb.Sheets[aba], tipo); if (!r || !r.linhas.length) continue;
@@ -112,19 +117,36 @@ function dados(idx) {
 }
 async function montar(idx) {
   let F = fotografia(idx);
-  if (!F) F = importar(idx);
+  if (!F || F.versao !== 2) F = importar(idx);   // versão 2: lê também imposto e insumos da planilha
   const cm = require('./custos_ml');
   const erp = await cm.custosErp(idx);
   const erpNome = idx === 2 ? 'Tiny' : 'Bling';
+  const ce = require('./config_empresas').porMlIdx(idx) || {};
+  const cfg = { imposto: ce.imposto ?? 0, insumos: ce.embalagem ?? 0, meta: idx === 2 ? 0.20 : 0.15 };
+  const kits = cm.kits(idx);
   for (const A of F.abas) {
     const R = A.resumo = { linhas: A.linhas.length, iguais: 0, diferentes: 0, semErp: 0 };
     for (const L of A.linhas) {
       const e = custoErp(idx, L, erp, cm);
       if (!e) { L.situacao = 'sem custo no ' + erpNome; R.semErp++; continue; }
-      L.custoErp = r2(e.v); L.fonteErp = e.fonte; L.dif = L.custo != null ? r2(e.v - L.custo) : null;
+      L.custoErp = r2(e.v); L.fonteErp = e.fonte; L.kit = e.fonte !== 'item'; L.dif = L.custo != null ? r2(e.v - L.custo) : null;
       if (L.custo == null) { L.situacao = 'sem custo na planilha'; R.diferentes++; }
       else if (Math.abs(L.dif) < 0.015) { L.situacao = 'igual'; R.iguais++; }
       else { L.situacao = 'diferente'; R.diferentes++; }
+      // Margem do painel: custo do ERP + imposto e insumos da empresa (Conta); tarifas do canal (comissão, taxa fixa,
+      // frete, custo fixo) ficam como estão na planilha. Preço mínimo p/ a meta: tarifas proporcionais ao preço (aproximado).
+      if (A.tipo !== 'base') {
+        const conta = (preco, lucro, imp, ins) => {
+          if (!(preco > 0) || lucro == null || L.custo == null) return null;
+          const taxas = preco - lucro - L.custo - (imp || 0) - (ins || 0);
+          const custo = L.custoErp ?? L.custo, lucroP = preco - custo - taxas - cfg.imposto * preco - cfg.insumos;
+          const den = 1 - taxas / preco - cfg.imposto - cfg.meta;
+          return { lucro: r2(lucroP), margem: lucroP / preco, precoMeta: den > 0.05 ? Math.ceil((custo + cfg.insumos) / den) - 0.01 : null };
+        };
+        const a = conta(L.preco, L.lucro, L.imp, L.ins), b = conta(L.promo, L.lucroPromo, L.impPromo, L.insPromo);
+        if (a) { L.lucroPainel = a.lucro; L.margemPainel = a.margem; L.precoMeta = a.precoMeta; }
+        if (b) { L.lucroPromoPainel = b.lucro; L.margemPromoPainel = b.margem; L.precoMetaPromo = b.precoMeta; }
+      }
       // margem refeita só trocando o custo (o resto das taxas fica como na planilha)
       if (A.tipo !== 'base' && L.dif != null) {
         if (L.preco > 0 && L.lucro != null) L.margemErp = (L.lucro - L.dif) / L.preco;
@@ -132,7 +154,7 @@ async function montar(idx) {
       }
     }
   }
-  return { ...F, erp: erpNome, erpItens: Object.keys(erp).length };
+  return { ...F, erp: erpNome, erpItens: Object.keys(erp).length, cfg };
 }
 
 function pagina(admin) {
@@ -143,7 +165,8 @@ button{background:#0d1b2a;color:#fff;border:none;cursor:pointer;font-weight:600}
 .abas{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.aba{background:#f4f5f7;color:#333;border:1px solid #e3e3e3;font-weight:500;padding:7px 12px}.aba.on{background:#0d1b2a;color:#fff}
 .aba small{opacity:.75}table{width:100%;border-collapse:collapse;font-size:12.5px}td,th{padding:6px 7px;border-bottom:1px solid #f1f1f1;text-align:right;white-space:nowrap}th{position:sticky;top:0;background:#fafafa;font-weight:600}
 .l{text-align:left;white-space:normal}small{color:#888}.ok{color:#2e7d32}.dif{color:#c62828;font-weight:600}.sem{color:#E65100}.neg{color:#c62828}.cards{display:flex;gap:10px;flex-wrap:wrap}
-.card{flex:1;min-width:150px;border:1px solid #eee;border-radius:10px;padding:10px 12px;font-size:13px}.card b{font-size:20px}</style></head><body>
+.mg{display:inline-block;min-width:54px;text-align:center;padding:2px 6px;border-radius:6px;font-weight:600}.m0{background:#ffcdd2;color:#b71c1c}.m1{background:#fff59d;color:#7a5d00}.m2{background:#c8e6c9;color:#1b5e20}.m3{background:#2e7d32;color:#fff}
+.ed{cursor:pointer;color:#1565c0;margin-left:4px;font-size:12px}.card{flex:1;min-width:150px;border:1px solid #eee;border-radius:10px;padding:10px 12px;font-size:13px}.card b{font-size:20px}</style></head><body>
 <div class="top"><b>💲 Precificação</b><span style="font-size:12px;opacity:.75">Etapa 1 · planilha importada × custo do ERP</span><span style="flex:1"></span>
 <select id="emp" onchange="carregar()"><option value="0">Zagodini</option><option value="1">Com Amor de Mãe</option><option value="2">Lufe</option></select>
 <select id="sit" onchange="render()"><option value="dif">Só custos diferentes</option><option value="sem">Sem custo no ERP</option><option value="">Tudo</option></select>
@@ -152,27 +175,72 @@ ${admin ? '<button id="imp" onclick="importar()">⟳ Importar planilha de novo</
 <div class="box" id="info">Carregando… (a primeira leitura dos custos do ERP pode levar 1–2 min)</div><div class="box"><div class="abas" id="abas"></div><div id="lista"></div></div>
 <script>
 let D=null,A=0;const $=id=>document.getElementById(id);const esc=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const brl=v=>v==null?'—':'R$ '+Number(v).toFixed(2).replace('.',',');const pc=v=>v==null||!isFinite(v)?'—':'<span class="'+(v<0.15?'neg':'')+'">'+(v*100).toFixed(1).replace('.',',')+'%</span>';
+const brl=v=>v==null?'—':'R$ '+Number(v).toFixed(2).replace('.',',');const pc=v=>v==null||!isFinite(v)?'—':'<span class="mg '+(v<0.05?'m0':v<0.10?'m1':v<0.15?'m2':'m3')+'">'+(v*100).toFixed(1).replace('.',',')+'%</span>';
 const dt=s=>s?new Date(s).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
 async function carregar(){$('info').textContent='Carregando… (a primeira leitura dos custos do ERP pode levar 1–2 min)';$('abas').innerHTML='';$('lista').innerHTML='';
  const r=await fetch('/precificacao/dados?emp='+$('emp').value);D=await r.json();if(D.erro){$('info').innerHTML='<span class="dif">'+esc(D.erro)+'</span>';return;}A=0;info();render();}
 function info(){const t={l:0,i:0,d:0,s:0};D.abas.forEach(a=>{t.l+=a.resumo.linhas;t.i+=a.resumo.iguais;t.d+=a.resumo.diferentes;t.s+=a.resumo.semErp;});
- $('info').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:10px">Planilha <b>'+esc(D.arquivo)+'</b> (cópia do OneDrive de '+dt(D.planilhaEm)+'), importada em '+dt(D.importadoEm)+'. Custo do ERP: <b>'+D.erp+'</b> ('+D.erpItens+' produtos com custo; kit = soma da composição). A margem "com custo do ERP" refaz o lucro da planilha trocando só o custo.</div>'+
+ $('info').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:10px">Planilha <b>'+esc(D.arquivo)+'</b> (cópia do OneDrive de '+dt(D.planilhaEm)+'), importada em '+dt(D.importadoEm)+'. Custo do ERP: <b>'+D.erp+'</b> ('+D.erpItens+' produtos com custo; kit = soma da composição). <b>Margem do painel</b> = custo do ERP + imposto ('+(D.cfg.imposto*100).toFixed(1).replace('.',',')+'%) e insumos (R$ '+D.cfg.insumos.toFixed(2).replace('.',',')+') da empresa, com as tarifas do canal como estão na planilha. <b>Preço p/ meta</b> = preço mínimo para '+Math.round(D.cfg.meta*100)+'% de margem (aproximado). Cores: <span class="mg m0">&lt;5%</span> <span class="mg m1">5–9,99%</span> <span class="mg m2">10–14,99%</span> <span class="mg m3">15%+</span>. ✎ altera o custo direto no '+D.erp+' (kits não: o custo deles é a soma dos itens).</div>'+
  '<div class="cards"><div class="card">Linhas importadas<br><b>'+t.l+'</b></div><div class="card">Custo igual ao ERP<br><b class="ok">'+t.i+'</b></div><div class="card">Custo diferente<br><b class="dif">'+t.d+'</b></div><div class="card">Sem custo no ERP<br><b class="sem">'+t.s+'</b></div></div>';
  $('abas').innerHTML=D.abas.map((a,i)=>'<button class="aba'+(i===A?' on':'')+'" onclick="A='+i+';render()">'+esc(a.aba)+' <small>'+a.resumo.diferentes+' dif · '+a.resumo.semErp+' sem ERP</small></button>').join('');}
 function render(){if(!D||D.erro)return;info();const a=D.abas[A],s=$('sit').value,q=$('q').value.toLowerCase();
  let L=a.linhas.filter(l=>(!s||(s==='dif'?/diferente|sem custo na/.test(l.situacao):/sem custo no/.test(l.situacao)))&&(!q||(l.sku+' '+l.nome).toLowerCase().includes(q)));
  const base=a.tipo==='base';
  $('lista').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:8px">'+L.length+' de '+a.linhas.length+' linhas · colunas de preço lidas: '+esc((a.colunas.precos||[]).join(', ')||'—')+'</div><table><tr><th class="l">Código</th><th class="l">Produto</th><th>Qtd</th><th>Custo planilha</th><th>Custo ERP</th><th>Diferença</th>'+
- (base?'':'<th>Preço</th><th>Margem planilha</th><th>Margem c/ custo ERP</th><th>Promoção</th><th>Margem planilha</th><th>Margem c/ custo ERP</th>')+'</tr>'+
+ (base?'':'<th>Preço</th><th>Margem planilha</th><th>Margem painel</th><th>Preço p/ meta</th><th>Promoção</th><th>Margem planilha</th><th>Margem painel</th><th>Preço p/ meta</th>')+'</tr>'+
  L.slice(0,2000).map(l=>'<tr><td class="l">'+esc(l.sku)+'<br><small>linha '+l.linha+'</small></td><td class="l">'+esc(l.nome)+'</td><td>'+l.qtd+'</td><td>'+brl(l.custo)+'</td>'+
- '<td>'+(l.custoErp!=null?brl(l.custoErp)+(l.fonteErp&&l.fonteErp!=='item'?'<br><small>'+esc(l.fonteErp)+'</small>':''):'<span class="sem">'+esc(l.situacao)+'</span>')+'</td>'+
+ '<td>'+(l.custoErp!=null?brl(l.custoErp)+(l.fonteErp&&l.fonteErp!=='item'?'<br><small>'+esc(l.fonteErp)+'</small>':''):'<span class="sem">'+esc(l.situacao)+'</span>')+(!l.kit?'<span class="ed" title="Alterar o custo no '+D.erp+'" onclick="editar(\\''+esc(l.sku)+'\\','+(l.custoErp??l.custo??0)+','+l.qtd+')">✎</span>':'')+'</td>'+
  '<td class="'+(l.situacao==='diferente'?'dif':'')+'">'+(l.dif==null?'—':(l.dif>0?'+':'')+brl(l.dif))+'</td>'+
- (base?'':'<td>'+brl(l.preco)+'</td><td>'+pc(l.margem)+'</td><td>'+pc(l.margemErp)+'</td><td>'+brl(l.promo)+'</td><td>'+pc(l.margemPromo)+'</td><td>'+pc(l.margemPromoErp)+'</td>')+'</tr>').join('')+'</table>';}
+ (base?'':'<td>'+brl(l.preco)+'</td><td>'+pc(l.margem)+'</td><td>'+pc(l.margemPainel)+'</td><td>'+brl(l.precoMeta)+'</td><td>'+brl(l.promo)+'</td><td>'+pc(l.margemPromo)+'</td><td>'+pc(l.margemPromoPainel)+'</td><td>'+brl(l.precoMetaPromo)+'</td>')+'</tr>').join('')+'</table>';}
+async function editar(sku,atual,qtd){
+ if(qtd>1&&!confirm('Esta linha é de '+qtd+' unidades. O custo alterado é o do código '+sku+' no '+D.erp+'. Continuar?'))return;
+ const v=prompt('Novo custo de '+sku+' no '+D.erp+' (R$):',String(atual).replace('.',','));if(v==null)return;
+ const n=parseFloat(String(v).replace(',','.'));if(!(n>0))return alert('Valor inválido');
+ const r=await fetch('/precificacao/custo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emp:$('emp').value,sku,custo:n})}).then(r=>r.json());
+ if(r.erro)return alert('Não gravou: '+r.erro);
+ const aba=A;const x=await fetch('/precificacao/dados?emp='+$('emp').value);D=await x.json();A=aba;render();}
 async function importar(){if(!confirm('Importar de novo a planilha desta empresa? A fotografia atual no painel é substituída.'))return;$('imp').disabled=true;
  const r=await fetch('/precificacao/importar?emp='+$('emp').value,{method:'POST'}).then(r=>r.json());$('imp').disabled=false;if(r.erro)return alert(r.erro);carregar();}
 carregar();
 </script></body></html>`;
+}
+
+// ─── Alterar custo (grava no ERP) ──────────────────────────────────────────
+const ARQ_ED = path.join(DIR, 'edicoes.json');
+async function gravarCusto(idx, sku, custo, quem) {
+  sku = K(sku); if (!sku) throw new Error('código vazio');
+  if (!(custo > 0) || custo > 100000) throw new Error('custo inválido');
+  const cm = require('./custos_ml');
+  if (Array.isArray(cm.kits(idx)[sku]) && cm.kits(idx)[sku].length) throw new Error('é kit: o custo é a soma dos componentes — altere o custo dos itens');
+  let de = null;
+  if (idx === 2) {
+    const t3 = require('./tiny3');
+    const r = await t3.get('/produtos', { codigo: sku, limit: 5 });
+    const p = (r.itens || r.data || []).find(x => K(x.sku || x.codigo) === sku);
+    if (!p) throw new Error('produto ' + sku + ' não encontrado no Tiny');
+    const det = await t3.get('/produtos/' + p.id);
+    if ((det.tipo || '').toUpperCase() === 'K') throw new Error('é kit no Tiny: altere o custo dos componentes');
+    de = det.precos?.precoCusto ?? null;
+    await t3.put('/produtos/' + p.id, { precos: { ...(det.precos || {}), precoCusto: custo } });
+  } else {
+    const c = require('./bling').client(idx);
+    const r = await c.get('/produtos', { params: { codigo: sku } });
+    const p = (r.data?.data || []).find(x => K(x.codigo) === sku);
+    if (!p) throw new Error('produto ' + sku + ' não encontrado no Bling');
+    if (p.formato === 'E') throw new Error('é kit (composição) no Bling: altere o custo dos componentes');
+    const fs_ = (await c.get('/produtos/fornecedores', { params: { idProduto: p.id } })).data?.data || [];
+    const f = fs_.find(x => x.padrao) || fs_[0];
+    if (!f) throw new Error('produto sem fornecedor cadastrado no Bling: cadastre o fornecedor (o custo fica nele)');
+    de = f.precoCusto ?? null;
+    await c.put('/produtos/fornecedores/' + f.id, { descricao: f.descricao, codigo: f.codigo, precoCusto: custo, precoCompra: f.precoCompra, padrao: !!f.padrao, produto: { id: p.id }, fornecedor: { id: f.fornecedor?.id } });
+  }
+  cm.setCustoErp(idx, sku, custo);
+  delete _cache[idx];
+  let L = []; try { L = JSON.parse(fs.readFileSync(ARQ_ED)); } catch (e) {}
+  L.push({ quando: new Date().toISOString(), quem, emp: idx, sku, de, para: custo });
+  fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(ARQ_ED, JSON.stringify(L.slice(-5000)));
+  console.log(`[precificacao] custo ${EMP[idx].nome} ${sku}: ${de} → ${custo} (${quem})`);
+  return { sku, de, para: custo };
 }
 
 function rotas(app) {
@@ -182,6 +250,12 @@ function rotas(app) {
     const idx = parseInt(req.query.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' });
     try { res.json(await dados(idx)); } catch (e) { res.status(500).json({ erro: e.message }); }
   });
+  app.post('/precificacao/custo', require('express').json(), async (req, res) => {
+    const idx = parseInt(req.body?.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' });
+    try { res.json({ ok: true, ...(await gravarCusto(idx, req.body.sku, num(req.body.custo), req.usuario?.email || 'local')) }); }
+    catch (e) { res.status(400).json({ erro: e.response?.data?.error?.description || e.message }); }
+  });
+  app.get('/precificacao/edicoes', (req, res) => { try { res.json(JSON.parse(fs.readFileSync(ARQ_ED)).slice(-300).reverse()); } catch (e) { res.json([]); } });
   app.post('/precificacao/importar', (req, res) => {
     if (!admin(req)) return res.status(403).json({ erro: 'só o administrador importa a planilha' });
     const idx = parseInt(req.query.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' });

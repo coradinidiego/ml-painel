@@ -56,6 +56,20 @@ async function get(p, params) {
   throw new Error('Tiny v3: limite de requisições');
 }
 
+/** PUT na API v3 (ex.: alterar o custo do produto). Repete em 429/5xx. */
+async function put(p, body) {
+  for (let i = 0; i < 5; i++) {
+    try { return (await axios.put(API + p, body, { headers: { Authorization: 'Bearer ' + await accessToken() }, timeout: 30000 })).data; }
+    catch (e) {
+      const s = e.response?.status;
+      if (s === 429 || s >= 500) { await delay(3000 * (i + 1)); continue; }
+      if (s === 401 && i === 0) { const t = ler(ARQ_TOK, {}); t.expira = 0; gravar(ARQ_TOK, t); continue; }
+      throw new Error(`Tiny v3 PUT ${p}: ${s || ''} ${JSON.stringify(e.response?.data || e.message).slice(0, 300)}`);
+    }
+  }
+  throw new Error('Tiny v3: limite de requisições');
+}
+
 // data do Tiny ("2026-10-20", "2026-10-20 10:00:00" ou "20/10/2026") → AAAA-MM-DD
 const dia = s => { s = String(s || ''); const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/); return m ? `${m[3]}-${m[2]}-${m[1]}` : s.slice(0, 10); };
 const num = v => { const n = parseFloat(String(v ?? '').replace(',', '.')); return isNaN(n) ? 0 : n; };
@@ -166,3 +180,5 @@ module.exports = function (app) {
     if (h.getUTCHours() === 2 && (!ST.ok || ST.ok.slice(0, 10) !== new Date().toISOString().slice(0, 10))) importar().catch(() => {});
   }, 20 * 60e3).unref?.();
 };
+module.exports.get = get;
+module.exports.put = put;

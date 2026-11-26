@@ -389,6 +389,13 @@ async function margemPreco(ml, idx, uid, it, preco, rebate = 0, erp) {
   return { preco: r2(preco), custo: r2(cf.v), tarifa: r2(t.valor), frete: r2(frete), imposto: r2(imposto), embalagem: r2(emb), rebate: r2(rebate || 0), lucro: r2(lucro), pct: Math.round(lucro / preco * 1000) / 10 };
 }
 
+/** Atualiza o custo de um SKU no cache do ERP (depois de gravar no Bling/Tiny pelo painel) */
+function setCustoErp(idx, sku, v) {
+  if (!_erp[idx]) _erp[idx] = { ts: 0, mapa: {} };
+  _erp[idx].mapa[K(sku)] = v;
+  try { fs.writeFileSync(path.join(DATA, 'apuracao_cache', `custos_erp_v2_${idx}.json`), JSON.stringify(_erp[idx])); } catch (e) {}
+  registrarHistorico(idx, { [K(sku)]: v });
+}
 function recarregarErp(idx) { if (_erp[idx]) _erp[idx].ts = 0; }
 
-module.exports = { salvarKits, kits, custoKit, custosNaData, historico, salvarHistorico, PLANILHAS, fixosCanal, recarregarErp, calcularMargens, margemPreco, custoSku, custosConta, custosErp, custoComFonte, aliquota };
+module.exports = { setCustoErp, salvarKits, kits, custoKit, custosNaData, historico, salvarHistorico, PLANILHAS, fixosCanal, recarregarErp, calcularMargens, margemPreco, custoSku, custosConta, custosErp, custoComFonte, aliquota };
