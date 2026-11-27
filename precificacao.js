@@ -407,10 +407,10 @@ let LV=[];
 const nf=v=>v==null?'':Number(v).toFixed(2).replace('.',',');
 function inp(j,c,v){return '<input class="pr" id="i_'+j+'_'+c+'" value="'+nf(v)+'" oninput="sim('+j+',\\''+c+'\\')" style="width:78px;text-align:right;padding:4px 6px;font-size:12.5px"><span class="ed" id="s_'+j+'_'+c+'" style="display:none" title="Gravar este preço" onclick="gravarSim('+j+',\\''+c+'\\')">💾</span>';}
 function margemCalc(l,tipo,preco,promo){const custo=l.custoErp??l.custo;if(!(preco>0)||custo==null)return null;const t=tarifas(tipo,preco,{...l,peso:pw(l)},promo,D.mlFrete,(D.comPadrao||{})[D.abas[A].aba]);if(t==null)return null;return (preco-custo-t-D.cfg.imposto*preco-D.cfg.insumos)/preco;}
-function sim(j,c){const l=LV[j],el=$('i_'+j+'_'+c),v=parseFloat(el.value.replace(/\./g,'').replace(',','.'));const tipo=D.abas[A].tipo;
+function sim(j,c){const l=LV[j],el=$('i_'+j+'_'+c),v=parseFloat(el.value.replace(/[^0-9,]/g,'').replace(',','.'));const tipo=D.abas[A].tipo;
  const m=margemCalc(l,tipo,v,c==='promo');$('m_'+j+'_'+c).innerHTML=pc(m)+(m!=null?'<br><small>lucro '+brl(m*v)+'</small>':'');
  const mud=!(Math.abs((v||0)-(l[c]||0))<0.005);$('s_'+j+'_'+c).style.display=mud?'':'none';el.style.background=mud?'#fff8e1':'';}
-async function gravarSim(j,c){const l=LV[j],a=D.abas[A],v=$('i_'+j+'_'+c).value.trim();const b={emp:$('emp').value,aba:a.aba,sku:l.sku};b[c]=v===''?null:parseFloat(v.replace(/\./g,'').replace(',','.'));
+async function gravarSim(j,c){const l=LV[j],a=D.abas[A],v=$('i_'+j+'_'+c).value.trim();const b={emp:$('emp').value,aba:a.aba,sku:l.sku};b[c]=v===''?null:parseFloat(v.replace(/[^0-9,]/g,'').replace(',','.'));
  const r=await fetch('/precificacao/preco',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());if(r.erro)return alert(r.erro);
  const aba=A;D=await (await fetch('/precificacao/dados?emp='+$('emp').value)).json();A=aba;render();}
 async function conferir(){const b=$('btconf'),e=$('emp').value;b.disabled=true;await fetch('/precificacao/conferir?emp='+e,{method:'POST'});let st;
