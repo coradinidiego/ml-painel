@@ -121,7 +121,24 @@ function setCookie(req, res, valor, maxAgeSeg) {
 // ─── Proteção contra tentativas repetidas ──────────────────────────────────
 const tentativas = new Map(); // ip -> {n, ate}
 function bloqueado(ip) { const t = tentativas.get(ip); return t && t.n >= 10 && t.ate > Date.now(); }
-function falhou(ip) { const t = tentativas.get(ip) || { n: 0, ate: 0 }; if (t.ate < Date.now()) t.n = 0; t.n++; t.ate = Date.now() + 15 * 60e3; tentativas.set(ip, t); }
+function falhou(ip) { const t = tentativas.get(ip) || { n: 0, ate: 0 }; if (t.ate < Date.now()) t.n = 0; t.n++; t.ate = Date.now() + 15 * 60e3; tentativas.set(ip, t); falhouFaixa(ip); }
+// Robôs trocam de IP dentro da mesma faixa (ex.: 152.233.x.x): 8 erros da mesma faixa em 1 hora bloqueiam a faixa por 24 horas
+// (só a tela de login; quem já está logado continua usando normalmente) e avisa no Telegram uma vez.
+const faixas = new Map(); // a.b -> {n, desde, ate, avisado}
+const faixaDe = ip => { const m = String(ip || '').replace(/^::ffff:/, '').match(/^(\d+)\.(\d+)\./); return m ? m[1] + '.' + m[2] : null; };
+function faixaBloqueada(ip) { const f = faixas.get(faixaDe(ip)); return !!(f && f.ate > Date.now()); }
+function falhouFaixa(ip) {
+  const k = faixaDe(ip); if (!k) return;
+  const f = faixas.get(k) || { n: 0, desde: Date.now(), ate: 0, avisado: false };
+  if (Date.now() - f.desde > 3600e3 && !(f.ate > Date.now())) { f.n = 0; f.desde = Date.now(); }
+  f.n++;
+  if (f.n >= 8 && !(f.ate > Date.now())) {
+    f.ate = Date.now() + 24 * 3600e3;
+    console.warn(`[auth] faixa ${k}.x.x bloqueada por 24 h (${f.n} tentativas de login erradas)`);
+    if (!f.avisado) { f.avisado = true; try { require('./telegram').sendTelegram(`🔒 Painel: ${f.n} tentativas de login erradas vindas da faixa ${k}.x.x em menos de 1 hora (provável robô). Faixa bloqueada por 24 horas; ninguém entrou.`); } catch (e) {} }
+  }
+  faixas.set(k, f);
+}
 
 // ─── Páginas ───────────────────────────────────────────────────────────────
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -291,7 +308,7 @@ function montar(app) {
   app.get('/login', (req, res) => { if (!ativo()) return res.redirect('/'); res.send(paginaLogin(null, req.query.next)); });
   app.post('/login', form, (req, res) => {
     const ip = req.ip;
-    if (bloqueado(ip)) return res.status(429).send(paginaLogin('Muitas tentativas. Aguarde 15 minutos.'));
+    if (bloqueado(ip) || faixaBloqueada(ip)) { registrarLogin(req, normEmail(req.body.email), false, 'bloqueado (muitas tentativas)'); return res.status(429).send(paginaLogin('Muitas tentativas. Aguarde e tente mais tarde.')); }
     const u = lerUsuarios().find(x => x.email === normEmail(req.body.email));
     if (!u || !confere(u, req.body.senha || '')) { falhou(ip); registrarLogin(req, normEmail(req.body.email), false, u ? 'senha errada' : 'e-mail não cadastrado'); return res.status(401).send(paginaLogin('E-mail ou senha incorretos.', req.body.next)); }
     tentativas.delete(ip); registrarLogin(req, u.email, true);
