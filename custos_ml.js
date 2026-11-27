@@ -25,7 +25,19 @@ const num = v => { const n = typeof v === 'number' ? v : parseFloat(String(v ?? 
 
 // ─── Custos por SKU a partir da planilha ───────────────────────────────────
 const _custos = {};
+/** Custo de cada código na Precificação do painel (substitui a planilha a partir de 26/11/2026) */
+function custosPainel(idx) {
+  const arq = path.join(DATA, 'precificacao', `emp_${idx}.json`);
+  let mtime; try { mtime = fs.statSync(arq).mtimeMs; } catch (e) { return null; }
+  if (_custos['p' + idx]?.mtime === mtime) return _custos['p' + idx].mapa;
+  const F = JSON.parse(fs.readFileSync(arq)), mapa = {};
+  const ordem = [...F.abas].sort((a, b) => (a.tipo === 'ml' ? 0 : a.tipo === 'base' ? 1 : 2) - (b.tipo === 'ml' ? 0 : b.tipo === 'base' ? 1 : 2));
+  for (const A of ordem) for (const L of A.linhas) { const s = K(L.sku); if (s && !(s in mapa) && L.custo > 0) mapa[s] = L.custo; }
+  _custos['p' + idx] = { mtime, mapa };
+  return mapa;
+}
 function custosConta(idx) {
+  try { const m = custosPainel(idx); if (m) return m; } catch (e) { console.warn('[custos] precificação do painel', idx, e.message); }
   const arq = path.join(DATA, PLANILHAS[idx] || '');
   let mtime; try { mtime = fs.statSync(arq).mtimeMs; } catch (e) { return null; }
   if (_custos[idx]?.mtime === mtime) return _custos[idx].mapa;
@@ -65,6 +77,12 @@ function custosConta(idx) {
 // ─── Custo fixo por SKU de uma aba de canal (ex.: Shein "Custo Fixo") ───────
 const _fixos = {};
 function fixosCanal(idx, canal) {
+  // Precificação do painel: custo fixo da linha (SHEIN) — substitui a planilha
+  try {
+    const F = JSON.parse(fs.readFileSync(path.join(DATA, 'precificacao', `emp_${idx}.json`)));
+    const re = new RegExp('^\\s*' + canal.replace(/\s+/g, '\\s*') + '\\s*$', 'i'), A = F.abas.find(a => re.test(a.aba) || re.test(a.abaPlanilha || ''));
+    if (A) { const m = {}; for (const L of A.linhas) { const s = K(L.sku), v = L.p?.fixo; if (s && !(s in m) && v != null && v >= 0 && v < 100) m[s] = v; } return m; }
+  } catch (e) {}
   const arq = path.join(DATA, PLANILHAS[idx] || '');
   let mtime; try { mtime = fs.statSync(arq).mtimeMs; } catch (e) { return {}; }
   const ck = idx + '|' + canal;
@@ -219,7 +237,7 @@ function custoKit(idx, sku, mapa) {
 function custoComFonte(idx, sku, erp) {
   const k = custoKit(idx, sku, erp); if (k != null) return { v: k, fonte: (idx === 2 ? 'Tiny' : 'Bling') + ' (kit)' };
   const e = procurar(erp, sku); if (e != null) return { v: e, fonte: idx === 2 ? 'Tiny' : 'Bling' };
-  const p = procurar(custosConta(idx), sku); if (p != null) return { v: p, fonte: 'planilha' };
+  const p = procurar(custosConta(idx), sku); if (p != null) return { v: p, fonte: 'planilha' };   // 'planilha' = Precificação do painel (nome mantido: as apurações tratam como custo de fora do ERP)
   return null;
 }
 
