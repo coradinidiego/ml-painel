@@ -223,6 +223,15 @@ function rotas(app, fontes) {
     res.json(out);
   });
   const req_ = req;
+  // diagnóstico (admin): chamada livre à API de Publicidade do ML — só caminhos /advertising ou /marketplace/advertising
+  app.post('/ml/ads/:idx/req', require('express').json(), async (rq, res) => {
+    if (!admin(rq)) return res.status(403).json({ erro: 'só admin' });
+    const idx = parseInt(rq.params.idx), b = rq.body || {}, m = String(b.method || 'get').toLowerCase();
+    if (!/^\/(marketplace\/)?advertising\//.test(String(b.path || '')) || !['get', 'put', 'post'].includes(m)) return res.status(400).json({ erro: 'caminho/método não permitido' });
+    try { const adv = await anunciante(idx); const path = String(b.path).replace('{adv}', adv.id).replace('{site}', adv.site);
+      res.json({ ok: true, data: await req(idx, m, path, { params: b.params, data: b.data, versao: b.versao || 2 }) }); }
+    catch (e) { res.status(400).json({ erro: (e.response?.status || '') + ' ' + e.message, body: e.response?.data }); }
+  });
   app.post('/ml/ads/:idx/acao', require('express').json(), async (rq, res) => {
     const idx = parseInt(rq.params.idx), item = String(rq.body?.item || '');
     const body = {};
