@@ -29,7 +29,7 @@ const arq = idx => path.join(DIR, `emp_${idx}.json`);
 // ─── Regras de tarifa por canal (copiadas das fórmulas das planilhas) ─────────
 // ML: comissão = preço × % da linha (fórmula "=G2*0,115"); taxa fixa/frete pela tabela ML_FRETE (peso da linha × faixa de preço);
 //     + "Frete Grátis" informado na linha; na promoção soma o "Desc. comissão".
-// Shopee: comissão 20% até 79,99 e 14% acima; taxa fixa 4,50 até 79,99 (promoção: 4) · 16 até 99,99 · 20 até 199,99 · 26 acima.
+// Shopee: comissão 20% até 79,99 e 14% acima; taxa fixa 4,50 até 79,99 · 16 até 99,99 · 20 até 199,99 · 26 acima (na promoção, mesma regra pelo preço da promoção).
 // Amazon: comissão 12%; custo fixo 4,50 até 30 · 6,50 até 49,99 · 6,75 até 78,99 · 0 acima; + "Frete Grátis" da linha.
 // SHEIN: comissão 18% + custo fixo (frete pelo peso) + "Frete Grátis" da linha; promoção = preço − % desconto.
 // TikTok: comissão 16% abaixo de 50 e 12% acima; custo fixo 4 abaixo de 50 e 6 acima; promoção desconta o % de afiliado.
@@ -75,7 +75,7 @@ function tarifas(tipo, preco, L, promo, T, padraoCom) {
     if (fixa == null) { if (p.taxa == null) return null; fixa = p.taxa; }   // aba sem peso (ML Premium): taxa da linha
     return com + fixa + (p.frete || 0) - (promo ? (p.descCom || 0) : 0);
   }
-  if (tipo === 'shopee') return (preco <= 79.99 ? preco * 0.2 : preco * 0.14) + (preco <= 79.99 ? (promo ? 4 : 4.5) : preco <= 99.99 ? 16 : preco <= 199.99 ? 20 : 26);
+  if (tipo === 'shopee') return (preco <= 79.99 ? preco * 0.2 : preco * 0.14) + (preco <= 79.99 ? 4.5 : preco <= 99.99 ? 16 : preco <= 199.99 ? 20 : 26);
   if (tipo === 'amazon') return preco * 0.12 + (preco <= 30 ? 4.5 : preco < 50 ? 6.5 : preco < 79 ? 6.75 : 0) + (p.frete || 0);
   if (tipo === 'shein') { const fixo = p.fixo ?? sheinFrete(L.peso ?? p.peso); if (fixo == null) return null; return preco * 0.18 + fixo + (p.frete || 0); }
   if (tipo === 'tiktok') return (preco < 50 ? preco * 0.16 : preco * 0.12) + (preco < 50 ? 4 : 6) + (promo ? preco * (p.afiliado || 0) : 0);
@@ -366,7 +366,7 @@ async function carregar(){$('info').textContent='Carregando… (a primeira leitu
  const r=await fetch('/precificacao/dados?emp='+$('emp').value);D=await r.json();if(D.erro){$('info').innerHTML='<span class="dif">'+esc(D.erro)+'</span>';return;}A=0;info();render();}
 const abaixo=l=>(l.margemPainel!=null&&l.margemPainel<D.cfg.meta)||(l.margemPromoPainel!=null&&l.margemPromoPainel<D.cfg.meta);
 function info(){const t={l:0,c:0,s:0,m:0};D.abas.forEach(a=>{t.l+=a.resumo.linhas;t.s+=a.resumo.semErp;t.c+=a.resumo.linhas-a.resumo.semErp;if(a.tipo!=='base')t.m+=a.linhas.filter(abaixo).length;});
- $('info').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:10px"><b>Custo</b> = custo da precificação; <b>Custo ERP</b> = custo do '+D.erp+' (kit = soma da composição; ✎ altera direto no '+D.erp+'). <b>Margem</b> = preço − custo − tarifas do canal (regra da planilha: ML comissão + tabela de frete pelo peso; Shopee e TikTok por faixa de preço; Amazon 12% + custo fixo; SHEIN 18% + frete pelo peso) − imposto ('+(D.cfg.imposto*100).toFixed(1).replace('.',',')+'%) − insumos (R$ '+D.cfg.insumos.toFixed(2).replace('.',',')+'). <b>Preço p/ meta</b> = menor preço terminado em ,99 com '+Math.round(D.cfg.meta*100)+'% de margem. Cores: <span class="mg m0">&lt;5%</span> <span class="mg m1">5–9,99%</span> <span class="mg m2">10–14,99%</span> <span class="mg m3">15%+</span>. <small>Itens importados da planilha em '+dt(D.importadoEm)+'.</small></div>'+
+ $('info').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:10px"><b>Custo</b> = custo da precificação; <b>Custo ERP</b> = custo do '+D.erp+' (kit = soma da composição; ✎ altera direto no '+D.erp+'). <b>Margem</b> = preço − custo − tarifas do canal (regra da planilha: ML comissão + tabela de frete pelo peso; Shopee e TikTok por faixa de preço (na promoção, pelo preço da promoção); Amazon 12% + custo fixo; SHEIN 18% + frete pelo peso) − imposto ('+(D.cfg.imposto*100).toFixed(1).replace('.',',')+'%) − insumos (R$ '+D.cfg.insumos.toFixed(2).replace('.',',')+'). <b>Preço p/ meta</b> = menor preço terminado em ,99 com '+Math.round(D.cfg.meta*100)+'% de margem. Cores: <span class="mg m0">&lt;5%</span> <span class="mg m1">5–9,99%</span> <span class="mg m2">10–14,99%</span> <span class="mg m3">15%+</span>. <small>Itens importados da planilha em '+dt(D.importadoEm)+'.</small></div>'+
  '<div class="cards"><div class="card">Itens<br><b>'+t.l+'</b></div><div class="card">Com custo<br><b class="ok">'+t.c+'</b></div><div class="card">Sem custo<br><b class="sem">'+t.s+'</b></div><div class="card">Abaixo da meta ('+Math.round(D.cfg.meta*100)+'%)<br><b class="dif">'+t.m+'</b></div></div>';
  $('abas').innerHTML=D.abas.map((a,i)=>'<button class="aba'+(i===A?' on':'')+'" onclick="A='+i+';render()">'+esc(a.aba)+(a.resumo.semErp?' <small>'+a.resumo.semErp+' sem custo</small>':'')+'</button>').join('');}
 function render(){if(!D||D.erro)return;info();const a=D.abas[A],s=$('sit').value,q=$('q').value.toLowerCase();
