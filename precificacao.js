@@ -420,10 +420,12 @@ async function conferir(){const b=$('btconf'),e=$('emp').value;b.disabled=true;a
 function fechar(){$('mod').style.display='none';}
 function abrir(h){$('modc').innerHTML=h;$('mod').style.display='flex';}
 const brn=v=>v==null||v===''?'—':(typeof v==='number'?brl(v):esc(v));
-async function hist(sku){abrir('Carregando…');const H=await fetch('/precificacao/historico?emp='+$('emp').value+'&sku='+encodeURIComponent(sku)).then(r=>r.json());
+async function hist(sku){abrir('Carregando…');const R=await fetch('/precificacao/historico?emp='+$('emp').value+'&sku='+encodeURIComponent(sku)).then(r=>r.json());const H=R.edicoes||[];
  let ult=null;D.abas.forEach(a=>a.linhas.forEach(l=>{if(l.sku===sku&&!ult)ult=l;}));
  abrir('<b>'+esc(sku)+'</b> '+(ult?esc(ult.nome):'')+'<p>Custo atual: <b>'+brl(ult&&ult.custo)+'</b> · lançado em '+dt(ult&&ult.custoEm)+' por <b>'+esc(ult&&ult.custoPor||'—')+'</b></p>'+
  (H.length?'<table><tr><th class="l">Quando</th><th class="l">Quem</th><th class="l">Onde</th><th class="l">De</th><th class="l">Para</th></tr>'+H.map(x=>'<tr><td class="l">'+dt(x.quando)+'</td><td class="l">'+esc(x.quem)+'</td><td class="l">'+esc(x.onde||'')+'</td><td class="l">'+brn(x.de)+'</td><td class="l">'+brn(x.para)+'</td></tr>').join('')+'</table>':'<p><small>Sem alterações no painel (custo veio da planilha).</small></p>')+
+ '<p><b>Custo no '+esc(R.erpNome)+' por data</b> <small>(usado na apuração: cada venda pega o custo vigente no dia dela; mudanças feitas direto no ERP também entram, na atualização dos custos)</small></p>'+
+ ((R.erp||[]).length?'<table><tr><th class="l">A partir de</th><th class="l">Custo</th></tr>'+R.erp.map(x=>'<tr><td class="l">'+esc(String(x[0]).split('-').reverse().join('/'))+'</td><td class="l">'+brl(x[1])+'</td></tr>').join('')+'</table>':'<p><small>Sem histórico no '+esc(R.erpNome)+' (kit: o custo é a soma dos componentes, cada um com o seu histórico).</small></p>')+
  '<p><button onclick="fechar()">Fechar</button></p>');}
 async function editPreco(sku,campo,atual){const a=D.abas[A];const v=prompt((campo==='preco'?'Preço cheio':'Preço de promoção')+' de '+sku+' em '+a.aba+' (R$; vazio = sem):',atual?String(atual).replace('.',','):'');if(v==null)return;
  const b={emp:$('emp').value,aba:a.aba,sku};b[campo]=v.trim()===''?null:parseFloat(v.replace(',','.'));
@@ -769,7 +771,11 @@ function rotas(app, deps = {}) {
     res.json(atualizarErp(idx));
   });
   app.get('/precificacao/atualizar-erp', (req, res) => res.json(_atual[parseInt(req.query.emp)] || {}));
-  app.get('/precificacao/historico', (req, res) => res.json(historicoSku(parseInt(req.query.emp), String(req.query.sku || ''))));
+  app.get('/precificacao/historico', (req, res) => {
+    const idx = parseInt(req.query.emp), sku = String(req.query.sku || ''), z = v => K(v).replace(/^0+(?=.)/, '');
+    let erp = []; try { const h = require('./custos_ml').historico(idx); const k = Object.keys(h).find(x => z(x) === z(sku)); erp = k ? h[k].slice(-40).reverse() : []; } catch (e) {}
+    res.json({ edicoes: historicoSku(idx, sku), erp, erpNome: idx === 2 ? 'Tiny' : 'Bling' });
+  });
   app.get('/precificacao/buscar', async (req, res) => {
     const idx = parseInt(req.query.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' });
     try { res.json(await buscarItem(idx, req.query.sku)); } catch (e) { res.status(400).json({ erro: e.message }); }

@@ -104,15 +104,17 @@ function calcular(lista, cfg) {
   // "SKU-3" = 3 × SKU (só sufixo de 1 a 100); sufixo maior é outro código (kit "A-B" de dois produtos), não quantidade
   const semSufixo = s => { const m = s.match(/^(.*)-(\d+)$/); return m && parseInt(m[2]) >= 1 && parseInt(m[2]) <= 100 ? [m[1], parseInt(m[2])] : [s, 1]; };
   const composto = (s, T) => { const p = s.split('-'); return p.length >= 2 && p.every(x => x && x in T) ? p.reduce((t, x) => t + T[x], 0) : null; };
-  const custo = s => {
-    if (s in P.base) return [P.base[s], 'Base'];
-    if (s in P.kits) return [P.kits[s], 'Kit (aba canal)'];
+  // Custo: o do Tiny vigente na data da venda (histórico de custos do painel: cada mudança fica gravada com a data);
+  // sem custo no Tiny, o Custo da Precificação do painel; a planilha antiga só como último recurso
+  const cmod = require('./custos_ml');
+  const custo = (s, dataIso) => {
+    if (cfg.erp) { try { const f = cmod.custoComFonte(2, s, dataIso ? cmod.custosNaData(2, dataIso, cfg.erp) : cfg.erp); if (f) return [f.v, f.fonte === 'planilha' ? 'Precificação' : f.fonte + (dataIso ? ' (custo em ' + dataIso.split('-').reverse().join('/') + ')' : '')]; } catch (e) {} }
+    if (s in P.base) return [P.base[s], 'Planilha (Base)'];
+    if (s in P.kits) return [P.kits[s], 'Planilha (kit)'];
     const [b, q] = semSufixo(s);
-    if (b !== s && b in P.base) return [P.base[b] * q, 'Base x qtd kit'];
-    const c = composto(s, P.base); if (c != null) return [c, 'Base (soma dos itens do kit)'];
-    const v = s.match(/^(.+)-[A-Za-zÀ-ú]+$/); if (v && v[1] in P.base) return [P.base[v[1]], 'Base (variação de cor)'];   // "VEN0003-PRETO" = VEN0003
-    // fora da planilha: usa o custo cadastrado no Tiny (produto ou composição do kit)
-    if (cfg.erp) { try { const f = require('./custos_ml').custoComFonte(2, s, cfg.erp); if (f && f.fonte !== 'planilha') return [f.v, f.fonte]; } catch (e) {} }
+    if (b !== s && b in P.base) return [P.base[b] * q, 'Planilha (Base x qtd kit)'];
+    const c = composto(s, P.base); if (c != null) return [c, 'Planilha (soma dos itens do kit)'];
+    const v = s.match(/^(.+)-[A-Za-zÀ-ú]+$/); if (v && v[1] in P.base) return [P.base[v[1]], 'Planilha (variação de cor)'];
     return [null, 'SEM CUSTO'];
   };
   const regra = (canal, s) => {
@@ -141,7 +143,7 @@ function calcular(lista, cfg) {
       const receita = r2(q * pu);
       // brindes (definidos pelo Diego em 24/11): custo zero
       const brinde = BRINDES_SKU.includes(s) || (!s && BRINDES_DESC.test(String(i.descricao || '')));
-      const [cu, origCusto] = brinde ? [0, 'Brinde (custo zero)'] : custo(s);
+      const [cu, origCusto] = brinde ? [0, 'Brinde (custo zero)'] : custo(s, brToIso(p.data_pedido));
       const [rg, origTaxa] = regra(canal, s);
       const cmv = (cu || 0) * q, imposto = receita * cfg.imposto, comissao = receita * (rg.rate || 0);
       let taxa;
