@@ -26,6 +26,117 @@ const num = v => { const n = typeof v === 'number' ? v : parseFloat(String(v ?? 
 const r2 = v => v == null ? null : Math.round(v * 100) / 100;
 const arq = idx => path.join(DIR, `emp_${idx}.json`);
 
+// ─── Regras de tarifa por canal (copiadas das fórmulas das planilhas) ─────────
+// ML: comissão = preço × % da linha (fórmula "=G2*0,115"); taxa fixa/frete pela tabela ML_FRETE (peso da linha × faixa de preço);
+//     + "Frete Grátis" informado na linha; na promoção soma o "Desc. comissão".
+// Shopee: comissão 20% até 79,99 e 14% acima; taxa fixa 4,50 até 79,99 (promoção: 4) · 16 até 99,99 · 20 até 199,99 · 26 acima.
+// Amazon: comissão 12%; custo fixo 4,50 até 30 · 6,50 até 49,99 · 6,75 até 78,99 · 0 acima; + "Frete Grátis" da linha.
+// SHEIN: comissão 18% + custo fixo (frete pelo peso) + "Frete Grátis" da linha; promoção = preço − % desconto.
+// TikTok: comissão 16% abaixo de 50 e 12% acima; custo fixo 4 abaixo de 50 e 6 acima; promoção desconta o % de afiliado.
+const ML_FRETE_PADRAO = { faixas: [0, 19, 49, 79, 100, 120, 150, 200], pesos: [0.3, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 125, 150, Infinity], tab: [
+  [5.65, 6.85, 8.15, 12.95, 14.95, 16.95, 19.05, 21.65], [5.95, 6.95, 8.25, 13.85, 16.15, 18.15, 20.45, 23.25], [6.05, 7.15, 8.45, 14.45, 16.85, 19.05, 21.35, 24.45],
+  [6.15, 7.35, 8.65, 14.75, 17.15, 19.45, 21.75, 25.45], [6.25, 7.45, 8.75, 15.05, 17.65, 19.85, 22.25, 25.55], [6.35, 8.65, 9.15, 16.45, 19.15, 21.65, 24.35, 27.05],
+  [6.45, 8.75, 9.75, 17.85, 20.75, 23.35, 26.35, 29.25], [6.55, 8.85, 10.25, 19.75, 22.85, 26.05, 29.25, 32.45], [6.65, 8.95, 10.35, 25.95, 29.15, 33.35, 36.45, 40.85],
+  [6.75, 9.05, 10.45, 27.55, 31.65, 36.75, 40.85, 45.25], [6.85, 9.25, 10.55, 29.45, 34.35, 39.25, 44.15, 49.35], [6.95, 9.35, 10.65, 30.25, 35.25, 40.35, 45.35, 50.75],
+  [7.05, 9.45, 10.85, 38.25, 45.05, 51.95, 58.75, 65.85], [7.05, 9.65, 11.05, 41.65, 48.55, 55.45, 62.35, 69.35], [7.15, 10.05, 11.45, 42.55, 49.75, 56.85, 63.85, 70.95],
+  [7.25, 10.25, 11.65, 45.55, 52.95, 60.55, 68.15, 75.65], [7.35, 10.45, 11.85, 48.95, 56.55, 64.05, 71.35, 79.35], [7.45, 10.65, 12.05, 55.15, 64.35, 73.55, 82.75, 91.95],
+  [7.65, 11.05, 12.25, 64.55, 75.75, 85.45, 96.25, 106.85], [7.75, 11.25, 12.45, 66.45, 76.05, 86.25, 97.15, 107.85], [7.85, 11.45, 12.65, 68.35, 79.65, 89.75, 100.05, 107.95],
+  [7.95, 11.65, 12.85, 70.95, 81.85, 92.85, 103.45, 111.65], [8.05, 11.85, 13.05, 75.55, 87.25, 99.05, 110.25, 119.05], [8.15, 12.05, 13.25, 80.95, 93.75, 105.95, 118.05, 127.45],
+  [8.25, 12.25, 13.45, 84.65, 97.95, 110.75, 123.35, 133.15], [8.35, 12.45, 13.65, 94.05, 108.35, 122.95, 136.95, 147.85], [8.45, 12.65, 13.85, 107.45, 124.85, 140.45, 156.45, 168.85],
+  [8.55, 12.85, 14.05, 120.15, 138.95, 156.95, 174.85, 188.85], [8.65, 12.85, 14.25, 127.45, 147.05, 166.55, 185.55, 200.35], [8.75, 12.85, 14.45, 167.05, 193.35, 218.45, 243.45, 262.85]] };
+/** Tabela ML_FRETE da planilha da empresa (cópia no servidor); se não achar, a padrão acima */
+function lerMlFrete(wb) {
+  try {
+    const n = wb.SheetNames.find(x => /^ml_?frete$/i.test(x.trim())); if (!n) return null;
+    const R = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null });
+    const faixas = R[0].slice(1, 9).map(Number); if (faixas.some(isNaN)) return null;
+    const tab = [], pesos = [];
+    for (const r of R.slice(1)) { if (!r || r.slice(1, 9).some(v => typeof v !== 'number')) continue; tab.push(r.slice(1, 9)); pesos.push(typeof r[9] === 'number' ? r[9] : Infinity); }
+    return tab.length ? { faixas, pesos, tab } : null;
+  } catch (e) { return null; }
+}
+function mlFrete(T, peso, preco) {
+  T = T || ML_FRETE_PADRAO; if (!(peso > 0) || !(preco > 0)) return null;
+  let i = T.pesos.findIndex(p => peso <= p); if (i < 0) i = T.tab.length - 1;
+  let j = 0; T.faixas.forEach((f, k) => { if (preco >= f) j = k; });
+  return T.tab[Math.min(i, T.tab.length - 1)][j];
+}
+function sheinFrete(peso) {
+  if (!(peso > 0)) return null;
+  const t = [[0.3, 4], [0.6, 5], [0.9, 6], [1.2, 8], [1.5, 10], [2, 12], [5, 15], [9, 32], [13, 63], [17, 73], [23, 89], [30, 106]];
+  return (t.find(x => peso <= x[0]) || [0, 106])[1];
+}
+/** Tarifas do canal no preço (sem custo, imposto e insumos). promo = bloco de promoção. null = falta dado para a regra */
+function tarifas(tipo, preco, L, promo, T, padraoCom) {
+  if (!(preco > 0)) return null; const p = L.p || {};
+  if (tipo === 'ml') {
+    const com = preco * ((promo ? p.comPromo : null) ?? p.com ?? padraoCom ?? 0.12);
+    const peso = L.peso ?? p.peso; let fixa = mlFrete(T, peso, preco);
+    if (fixa == null) { if (p.taxa == null) return null; fixa = p.taxa; }   // aba sem peso (ML Premium): taxa da linha
+    return com + fixa + (p.frete || 0) - (promo ? (p.descCom || 0) : 0);
+  }
+  if (tipo === 'shopee') return (preco <= 79.99 ? preco * 0.2 : preco * 0.14) + (preco <= 79.99 ? (promo ? 4 : 4.5) : preco <= 99.99 ? 16 : preco <= 199.99 ? 20 : 26);
+  if (tipo === 'amazon') return preco * 0.12 + (preco <= 30 ? 4.5 : preco < 50 ? 6.5 : preco < 79 ? 6.75 : 0) + (p.frete || 0);
+  if (tipo === 'shein') { const fixo = p.fixo ?? sheinFrete(L.peso ?? p.peso); if (fixo == null) return null; return preco * 0.18 + fixo + (p.frete || 0); }
+  if (tipo === 'tiktok') return (preco < 50 ? preco * 0.16 : preco * 0.12) + (preco < 50 ? 4 : 6) + (promo ? preco * (p.afiliado || 0) : 0);
+  return null;
+}
+/** Parâmetros de cada linha lidos das células da planilha (fórmulas e valores) */
+function paramsAba(ws, tipo) {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+  const h = rows.slice(0, 8).findIndex(r => (r || []).some(c => /^(produto|descri[çc][aã]o)$/i.test(String(c ?? '').trim())));
+  if (h < 0) return {};
+  const cab = rows[h].map(c => String(c ?? '').trim());
+  const idx = re => cab.map((c, i) => re.test(c) ? i : -1).filter(i => i >= 0);
+  const margens = idx(/%\s*(de\s*)?(lucro|bruto)/i), fim = margens[0] ?? 1e9;
+  const cel = (r, c) => c == null || c < 0 ? undefined : ws[XLSX.utils.encode_cell({ r, c })];
+  const val = (r, c) => { const x = cel(r, c); return x && typeof x.v === 'number' ? x.v : null; };
+  const coef = (r, c) => {   // "=G2*0,115" → 0,115; "=U3*$H$1" → valor de H1
+    const x = cel(r, c); if (!x || !x.f) return null; const f = x.f.replace(/\s/g, '');
+    let m = f.match(/\*([\d.]+)(%?)$/); if (m) return parseFloat(m[1]) / (m[2] ? 100 : 1);
+    m = f.match(/\*\$?([A-Z]+)\$?(\d+)$/); if (m) { const y = ws[m[1] + m[2]]; return y && typeof y.v === 'number' ? y.v : null; }
+    return null;
+  };
+  const cPeso = cab.findIndex(c => /^peso$/i.test(c));
+  const out = {};
+  for (let r = h + 1; r < rows.length; r++) {
+    const P = {};
+    if (cPeso >= 0 && val(r, cPeso) > 0) P.peso = val(r, cPeso);
+    if (tipo === 'ml') {
+      const com = idx(/comiss/i).filter(i => !/desc/i.test(cab[i])), taxa = idx(/taxa\s*fixa/i), fr = idx(/frete\s*gr/i), desc = idx(/desc/i).filter(i => i > fim);
+      P.com = coef(r, com.find(i => i < fim)); P.comPromo = coef(r, com.find(i => i > fim));
+      const t = taxa.find(i => i < fim); if (t != null && !(cel(r, t)?.f) && val(r, t) != null) P.taxa = val(r, t);
+      else if (t != null && cPeso < 0 && val(r, t) != null) P.taxa = val(r, t);
+      const f = fr.find(i => i < fim); if (f != null && !(cel(r, f)?.f) && val(r, f) > 0) P.frete = val(r, f);
+      if (desc[0] != null && val(r, desc[0]) > 0) P.descCom = val(r, desc[0]);
+    } else if (tipo === 'amazon') { const f = idx(/frete\s*gr/i)[0]; if (val(r, f) > 0) P.frete = val(r, f); }
+    else if (tipo === 'shein') { const fx = idx(/custo\s*fixo/i)[0], f = idx(/frete\s*gr/i)[0], d = idx(/desconto/i)[0];
+      if (val(r, fx) != null) P.fixo = val(r, fx); if (val(r, f) > 0) P.frete = val(r, f); if (val(r, d) > 0) P.desconto = val(r, d); }
+    else if (tipo === 'tiktok') { const a = idx(/afiliado/i)[0]; if (val(r, a) > 0 && val(r, a) < 1) P.afiliado = val(r, a); }
+    for (const k of Object.keys(P)) if (P[k] == null) delete P[k];
+    out[r + 1] = P;   // nº da linha da planilha (1-based), igual a L.linha
+  }
+  return out;
+}
+/** Uma vez por empresa: lê da planilha os parâmetros das regras de cada linha e a tabela ML_FRETE */
+function completarRegras(idx, F) {
+  if (F.regrasV === 1) return false;
+  const nomeArq = require('./custos_ml').PLANILHAS[idx];
+  try {
+    const wb = XLSX.readFile(path.join(DATA, nomeArq), { cellFormula: true });
+    F.mlFrete = lerMlFrete(wb) || null;
+    for (const A of F.abas) {
+      if (A.tipo === 'base' || !wb.Sheets[A.abaPlanilha]) continue;
+      const P = paramsAba(wb.Sheets[A.abaPlanilha], A.tipo);
+      for (const L of A.linhas) if (typeof L.linha === 'number' && P[L.linha]) L.p = { ...P[L.linha], ...(L.p || {}) };
+    }
+  } catch (e) { console.warn('[precificacao] regras', idx, e.message); }
+  // peso das abas de canal sem coluna de peso: usa o peso do mesmo código em outra aba (ML / Custos)
+  const pesos = {}; for (const A of F.abas) for (const L of A.linhas) { const w = L.peso ?? L.p?.peso; if (w > 0 && !pesos[L.sku]) pesos[L.sku] = w; }
+  for (const A of F.abas) for (const L of A.linhas) if (L.peso == null && !(L.p?.peso) && pesos[L.sku]) L.pesoRef = pesos[L.sku];
+  F.regrasV = 1; return true;
+}
+
 /** Tipo da aba: base | ml | shopee | amazon | shein | tiktok | null (ignorada) */
 function tipoAba(nome) {
   const n = nome.trim().toLowerCase();
@@ -187,6 +298,10 @@ async function montar(idx) {
     L.skuPlanilha = L.skuPlanilha || L.sku; L.sku = certo; corrigidos++;
   }
   if (corrigidos) { try { fs.writeFileSync(arq(idx), JSON.stringify(F)); } catch (e) {} console.log(`[precificacao] ${EMP[idx].nome}: ${corrigidos} códigos com 0 na frente corrigidos`); }
+  if (completarRegras(idx, F)) { try { fs.writeFileSync(arq(idx), JSON.stringify(F)); } catch (e) {} console.log(`[precificacao] ${EMP[idx].nome}: regras de tarifa lidas da planilha`); }
+  // comissão padrão do ML por aba (itens incluídos no painel): a mais comum da aba
+  const comPadrao = {};
+  for (const A of F.abas) if (A.tipo === 'ml') { const c = {}; A.linhas.forEach(L => { const v = L.p?.com; if (v) c[v] = (c[v] || 0) + 1; }); const m = Object.entries(c).sort((a, b) => b[1] - a[1])[0]; comPadrao[A.aba] = m ? +m[0] : (/premium/i.test(A.aba) ? 0.17 : 0.12); }
   for (const A of F.abas) {
     const R = A.resumo = { linhas: A.linhas.length, iguais: 0, diferentes: 0, semErp: 0 };
     for (const L of A.linhas) {
@@ -198,22 +313,20 @@ async function montar(idx) {
       else if (L.custo == null) { L.situacao = 'sem custo na planilha'; R.diferentes++; }
       else if (Math.abs(L.dif) < 0.015) { L.situacao = 'igual'; R.iguais++; }
       else { L.situacao = 'diferente'; R.diferentes++; }
-      // Margem do painel: custo do ERP + imposto e insumos da empresa (Conta); tarifas do canal (comissão, taxa fixa,
-      // frete, custo fixo) ficam como estão na planilha. Preço mínimo p/ a meta: tarifas proporcionais ao preço (aproximado).
+      // Margem do painel pela regra de cada canal (tarifas copiadas das fórmulas da planilha), com o custo do ERP
+      // (ou o Custo do painel), imposto e insumos da empresa. "Preço p/ meta" = menor preço ,99 que dá a meta.
       if (A.tipo !== 'base') {
-        const conta = (preco, lucro, imp, ins, pct) => {
-          if (!(preco > 0)) return null;
-          let taxas;
-          if (pct != null) taxas = preco * pct;
-          else { if (lucro == null || L.custo == null) return null; taxas = preco - lucro - L.custo - (imp || 0) - (ins || 0); }
-          const custo = L.custoErp ?? L.custo; if (custo == null) return null;
-          const lucroP = preco - custo - taxas - cfg.imposto * preco - cfg.insumos;
-          const den = 1 - taxas / preco - cfg.imposto - cfg.meta;
-          return { lucro: r2(lucroP), margem: lucroP / preco, precoMeta: den > 0.05 ? Math.ceil((custo + cfg.insumos) / den) - 0.01 : null };
+        const custo = L.custoErp ?? L.custo, Lw = { ...L, peso: L.peso ?? L.pesoRef };
+        const conta = (preco, promo) => {
+          if (!(preco > 0) || custo == null) return null;
+          const t = tarifas(A.tipo, preco, Lw, promo, F.mlFrete, comPadrao[A.aba]); if (t == null) return null;
+          return preco - custo - t - cfg.imposto * preco - cfg.insumos;
         };
-        const a = conta(L.preco, L.lucro, L.imp, L.ins, L.taxasPct), b = conta(L.promo, L.lucroPromo, L.impPromo, L.insPromo, L.taxasPctPromo ?? L.taxasPct);
-        if (a) { L.lucroPainel = a.lucro; L.margemPainel = a.margem; L.precoMeta = a.precoMeta; }
-        if (b) { L.lucroPromoPainel = b.lucro; L.margemPromoPainel = b.margem; L.precoMetaPromo = b.precoMeta; }
+        const meta = promo => { if (custo == null) return null; for (let p = Math.max(1, Math.floor(custo)) + 0.99; p < custo * 20 + 100; p += 1) { const l = conta(p, promo); if (l == null) return null; if (l / p >= cfg.meta) return r2(p); } return null; };
+        const a = conta(L.preco, false), b = conta(L.promo, true);
+        L.lucroPainel = a == null ? null : r2(a); L.margemPainel = a == null ? null : a / L.preco; L.precoMeta = L.preco > 0 ? meta(false) : null;
+        L.lucroPromoPainel = b == null ? null : r2(b); L.margemPromoPainel = b == null ? null : b / L.promo; L.precoMetaPromo = L.promo > 0 ? meta(true) : null;
+        L.semRegra = (L.preco > 0 && a == null && custo != null) ? (A.tipo === 'ml' || A.tipo === 'shein' ? 'falta o peso' : 'sem regra') : null;
       }
       // margem refeita só trocando o custo (o resto das taxas fica como na planilha)
       if (A.tipo !== 'base' && L.dif != null) {
@@ -246,24 +359,25 @@ button{background:#0d1b2a;color:#fff;border:none;cursor:pointer;font-weight:600}
 <script>
 let D=null,A=0;const $=id=>document.getElementById(id);const esc=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const brl=v=>v==null?'—':'R$ '+Number(v).toFixed(2).replace('.',',');const pc=v=>v==null||!isFinite(v)?'—':'<span class="mg '+(v<0.05?'m0':v<0.10?'m1':v<0.15?'m2':'m3')+'">'+(v*100).toFixed(1).replace('.',',')+'%</span>';
+const pw=l=>l.peso??l.pesoRef??(l.p&&l.p.peso)??null;
 const dd=s=>s?new Date(s).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit'}):'—';
 const dt=s=>s?new Date(s).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
 async function carregar(){$('info').textContent='Carregando… (a primeira leitura dos custos do ERP pode levar 1–2 min)';$('abas').innerHTML='';$('lista').innerHTML='';
  const r=await fetch('/precificacao/dados?emp='+$('emp').value);D=await r.json();if(D.erro){$('info').innerHTML='<span class="dif">'+esc(D.erro)+'</span>';return;}A=0;info();render();}
 const abaixo=l=>(l.margemPainel!=null&&l.margemPainel<D.cfg.meta)||(l.margemPromoPainel!=null&&l.margemPromoPainel<D.cfg.meta);
 function info(){const t={l:0,c:0,s:0,m:0};D.abas.forEach(a=>{t.l+=a.resumo.linhas;t.s+=a.resumo.semErp;t.c+=a.resumo.linhas-a.resumo.semErp;if(a.tipo!=='base')t.m+=a.linhas.filter(abaixo).length;});
- $('info').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:10px"><b>Custo</b> = custo da precificação; <b>Custo ERP</b> = custo do '+D.erp+' (kit = soma da composição; ✎ altera direto no '+D.erp+'). <b>Margem</b> = preço − custo − tarifas do canal − imposto ('+(D.cfg.imposto*100).toFixed(1).replace('.',',')+'%) − insumos (R$ '+D.cfg.insumos.toFixed(2).replace('.',',')+'). <b>Preço p/ meta</b> = preço mínimo para '+Math.round(D.cfg.meta*100)+'% de margem (aproximado). Cores: <span class="mg m0">&lt;5%</span> <span class="mg m1">5–9,99%</span> <span class="mg m2">10–14,99%</span> <span class="mg m3">15%+</span>. <small>Itens importados da planilha em '+dt(D.importadoEm)+'.</small></div>'+
+ $('info').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:10px"><b>Custo</b> = custo da precificação; <b>Custo ERP</b> = custo do '+D.erp+' (kit = soma da composição; ✎ altera direto no '+D.erp+'). <b>Margem</b> = preço − custo − tarifas do canal (regra da planilha: ML comissão + tabela de frete pelo peso; Shopee e TikTok por faixa de preço; Amazon 12% + custo fixo; SHEIN 18% + frete pelo peso) − imposto ('+(D.cfg.imposto*100).toFixed(1).replace('.',',')+'%) − insumos (R$ '+D.cfg.insumos.toFixed(2).replace('.',',')+'). <b>Preço p/ meta</b> = menor preço terminado em ,99 com '+Math.round(D.cfg.meta*100)+'% de margem. Cores: <span class="mg m0">&lt;5%</span> <span class="mg m1">5–9,99%</span> <span class="mg m2">10–14,99%</span> <span class="mg m3">15%+</span>. <small>Itens importados da planilha em '+dt(D.importadoEm)+'.</small></div>'+
  '<div class="cards"><div class="card">Itens<br><b>'+t.l+'</b></div><div class="card">Com custo<br><b class="ok">'+t.c+'</b></div><div class="card">Sem custo<br><b class="sem">'+t.s+'</b></div><div class="card">Abaixo da meta ('+Math.round(D.cfg.meta*100)+'%)<br><b class="dif">'+t.m+'</b></div></div>';
  $('abas').innerHTML=D.abas.map((a,i)=>'<button class="aba'+(i===A?' on':'')+'" onclick="A='+i+';render()">'+esc(a.aba)+(a.resumo.semErp?' <small>'+a.resumo.semErp+' sem custo</small>':'')+'</button>').join('');}
 function render(){if(!D||D.erro)return;info();const a=D.abas[A],s=$('sit').value,q=$('q').value.toLowerCase();
  let L=a.linhas.filter(l=>(!s||(s==='sem'?/sem custo no/.test(l.situacao||''):s==='dif'?l.situacao==='diferente':abaixo(l)))&&(!q||(l.sku+' '+l.nome).toLowerCase().includes(q)));
  const base=a.tipo==='base';
- $('lista').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:8px">'+L.length+' de '+a.linhas.length+' linhas · colunas de preço lidas: '+esc((a.colunas.precos||[]).join(', ')||'—')+'</div><table><tr><th></th><th class="l">Código</th><th class="l">Produto</th><th>Qtd</th><th>Custo</th><th>Custo ERP</th><th>Diferença</th>'+
+ $('lista').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:8px">'+L.length+' de '+a.linhas.length+' linhas · colunas de preço lidas: '+esc((a.colunas.precos||[]).join(', ')||'—')+'</div><table><tr><th></th><th class="l">Código</th><th class="l">Produto</th><th>Qtd</th>'+(base?'':'<th>Peso</th>')+'<th>Custo</th><th>Custo ERP</th><th>Diferença</th>'+
  (base?'':'<th>Preço</th><th>Margem</th><th>Preço p/ meta</th><th>Promoção</th><th>Margem</th><th>Preço p/ meta</th>')+'</tr>'+
- L.slice(0,2000).map(l=>'<tr><td><span class="ed" style="color:#c62828" title="Excluir este item da aba" onclick="excluir(\\''+esc(l.sku)+'\\')">🗑</span></td><td class="l">'+esc(l.sku)+'<br><small>linha '+l.linha+(l.skuPlanilha?' · na planilha: '+esc(l.skuPlanilha):'')+'</small></td><td class="l">'+esc(l.nome)+(l.novo?' <small style="color:#2e7d32">· incluído no painel</small>':'')+'</td><td>'+l.qtd+'</td><td>'+brl(l.custo)+'<span class="ed" title="Alterar o Custo do painel" onclick="editarPainel(\\''+esc(l.sku)+'\\','+(l.custo??0)+')">✎</span><br><small title="Lançado por '+esc(l.custoPor||'')+'">'+dd(l.custoEm)+'</small><span class="inf" title="Quem lançou e histórico do custo" onclick="hist(\\''+esc(l.sku)+'\\')">ⓘ</span>'+(l.situacao==='diferente'?'<br><span class="ed" style="margin:0" title="Usar o custo do ERP" onclick="igualar(\\''+esc(l.sku)+'\\','+l.custoErp+')">⇐ usar ERP</span>':'')+'</td>'+
+ L.slice(0,2000).map(l=>'<tr><td><span class="ed" style="color:#c62828" title="Excluir este item da aba" onclick="excluir(\\''+esc(l.sku)+'\\')">🗑</span></td><td class="l">'+esc(l.sku)+'<br><small>linha '+l.linha+(l.skuPlanilha?' · na planilha: '+esc(l.skuPlanilha):'')+'</small></td><td class="l">'+esc(l.nome)+(l.novo?' <small style="color:#2e7d32">· incluído no painel</small>':'')+'</td><td>'+l.qtd+'</td>'+(base?'':'<td>'+(pw(l)!=null?String(pw(l)).replace('.',',')+' kg':'—')+'<span class="ed" title="Alterar o peso (vale para todas as abas)" onclick="editPeso(\\''+esc(l.sku)+'\\','+(pw(l)??0)+')">✎</span></td>')+'<td>'+brl(l.custo)+'<span class="ed" title="Alterar o Custo do painel" onclick="editarPainel(\\''+esc(l.sku)+'\\','+(l.custo??0)+')">✎</span><br><small title="Lançado por '+esc(l.custoPor||'')+'">'+dd(l.custoEm)+'</small><span class="inf" title="Quem lançou e histórico do custo" onclick="hist(\\''+esc(l.sku)+'\\')">ⓘ</span>'+(l.situacao==='diferente'?'<br><span class="ed" style="margin:0" title="Usar o custo do ERP" onclick="igualar(\\''+esc(l.sku)+'\\','+l.custoErp+')">⇐ usar ERP</span>':'')+'</td>'+
  '<td>'+(l.custoErp!=null?brl(l.custoErp)+(l.fonteErp&&l.fonteErp!=='item'?'<br><small>'+esc(l.fonteErp)+'</small>':''):'<span class="sem">sem custo no '+D.erp+'</span>')+(!l.kit&&!l.variacoes?'<span class="ed" title="Alterar o custo no '+D.erp+'" onclick="editar(\\''+esc(l.sku)+'\\','+(l.custoErp??l.custo??0)+','+l.qtd+')">✎</span>':'')+'</td>'+
  '<td class="'+(l.situacao==='diferente'?'dif':'')+'">'+(l.dif==null?'—':(l.dif>0?'+':'')+brl(l.dif))+'</td>'+
- (base?'':'<td>'+brl(l.preco)+'<span class="ed" title="Alterar o preço" onclick="editPreco(\\''+esc(l.sku)+'\\',\\'preco\\','+(l.preco??0)+')">✎</span>'+(l.taxasPct!=null?'<br><small title="Tarifas do canal estimadas em % do preço">tarifas '+(l.taxasPct*100).toFixed(0)+'%</small>':'')+'</td><td>'+pc(l.margemPainel)+'</td><td>'+brl(l.precoMeta)+'</td><td>'+brl(l.promo)+'<span class="ed" title="Alterar o preço de promoção" onclick="editPreco(\\''+esc(l.sku)+'\\',\\'promo\\','+(l.promo??0)+')">✎</span></td><td>'+pc(l.margemPromoPainel)+'</td><td>'+brl(l.precoMetaPromo)+'</td>')+'</tr>').join('')+'</table>';}
+ (base?'':'<td>'+brl(l.preco)+'<span class="ed" title="Alterar o preço" onclick="editPreco(\\''+esc(l.sku)+'\\',\\'preco\\','+(l.preco??0)+')">✎</span>'+(l.semRegra?'<br><small class="sem">'+esc(l.semRegra)+'</small>':'')+'</td><td>'+pc(l.margemPainel)+'</td><td>'+brl(l.precoMeta)+'</td><td>'+brl(l.promo)+'<span class="ed" title="Alterar o preço de promoção" onclick="editPreco(\\''+esc(l.sku)+'\\',\\'promo\\','+(l.promo??0)+')">✎</span></td><td>'+pc(l.margemPromoPainel)+'</td><td>'+brl(l.precoMetaPromo)+'</td>')+'</tr>').join('')+'</table>';}
 async function atualizarErp(){const b=$('aterp'),e=$('emp').value;b.disabled=true;b.textContent='Atualizando custos…';
  await fetch('/precificacao/atualizar-erp?emp='+e,{method:'POST'});
  let st;for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,3000));st=await fetch('/precificacao/atualizar-erp?emp='+e).then(r=>r.json());if(!st.rodando)break;}
@@ -297,18 +411,21 @@ async function editPreco(sku,campo,atual){const a=D.abas[A];const v=prompt((camp
  const b={emp:$('emp').value,aba:a.aba,sku};b[campo]=v.trim()===''?null:parseFloat(v.replace(',','.'));
  const r=await fetch('/precificacao/preco',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());if(r.erro)return alert(r.erro);
  const aba=A;D=await (await fetch('/precificacao/dados?emp='+$('emp').value)).json();A=aba;render();}
+async function editPeso(sku,atual){const v=prompt('Peso de '+sku+' em kg (o maior entre o real e o cúbico C×L×A÷6000):',atual?String(atual).replace('.',','):'');if(v==null)return;const n=parseFloat(v.replace(',','.'));if(!(n>0))return alert('Peso inválido');
+ const r=await fetch('/precificacao/peso',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emp:$('emp').value,sku,peso:n})}).then(r=>r.json());if(r.erro)return alert(r.erro);
+ const aba=A;D=await (await fetch('/precificacao/dados?emp='+$('emp').value)).json();A=aba;render();}
 function novo(){if(!D||D.erro)return;const canais=D.abas.filter(a=>a.tipo!=='base');
  abrir('<b>Incluir item ou kit</b> <small>(empresa: '+esc($('emp').selectedOptions[0].text)+')</small><p>Código no '+D.erp+' <input id="n_sku" style="width:180px"> <button onclick="nbuscar()">Buscar</button></p><div id="n_res"><small>Para kit, use o código do kit cadastrado no '+D.erp+': o custo vem da soma da composição.</small></div>'+
- '<div id="n_form" style="display:none"><p>Produto <input id="n_nome" style="width:100%"></p><p>Qtd <input id="n_qtd" value="1" style="width:60px"> &nbsp; Custo (R$) <input id="n_custo" style="width:100px"></p>'+
- '<table><tr><th class="l">Canal</th><th class="l">Preço cheio</th><th class="l">Promoção</th></tr>'+canais.map((a,i)=>'<tr><td class="l">'+esc(a.aba)+'</td><td class="l"><input id="n_p'+i+'" style="width:100px" placeholder="0,00"></td><td class="l"><input id="n_q'+i+'" style="width:100px" placeholder="0,00"></td></tr>').join('')+'</table>'+
- '<p><small>Só entra nos canais com preço preenchido. As tarifas de cada canal são estimadas pela média da aba (% do preço).</small></p><p><button onclick="nsalvar()" style="background:#2e7d32">Incluir</button> <button onclick="fechar()" style="background:#888">Cancelar</button></p></div>');
+ '<div id="n_form" style="display:none"><p>Produto <input id="n_nome" style="width:100%"></p><p>Qtd <input id="n_qtd" value="1" style="width:60px"> &nbsp; Custo (R$) <input id="n_custo" style="width:100px"> &nbsp; Peso (kg) <input id="n_peso" style="width:80px"> <small id="n_pinfo"></small></p>'+
+ '<table><tr><th class="l">Canal</th><th class="l">Preço cheio</th><th class="l">Promoção</th><th class="l"></th></tr>'+canais.map((a,i)=>'<tr><td class="l">'+esc(a.aba)+'</td><td class="l"><input id="n_p'+i+'" style="width:90px" placeholder="0,00"></td><td class="l"><input id="n_q'+i+'" style="width:90px" placeholder="0,00"></td><td class="l">'+(a.tipo==='ml'?'Comissão % <input id="n_c'+i+'" style="width:55px" placeholder="12">':a.tipo==='amazon'?'Frete DBA R$ <input id="n_f'+i+'" style="width:60px" placeholder="0">':'')+'</td></tr>').join('')+'</table>'+
+ '<p><small>Só entra nos canais com preço preenchido. As tarifas seguem a regra de cada canal (ML e SHEIN usam o peso; Amazon acima de R$ 79 soma o frete DBA informado).</small></p><p><button onclick="nsalvar()" style="background:#2e7d32">Incluir</button> <button onclick="fechar()" style="background:#888">Cancelar</button></p></div>');
  setTimeout(()=>$('n_sku').focus(),50);}
 async function nbuscar(){const sku=$('n_sku').value.trim();if(!sku)return;$('n_res').textContent='Buscando no '+D.erp+'…';
  const r=await fetch('/precificacao/buscar?emp='+$('emp').value+'&sku='+encodeURIComponent(sku)).then(r=>r.json());if(r.erro){$('n_res').innerHTML='<span class="dif">'+esc(r.erro)+'</span>';return;}
  $('n_res').innerHTML=(r.nome?'<b>'+esc(r.nome)+'</b>':'<span class="sem">Não achei no '+D.erp+' — preencha o nome e o custo.</span>')+(r.kit?' · <b>kit</b>':'')+' · custo no '+D.erp+': <b>'+brl(r.custo)+'</b>'+(r.abas.length?'<br><small>Já está em: '+esc(r.abas.join(', '))+'</small>':'');
- $('n_form').style.display='';$('n_nome').value=r.nome||'';$('n_custo').value=r.custo!=null?String(r.custo).replace('.',','):'';$('n_sku').value=r.sku;}
-async function nsalvar(){const canais={};D.abas.filter(a=>a.tipo!=='base').forEach((a,i)=>{const p=$('n_p'+i).value.trim();if(p)canais[a.aba]={preco:parseFloat(p.replace(',','.')),promo:$('n_q'+i).value.trim()?parseFloat($('n_q'+i).value.replace(',','.')):null};});
- const b={emp:$('emp').value,sku:$('n_sku').value.trim(),nome:$('n_nome').value.trim(),qtd:parseFloat($('n_qtd').value.replace(',','.'))||1,custo:$('n_custo').value.trim()?parseFloat($('n_custo').value.replace(',','.')):null,canais};
+ $('n_form').style.display='';$('n_nome').value=r.nome||'';$('n_custo').value=r.custo!=null?String(r.custo).replace('.',','):'';$('n_sku').value=r.sku;$('n_peso').value=r.peso?String(r.peso).replace('.',','):'';$('n_pinfo').textContent=r.peso?'(real '+(r.pesoReal??'—')+' · cúbico '+(r.pesoCubico??'—')+')':'informe o peso';}
+async function nsalvar(){const canais={};D.abas.filter(a=>a.tipo!=='base').forEach((a,i)=>{const p=$('n_p'+i).value.trim();if(p){const c=$('n_c'+i),f=$('n_f'+i);canais[a.aba]={preco:parseFloat(p.replace(',','.')),promo:$('n_q'+i).value.trim()?parseFloat($('n_q'+i).value.replace(',','.')):null,com:c&&c.value.trim()?parseFloat(c.value.replace(',','.')):null,frete:f&&f.value.trim()?parseFloat(f.value.replace(',','.')):null};}});
+ const b={emp:$('emp').value,sku:$('n_sku').value.trim(),nome:$('n_nome').value.trim(),qtd:parseFloat($('n_qtd').value.replace(',','.'))||1,custo:$('n_custo').value.trim()?parseFloat($('n_custo').value.replace(',','.')):null,peso:$('n_peso').value.trim()?parseFloat($('n_peso').value.replace(',','.')):null,canais};
  const r=await fetch('/precificacao/adicionar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());if(r.erro)return alert(r.erro);
  fechar();alert(r.sku+' incluído em: '+r.abas.join(', '));D=await (await fetch('/precificacao/dados?emp='+$('emp').value)).json();render();}
 carregar();
@@ -386,42 +503,40 @@ function atualizarErp(idx) {
 }
 
 // ─── Itens novos / kits e preços editados no painel ──────────────────────────
-/** % das tarifas do canal (comissão, taxa fixa, frete) sobre o preço: mediana das linhas da aba que vieram da planilha */
-function tarifaMediana(A) {
-  const v = A.linhas.filter(L => L.preco > 0 && L.lucro != null && L.custo != null && L.taxasPct == null)
-    .map(L => (L.preco - L.lucro - L.custo - (L.imp || 0) - (L.ins || 0)) / L.preco).filter(x => x > 0 && x < 0.8).sort((a, b) => a - b);
-  return v.length ? v[Math.floor(v.length / 2)] : 0.2;
-}
 /** Nome e custo do código no ERP (kit = soma da composição) */
 async function buscarItem(idx, sku) {
   sku = K(sku); if (!sku) throw new Error('informe o código');
   const cm = require('./custos_ml'); const erp = await cm.custosErp(idx);
   const kit = cm.custoKit(idx, sku, erp), comp = cm.kits(idx)[sku];
-  let nome = null, custo = kit ?? (erp[sku] > 0 ? erp[sku] : null), ehKit = kit != null || !!comp?.length;
+  let nome = null, custo = kit ?? (erp[sku] > 0 ? erp[sku] : null), ehKit = kit != null || !!comp?.length, peso = null, pesoReal = null, pesoCubico = null;
+  const pesoDe = (real, a, l, c) => { real = num(real); const cub = num(a) > 0 && num(l) > 0 && num(c) > 0 ? num(a) * num(l) * num(c) / 6000 : null; pesoReal = real > 0 ? r2(real) : null; pesoCubico = cub ? r2(cub) : null; peso = Math.max(pesoReal || 0, pesoCubico || 0) || null; };
   try {
     if (idx === 2) {
       const tiny = require('./tiny');
       const pq = await tiny.chamar('produtos.pesquisa.php', { pesquisa: sku });
       const a = (pq.produtos || []).map(x => x.produto).find(x => K(x.codigo) === sku);
       if (a) { nome = a.nome; const ob = (await tiny.chamar('produto.obter.php', { id: a.id })).produto || {};
-        if (String(ob.classe_produto).toUpperCase() === 'K') ehKit = true; if (custo == null && num(ob.preco_custo) > 0) custo = num(ob.preco_custo); }
+        if (String(ob.classe_produto).toUpperCase() === 'K') ehKit = true; if (custo == null && num(ob.preco_custo) > 0) custo = num(ob.preco_custo);
+        pesoDe(ob.peso_bruto, ob.alturaEmbalagem, ob.larguraEmbalagem, ob.comprimentoEmbalagem); }
     } else {
       const r = await require('./bling').client(idx).get('/produtos', { params: { codigo: sku } });
-      const a = (r.data?.data || []).find(x => K(x.codigo) === sku); if (a) { nome = a.nome; if (a.formato === 'E') ehKit = true; }
+      const a = (r.data?.data || []).find(x => K(x.codigo) === sku); if (a) { nome = a.nome; if (a.formato === 'E') ehKit = true;
+        try { const d = (await require('./bling').client(idx).get('/produtos/' + a.id)).data?.data || {}; const dm = d.dimensoes || {}, f = dm.unidadeMedida === 2 ? 0.1 : dm.unidadeMedida === 0 ? 100 : 1;
+          pesoDe(d.pesoBruto, (dm.altura || 0) * f, (dm.largura || 0) * f, (dm.profundidade || 0) * f); } catch (e) {} }
     }
   } catch (e) {}
   const F = fotografia(idx), z = v => K(v).replace(/^0+(?=.)/, '');
   const abas = F ? F.abas.filter(A => A.linhas.some(L => z(L.sku) === z(sku))).map(A => A.aba) : [];
-  return { sku, nome, custo: r2(custo), kit: ehKit, abas, canais: F ? F.abas.filter(A => A.tipo !== 'base').map(A => A.aba) : [] };
+  return { sku, nome, custo: r2(custo), kit: ehKit, peso, pesoReal, pesoCubico, abas, canais: F ? F.abas.filter(A => A.tipo !== 'base').map(A => A.aba) : [] };
 }
 /** Inclui um item ou kit na aba Custos e nas abas de canal escolhidas: canais = { <aba>: { preco, promo } } */
 async function adicionar(idx, b, quem) {
   const F = fotografia(idx); if (!F) throw new Error('precificação ainda não carregada');
   const info = await buscarItem(idx, b.sku);
   const sku = info.sku, nome = String(b.nome || info.nome || '').trim(); if (!nome) throw new Error('informe o nome do produto (não achei ' + sku + ' no ERP)');
-  const qtd = num(b.qtd) > 0 ? num(b.qtd) : 1, custo = num(b.custo) > 0 ? r2(num(b.custo)) : info.custo;
+  const qtd = num(b.qtd) > 0 ? num(b.qtd) : 1, custo = num(b.custo) > 0 ? r2(num(b.custo)) : info.custo, peso = num(b.peso) > 0 ? num(b.peso) : info.peso;
   const agora = new Date().toISOString(), z = v => K(v).replace(/^0+(?=.)/, '');
-  const nova = () => ({ linha: '—', sku, nome, qtd, peso: null, custo, custoUn: custo != null ? r2(custo / qtd) : null, custoEm: agora, custoPor: quem, novo: true, incluidoPor: quem, incluidoEm: agora });
+  const nova = () => ({ linha: '—', sku, nome, qtd, peso: peso || null, custo, custoUn: custo != null ? r2(custo / qtd) : null, custoEm: agora, custoPor: quem, novo: true, incluidoPor: quem, incluidoEm: agora });
   const feitas = [];
   const base = F.abas.find(A => A.tipo === 'base');
   if (base && !base.linhas.some(L => z(L.sku) === z(sku))) { base.linhas.push(nova()); feitas.push(base.aba); }
@@ -430,7 +545,9 @@ async function adicionar(idx, b, quem) {
     const preco = num(v?.preco), promo = num(v?.promo); if (!(preco > 0)) continue;
     let L = A.linhas.find(x => z(x.sku) === z(sku));
     if (!L) { L = nova(); A.linhas.push(L); }
-    L.preco = r2(preco); L.promo = promo > 0 ? r2(promo) : null; L.taxasPct = tarifaMediana(A); L.taxasPctPromo = null;
+    L.preco = r2(preco); L.promo = promo > 0 ? r2(promo) : null; if (peso) L.peso = peso;
+    L.p = { ...(L.p || {}) }; const com = num(v?.com); if (A.tipo === 'ml' && com > 0) L.p.com = L.p.comPromo = com > 1 ? com / 100 : com;
+    const fr = num(v?.frete); if (fr > 0) L.p.frete = fr;
     L.lucro = L.lucroPromo = L.margem = L.margemPromo = null; feitas.push(aba);
   }
   if (!feitas.length) throw new Error(sku + ' já está na aba Custos; informe o preço em pelo menos um canal');
@@ -448,8 +565,6 @@ function alterarPreco(idx, aba, sku, preco, promo, quem) {
   const F = fotografia(idx); if (!F) throw new Error('precificação ainda não carregada');
   const A = F.abas.find(a => a.aba === aba && a.tipo !== 'base'); if (!A) throw new Error('aba não encontrada');
   const z = v => K(v).replace(/^0+(?=.)/, ''); const L = A.linhas.find(x => z(x.sku) === z(sku)); if (!L) throw new Error('item não encontrado na aba');
-  const pct = (p, lucro, imp, ins) => p > 0 && lucro != null && L.custo != null ? (p - lucro - L.custo - (imp || 0) - (ins || 0)) / p : null;
-  if (L.taxasPct == null) { L.taxasPct = pct(L.preco, L.lucro, L.imp, L.ins) ?? tarifaMediana(A); L.taxasPctPromo = pct(L.promo, L.lucroPromo, L.impPromo, L.insPromo); }
   const de = { preco: L.preco, promo: L.promo };
   if (preco !== undefined) L.preco = num(preco) > 0 ? r2(num(preco)) : null;
   if (promo !== undefined) L.promo = num(promo) > 0 ? r2(num(promo)) : null;
@@ -460,6 +575,31 @@ function alterarPreco(idx, aba, sku, preco, promo, quem) {
   fs.writeFileSync(ARQ_ED, JSON.stringify(H.slice(-5000)));
   return { preco: L.preco, promo: L.promo };
 }
+/** Peso do código (vale para todas as abas) */
+function alterarPeso(idx, sku, peso, quem) {
+  const F = fotografia(idx); if (!F) throw new Error('precificação ainda não carregada'); peso = num(peso); if (!(peso > 0) || peso > 500) throw new Error('peso inválido');
+  const z = v => K(v).replace(/^0+(?=.)/, ''); let n = 0;
+  for (const A of F.abas) for (const L of A.linhas) if (z(L.sku) === z(sku)) { L.peso = peso; delete L.pesoRef; if (L.p) delete L.p.peso; n++; }
+  if (!n) throw new Error('item não encontrado');
+  fs.writeFileSync(arq(idx), JSON.stringify(F)); delete _cache[idx];
+  let H = []; try { H = JSON.parse(fs.readFileSync(ARQ_ED)); } catch (e) {}
+  H.push({ quando: new Date().toISOString(), quem, emp: idx, sku: K(sku), onde: 'peso', para: peso + ' kg' }); fs.writeFileSync(ARQ_ED, JSON.stringify(H.slice(-5000)));
+  return n;
+}
+/** Itens sem peso (incluídos no painel): busca o peso no ERP (maior entre real e cúbico) */
+const _pesos = {};
+function completarPesos(idx) {
+  if (_pesos[idx]?.rodando) return _pesos[idx];
+  const st = _pesos[idx] = { rodando: true, feitos: 0, falta: [] };
+  (async () => {
+    const F = fotografia(idx); const skus = new Set();
+    for (const A of F.abas) if (A.tipo === 'ml' || A.tipo === 'shein') for (const L of A.linhas) if (!(L.peso > 0) && !(L.pesoRef > 0) && !(L.p?.peso > 0) && !(A.tipo === 'shein' && L.p?.fixo != null)) skus.add(L.sku);
+    st.total = skus.size;
+    for (const sku of skus) { try { const i = await buscarItem(idx, sku); if (i.peso > 0) { alterarPeso(idx, sku, i.peso, 'ERP'); st.feitos++; } else st.falta.push(sku); } catch (e) { st.falta.push(sku); } }
+  })().catch(e => { st.erro = e.message; }).finally(() => { st.rodando = false; });
+  return st;
+}
+
 function historicoSku(idx, sku) {
   const z = v => K(v).replace(/^0+(?=.)/, ''), alvo = z(sku);
   let H = []; try { H = JSON.parse(fs.readFileSync(ARQ_ED)); } catch (e) {}
@@ -505,6 +645,12 @@ function rotas(app) {
     const idx = parseInt(req.body?.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' });
     try { res.json({ ok: true, ...alterarPreco(idx, String(req.body.aba || ''), req.body.sku, req.body.preco, req.body.promo, req.usuario?.email || 'local') }); } catch (e) { res.status(400).json({ erro: e.message }); }
   });
+  app.post('/precificacao/peso', require('express').json(), (req, res) => {
+    const idx = parseInt(req.body?.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' });
+    try { res.json({ ok: true, linhas: alterarPeso(idx, req.body.sku, req.body.peso, req.usuario?.email || 'local') }); } catch (e) { res.status(400).json({ erro: e.message }); }
+  });
+  app.post('/precificacao/completar-pesos', (req, res) => { const idx = parseInt(req.query.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' }); res.json(completarPesos(idx)); });
+  app.get('/precificacao/completar-pesos', (req, res) => res.json(_pesos[parseInt(req.query.emp)] || {}));
   app.get('/precificacao/edicoes', (req, res) => { try { res.json(JSON.parse(fs.readFileSync(ARQ_ED)).slice(-300).reverse()); } catch (e) { res.json([]); } });
 }
 module.exports = { rotas, importar, dados, lerAba, tipoAba, adicionar, alterarPreco, historicoSku, custoPainel };
