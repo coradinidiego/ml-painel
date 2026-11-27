@@ -2209,6 +2209,15 @@ require('./apuracao_mkt').setFontes({ ml }); // apuração: ML direto da API
 require('./relatorio_diario')(app); // relatório diário (PDF no Telegram às 06:00)
 require('./full_agenda')(app);       // reserva da Coleta do Full pelo Telegram (extensão Monitor Full)
 // Alterar anúncio do ML (admin, a pedido): status/excluir, categoria, atributos, nome da família. PUT /items/{id}
+// Dados fiscais dos anúncios (ML): cria (post) ou altera (put) o cadastro fiscal de um SKU — /items/fiscal_information
+app.post('/ml/fiscal/:idx', express.json(), async (req, res) => {
+  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
+  const idx = parseInt(req.params.idx), m = req.body?.metodo === 'put' ? 'put' : 'post', sku = String(req.body?.sku || '');
+  if (m === 'put' && !sku) return res.status(400).json({ erro: 'sku' });
+  try { const r = await mlReq(idx, m, '/items/fiscal_information' + (m === 'put' ? '/' + encodeURIComponent(sku) : ''), req.body?.body || {}); res.json({ ok: true, resposta: r.data }); }
+  catch (e) { res.status(e.response?.status || 500).json({ erro: e.message, body: e.response?.data }); }
+});
+
 app.post('/ml/item-alterar/:idx/:id', express.json(), async (req, res) => {
   if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
   const idx = parseInt(req.params.idx), id = String(req.params.id); if (!/^MLB\d+$/.test(id)) return res.status(400).json({ erro: 'id' });
