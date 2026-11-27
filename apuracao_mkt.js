@@ -432,7 +432,7 @@ async function calcular(empKey, ini, fim) {
           // Shein: comissão fixa de 18% + custo fixo por SKU da planilha (regra do Diego); TikTok: taxas do Bling
           t = canal === 'Shein' && sheinReal(p.numeroLoja, sku, q, receita, valPed) ? sheinReal(p.numeroLoja, sku, q, receita, valPed)
             : canal === 'Shein'
-            ? { comissao: receita * SHEIN_PCT, taxa: (typeof fx === 'number' ? fx : 0) * q, frete: fre * prop, origem: '18%' + (typeof fx === 'number' ? ' + fixo planilha' : ' (sem fixo na planilha)') }
+            ? { comissao: receita * SHEIN_PCT, taxa: (typeof fx === 'number' ? fx : 0) * q, frete: fre * prop, origem: '18%' + (typeof fx === 'number' ? ' + fixo (precificação)' : ' (sem fixo na precificação)') }
             : { comissao: com * prop, taxa: 0, frete: fre * prop, origem: canal === 'TikTok' ? 'Bling (estimativa, sem repasse do TikTok)' : 'Bling' };
         }
         // TikTok: venda líquida e taxas do repasse real (o Bling só estima 20% e ignora serviço/afiliado e desconto do vendedor)
@@ -459,7 +459,7 @@ async function calcular(empKey, ini, fim) {
         const [cu, origemCusto] = custoDe(sku, canal, s => P.custo(s), (p.data_pedido || '').split('/').reverse().join('-'));
         let t;
         if (canal === 'Amazon') t = tarifasAmazon(p.numero_ecommerce, receita, valPed, sku, q, pu);
-        else { const rg = P.regra(canal, sku); t = canal === 'Shein' && sheinReal(p.numero_ecommerce, sku, q, receita, valPed) ? sheinReal(p.numero_ecommerce, sku, q, receita, valPed) : canal === 'Shein' ? { comissao: receita * SHEIN_PCT, taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: '18% + fixo planilha Lufe' } : { comissao: receita * (rg.rate || 0), taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: 'planilha Lufe' }; }
+        else { const rg = P.regra(canal, sku, pu); t = canal === 'Shein' && sheinReal(p.numero_ecommerce, sku, q, receita, valPed) ? sheinReal(p.numero_ecommerce, sku, q, receita, valPed) : canal === 'Shein' ? { comissao: receita * SHEIN_PCT, taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: '18% + fixo (precificação)' } : { comissao: receita * (rg.rate || 0), taxa: (rg.fixo || 0) * q, frete: (rg.frete || 0) * q, origem: rg.origem || 'precificação' }; }
         add({ empresa: E.nome, canal, data: (p.data_pedido || '').split('/').reverse().join('-'), pedido: p.numero, pedidoCanal: p.numero_ecommerce || '', situacao: p.situacao,
           cliente: p.cliente?.nome || '', sku, descricao: it.descricao || '', qtd: q, precoUn: r2(pu), receita, custoUn: cu, origemCusto,
           cmv: (cu || 0) * q, comissao: t.comissao, taxa: t.taxa, frete: t.frete, imposto: receita * aliq, embalagem: i === 0 ? emb : 0, origemTaxa: t.origem, _valPed: valPed });

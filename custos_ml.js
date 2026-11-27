@@ -38,6 +38,7 @@ function custosPainel(idx) {
 }
 function custosConta(idx) {
   try { const m = custosPainel(idx); if (m) return m; } catch (e) { console.warn('[custos] precificação do painel', idx, e.message); }
+  return null;   // planilhas abandonadas (26/11/2026)
   const arq = path.join(DATA, PLANILHAS[idx] || '');
   let mtime; try { mtime = fs.statSync(arq).mtimeMs; } catch (e) { return null; }
   if (_custos[idx]?.mtime === mtime) return _custos[idx].mapa;
@@ -83,6 +84,7 @@ function fixosCanal(idx, canal) {
     const re = new RegExp('^\\s*' + canal.replace(/\s+/g, '\\s*') + '\\s*$', 'i'), A = F.abas.find(a => re.test(a.aba) || re.test(a.abaPlanilha || ''));
     if (A) { const m = {}; for (const L of A.linhas) { const s = K(L.sku), v = L.p?.fixo; if (s && !(s in m) && v != null && v >= 0 && v < 100) m[s] = v; } return m; }
   } catch (e) {}
+  return {};   // planilhas abandonadas (26/11/2026)
   const arq = path.join(DATA, PLANILHAS[idx] || '');
   let mtime; try { mtime = fs.statSync(arq).mtimeMs; } catch (e) { return {}; }
   const ck = idx + '|' + canal;

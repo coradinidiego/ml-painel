@@ -705,6 +705,7 @@ function recarregarJsonsCusto() {
 }
 
 recarregarJsonsCusto();
+setInterval(recarregarJsonsCusto, 10 * 60e3);   // os JSONs são regerados da Precificação do painel
 
 function getFixoMapAmazon(idx) {
   const conta = idx === 0 ? 'zagodini' : 'camae';
@@ -1304,23 +1305,16 @@ app.get('/bling/pedido-raw/:idx', async (req, res) => {
 
 // ─── Recarregar planilhas de custo (sem reiniciar o servidor) ────────────
 app.post('/apuracao-bling/recarregar-custos', (req, res) => {
-  const { execFile } = require('child_process');
-  const script = path.join(__dirname, 'gerar_custos_json.py');
-  execFile('python3', [script], { cwd: __dirname, timeout: 120000, env: { ...process.env, DATA_DIR: DATA } }, (err, stdout, stderr) => {
-    if (err) {
-      console.error('[recarregar-custos]', stderr);
-      return res.status(500).json({ erro: stderr || err.message });
-    }
+  // custos e fixos vêm da Precificação do painel (as planilhas não são mais usadas)
+  try {
+    const r = require('./precificacao').exportarLegado();
     recarregarJsonsCusto();
-    // Limpa cache de apuração para forçar recálculo com novos custos
     try {
       const files = fs.readdirSync(PASTA_CACHE_AP).filter(f => /^(ap_|canais_)/.test(f)); // só cache do Bling (preserva Tiny/backups)
       files.forEach(f => { try { fs.unlinkSync(path.join(PASTA_CACHE_AP, f)); } catch(e) {} });
-      console.log(`[recarregar-custos] cache apuração limpo (${files.length} arquivos)`);
     } catch(e) {}
-    console.log('[recarregar-custos] JSONs recarregados em memória');
-    res.json({ ok: true, log: stdout, avisos: stderr || null });
-  });
+    res.json({ ok: true, log: 'Custos lidos da Precificação do painel: ' + JSON.stringify(r) });
+  } catch (e) { res.status(500).json({ erro: e.message }); }
 });
 
 // ─── Limpar cache de apuração ────────────────────────────────────────────

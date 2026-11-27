@@ -53,28 +53,20 @@ function tipoAbaML(nome) {
 /** { canal: { SKU: [{ aba, tipo, precos:[cheio, promo1, ...] }] } } */
 const _pl = {};
 function lerPlanilha(idx) {
-  const nome = require('./custos_ml').PLANILHAS[idx], arq = path.join(DATA, nome || '');
+  // (nome mantido) preços da Precificação do painel — as planilhas não são mais usadas
+  const arq = path.join(DATA, 'precificacao', `emp_${idx}.json`);
   let mtime; try { mtime = fs.statSync(arq).mtimeMs; } catch (e) { return null; }
   if (_pl[idx]?.mtime === mtime) return _pl[idx];
-  const wb = XLSX.readFile(arq, { cellDates: true });
-  const out = { mtime, arquivo: nome, atualizada: new Date(mtime).toISOString(), canais: {}, abas: [] };
-  for (const aba of wb.SheetNames) {
-    const canal = canalAba(aba); if (!canal) continue;
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[aba], { header: 1, defval: null, raw: true });
-    const h = rows.slice(0, 10).findIndex(r => r.some(c => /^produto$/i.test(String(c ?? '').trim())));
-    if (h < 0) continue;
-    const cab = rows[h].map(c => String(c ?? '').trim());
-    let cCod = cab.findIndex(c => /^c[oó]d/i.test(c)); if (cCod < 0) cCod = 0;
-    const cProd = cab.findIndex(c => /^produto$/i.test(c));
-    const cPreco = cab.map((c, i) => (/pre[çc]o|^venda/i.test(c) && !/lucro|%|comiss|desc|custo|oficial|campanha/i.test(c)) ? i : -1).filter(i => i >= 0);
-    if (!cPreco.length) continue;
-    out.abas.push({ aba, canal, colunas: cPreco.map(i => cab[i]) });
-    const tipo = canal === 'ml' ? tipoAbaML(aba) : null;
-    for (const r of rows.slice(h + 1)) {
-      const sku = K(r[cCod]); if (!sku || sku === 'COD' || sku === 'CODIGO') continue;
-      const precos = cPreco.map(i => num(r[i])).map(v => v > 0 ? r2(v) : null);
-      if (!precos.some(v => v)) continue;
-      ((out.canais[canal] ||= {})[sku] ||= []).push({ aba, tipo, precos, produto: r[cProd] || '' });
+  const F = JSON.parse(fs.readFileSync(arq));
+  const out = { mtime, arquivo: 'Precificação do painel', atualizada: new Date(mtime).toISOString(), canais: {}, abas: [] };
+  for (const A of F.abas) {
+    const canal = A.tipo === 'base' ? null : canalAba(A.aba) || (['ml', 'shopee', 'amazon', 'shein'].includes(A.tipo) ? A.tipo : null); if (!canal) continue;
+    out.abas.push({ aba: A.aba, canal, colunas: ['Preço', 'Promoção'] });
+    const tipo = canal === 'ml' ? tipoAbaML(A.aba) : null;
+    for (const L of A.linhas) {
+      const sku = K(L.sku); if (!sku) continue;
+      const precos = [L.preco, L.promo].map(v => v > 0 ? r2(v) : null); if (!precos.some(v => v)) continue;
+      ((out.canais[canal] ||= {})[sku] ||= []).push({ aba: A.aba, tipo, precos, produto: L.nome || '' });
     }
   }
   _pl[idx] = out;

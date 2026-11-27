@@ -3269,7 +3269,7 @@ function renderTabela(linhas) {
 async function recarregarPlanilhas() {
   const btn = document.getElementById('ap-planilha-btn');
   btn.disabled = true;
-  btn.textContent = '⏳ Lendo planilhas...';
+  btn.textContent = '⏳ Lendo custos...';
   try {
     const r = await fetch('/apuracao-bling/recarregar-custos', { method: 'POST' });
     const d = await r.json();
@@ -3288,7 +3288,7 @@ async function recarregarPlanilhas() {
   } catch(e) {
     btn.textContent = '❌ Erro: ' + e.message;
   }
-  setTimeout(() => { btn.disabled = false; btn.textContent = '📋 Recarregar planilhas'; }, 4000);
+  setTimeout(() => { btn.disabled = false; btn.textContent = '📋 Recarregar custos'; }, 4000);
 }
 
 function setBotoesApuracao(ocupado) {

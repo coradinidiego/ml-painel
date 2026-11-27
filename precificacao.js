@@ -736,6 +736,59 @@ function conferirSites(idx) {
   return st;
 }
 
+// ─── Regras para as apurações (mesmas da tela de preços), por empresa / canal / código ───
+const tipoCanal = canal => { const c = String(canal || '').toLowerCase(); return /mercado|^ml/.test(c) ? 'ml' : /shopee/.test(c) ? 'shopee' : /amazon/.test(c) ? 'amazon' : /shein/.test(c) ? 'shein' : /tiktok/.test(c) ? 'tiktok' : null; };
+const _ap = {};
+function indice(idx) {   // código → linha por tipo de canal (ML Clássico antes do Premium) + peso por código
+  let mt; try { mt = fs.statSync(arq(idx)).mtimeMs; } catch (e) { return null; }
+  if (_ap[idx]?.mt === mt) return _ap[idx];
+  const F = fotografia(idx); if (!F) return null;
+  const z = v => K(v).replace(/^0+(?=.)/, ''), por = {}, peso = {}, com = {};
+  const abas = [...F.abas].sort((a, b) => (/premium/i.test(a.aba) ? 1 : 0) - (/premium/i.test(b.aba) ? 1 : 0));
+  for (const A of abas) for (const L of A.linhas) {
+    const w = L.peso ?? L.pesoRef ?? L.p?.peso; if (w > 0 && !peso[z(L.sku)]) peso[z(L.sku)] = w;
+    if (A.tipo !== 'base') { (por[A.tipo] ||= {}); if (!por[A.tipo][z(L.sku)]) por[A.tipo][z(L.sku)] = L; }
+    if (A.tipo === 'ml' && L.p?.com) com[L.p.com] = (com[L.p.com] || 0) + 1;
+  }
+  const comML = +(Object.entries(com).sort((a, b) => b[1] - a[1])[0]?.[0] || 0.12);
+  return (_ap[idx] = { mt, F, por, peso, comML, z });
+}
+const semSufixo = s => { const m = String(s).match(/^(.*)-(\d+)$/); return m && +m[2] >= 1 && +m[2] <= 100 ? [m[1], +m[2]] : [s, 1]; };
+function pesoSku(idx, sku) {
+  const I = indice(idx); if (!I) return null; const k = I.z(sku); if (I.peso[k]) return I.peso[k];
+  const [b, q] = semSufixo(k); return I.peso[b] ? I.peso[b] * q : null;
+}
+function mlFreteEmp(idx, peso, preco) { const I = indice(idx); return mlFrete(I?.F?.mlFrete, peso, preco); }
+/** Comissão (% sobre o preço) e taxa fixa por unidade de um item vendido, pela regra do canal */
+function regraVenda(idx, canal, sku, pu) {
+  const tipo = tipoCanal(canal); if (!tipo) return { rate: 0, fixo: 0, frete: 0, origem: 'canal sem regra' };
+  const I = indice(idx); const k = I ? I.z(sku) : K(sku);
+  let L = I?.por[tipo]?.[k]; if (!L && I) L = I.por[tipo]?.[semSufixo(k)[0]];
+  const p = L?.p || {}, peso = pesoSku(idx, sku);
+  const orig = 'regra do painel' + (L ? '' : ' (item fora da precificação do canal)');
+  if (tipo === 'ml') return { rate: p.com ?? I?.comML ?? 0.12, fixo: mlFreteEmp(idx, peso || 0.5, pu) ?? 0, frete: p.frete || 0, peso, origem: orig };
+  if (tipo === 'shopee') return { rate: pu <= 79.99 ? 0.2 : 0.14, fixo: pu <= 79.99 ? 4.5 : pu <= 99.99 ? 16 : pu <= 199.99 ? 20 : 26, frete: 0, origem: orig };
+  if (tipo === 'amazon') { const r = p.com ?? 0.12, min = p.comMin ?? 0; return { rate: r, fixo: (pu <= 30 ? 4.5 : pu < 50 ? 6.5 : pu < 79 ? 6.75 : 0) + Math.max(0, min - pu * r), frete: p.frete || 0, origem: orig }; }
+  if (tipo === 'shein') return { rate: 0.18, fixo: p.fixo ?? sheinFrete(peso) ?? 0, frete: p.frete || 0, origem: orig };
+  if (tipo === 'tiktok') return { rate: pu < 50 ? 0.16 : 0.12, fixo: pu < 50 ? 4 : 6, frete: 0, origem: orig };
+  return { rate: 0, fixo: 0, frete: 0, origem: orig };
+}
+/** Arquivos antigos que a apuração do Bling lê (custo_por_sku.json / fixo_por_sku.json), agora gerados da precificação do painel */
+function exportarLegado() {
+  const fixo = {}, custo = {};
+  for (const [idx, conta] of [[0, 'zagodini'], [1, 'camae']]) {
+    const F = fotografia(idx); fixo[conta] = { amazon: {}, shein: {} }; custo[conta] = { amazon: {}, shein: {} }; if (!F) continue;
+    for (const A of F.abas) { if (A.tipo !== 'amazon' && A.tipo !== 'shein') continue;
+      for (const L of A.linhas) { const s = K(L.sku); if (!s) continue;
+        if (L.custo > 0 && custo[conta][A.tipo][s] == null) custo[conta][A.tipo][s] = L.custo;
+        const fx = A.tipo === 'shein' ? (L.p?.fixo ?? sheinFrete(L.peso ?? L.pesoRef)) : (L.p?.frete ?? null);
+        if (fx != null && fixo[conta][A.tipo][s] == null) fixo[conta][A.tipo][s] = fx; } }
+  }
+  fs.writeFileSync(path.join(DATA, 'fixo_por_sku.json'), JSON.stringify(fixo));
+  fs.writeFileSync(path.join(DATA, 'custo_por_sku.json'), JSON.stringify(custo));
+  return { fixo: Object.fromEntries(Object.entries(fixo).map(([k, v]) => [k, { amazon: Object.keys(v.amazon).length, shein: Object.keys(v.shein).length }])) };
+}
+
 function historicoSku(idx, sku) {
   const z = v => K(v).replace(/^0+(?=.)/, ''), alvo = z(sku);
   let H = []; try { H = JSON.parse(fs.readFileSync(ARQ_ED)); } catch (e) {}
@@ -744,6 +797,8 @@ function historicoSku(idx, sku) {
 
 function rotas(app, deps = {}) {
   _ml = deps.ml || null;
+  let _mtLeg = 0; const leg = () => { try { const m = [0, 1].map(i => { try { return fs.statSync(arq(i)).mtimeMs; } catch (e) { return 0; } }).join('|'); if (m !== _mtLeg) { _mtLeg = m; exportarLegado(); } } catch (e) { console.warn('[precificacao] legado', e.message); } };
+  setTimeout(leg, 5000); setInterval(leg, 10 * 60e3);
   // conferência diária com os sites (madrugada): uma empresa de cada vez
   setInterval(() => { const h = new Date().getUTCHours(); if (h !== 7) return; for (const i of [0, 1, 2]) if (!_site[i] || Date.now() - new Date(_site[i].inicio).getTime() > 20 * 3600e3) { conferirSites(i); break; } }, 15 * 60e3);
   const admin = req => !require('./auth').ativo() || !!req.usuario?.admin;
@@ -800,4 +855,4 @@ function rotas(app, deps = {}) {
   app.get('/precificacao/conferir', (req, res) => res.json(_site[parseInt(req.query.emp)] || {}));
   app.get('/precificacao/edicoes', (req, res) => { try { res.json(JSON.parse(fs.readFileSync(ARQ_ED)).slice(-300).reverse()); } catch (e) { res.json([]); } });
 }
-module.exports = { rotas, importar, dados, lerAba, tipoAba, adicionar, alterarPreco, historicoSku, custoPainel };
+module.exports = { rotas, importar, dados, lerAba, tipoAba, adicionar, alterarPreco, historicoSku, custoPainel, regraVenda, pesoSku, mlFreteEmp, exportarLegado, fotografia };

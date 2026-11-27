@@ -53,84 +53,24 @@ function pedidos() {
 function salvarPedidos() { fs.writeFileSync(CACHE_PED, JSON.stringify(_ped)); }
 function periodoFile(ini, fim) { return path.join(DIR, `tiny_ap_${ini}_${fim}.json`); }
 
-// ─── Planilha de precificação ──────────────────────────────────────────────
-function lerPlanilha(cfg) {
-  const wb = XLSX.readFile(PLANILHA);
-  // nome da aba sem diferenciar maiúsculas/espaços ("SHEIN", "Shein ", "ML Clássico"...); aba que não existe = vazia
-  const acha = aba => wb.SheetNames.find(n => n === aba) || wb.SheetNames.find(n => n.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === aba.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
-  const rows = aba => { const n = acha(aba); return n ? XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null }) : []; };
-  const base = {}, peso = {}, kits = {}, regras = {}, padrao = {};
-  for (const r of rows('Base').slice(2)) {
-    const c = K(r[0]); if (!c) continue;
-    if (num(r[4]) > 0) base[c] = num(r[4]);
-    if (num(r[3]) > 0) peso[c] = num(r[3]);
-  }
-  // canal: [aba, cod, qtd, custoUn, custoTot, preço, comissão, fixo, insumos, frete]
-  const spec = {
-    'Mercado Livre': ['ML Classico', 0, 1, 4, 5, 6, 7, 8, 11, null],
-    'Shopee':        ['Shopee',      0, 1, 3, 4, 9, 7, 6, 5, null],
-    'Amazon':        ['Amazon',      0, 1, 3, 4, 11, 9, 6, 5, 7],
-    'Shein':         ['Shein',       0, 1, 4, 5, 10, 8, 7, 6, null],
-  };
-  const mediana = a => { const s = a.filter(x => x != null).sort((x, y) => x - y); if (!s.length) return 0; const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
-  for (const [canal, [aba, cc, cq, cu, ct, cp, ccom, cfx, cins, cfr]] of Object.entries(spec)) {
-    regras[canal] = {};
-    for (const r of rows(aba).slice(1)) {
-      const c = K(r[cc]); if (!c) continue;
-      const q = num(r[cq]) || 1, tot = num(r[ct]), un = num(r[cu]), pr = num(r[cp]), com = num(r[ccom]);
-      const custo = tot > 0 ? tot : (un > 0 ? un * q : null);
-      if (custo && !(c in kits)) kits[c] = custo;
-      if (canal === 'Mercado Livre' && num(r[3]) && !(c in peso)) peso[c] = num(r[3]);
-      if (!(c in regras[canal])) regras[canal][c] = {
-        rate: (pr && com) ? com / pr : null, fixo: num(r[cfx]) || 0, insumos: num(r[cins]) || 0,
-        frete: cfr != null ? (num(r[cfr]) || 0) : 0,
-      };
-    }
-    const v = Object.values(regras[canal]);
-    padrao[canal] = { rate: mediana(v.map(x => x.rate).filter(x => x > 0 && x < 0.5)), fixo: mediana(v.map(x => x.fixo)), insumos: mediana(v.map(x => x.insumos)), frete: 0 };
-  }
-  padrao['Mercado Livre'].rate = cfg.mlComissao;
-  padrao['Outros'] = { rate: 0, fixo: 0, insumos: 0, frete: 0 };
-  const fr = rows('ML_FRETE');
-  const faixas = (fr[0] || []).slice(1, 9).map(Number);
-  const tabela = fr.slice(1).filter(r => r && r[0]).map(r => ({ max: r[9] === '>150' ? 1e9 : Number(r[9]), v: r.slice(1, 9).map(Number) }));
-  return { base, peso, kits, regras, padrao, faixas, tabela };
-}
+// ─── Regras e custos: Precificação do painel (as planilhas não são mais usadas) ───
+const PR = () => require('./precificacao');
 
 const BRINDES_SKU = ['SOFLENS59-200'];
 const BRINDES_DESC = /vetnil\s+enterex/i;
 function calcular(lista, cfg) {
-  const P = lerPlanilha(cfg);
-  // "SKU-3" = 3 × SKU (só sufixo de 1 a 100); sufixo maior é outro código (kit "A-B" de dois produtos), não quantidade
-  const semSufixo = s => { const m = s.match(/^(.*)-(\d+)$/); return m && parseInt(m[2]) >= 1 && parseInt(m[2]) <= 100 ? [m[1], parseInt(m[2])] : [s, 1]; };
-  const composto = (s, T) => { const p = s.split('-'); return p.length >= 2 && p.every(x => x && x in T) ? p.reduce((t, x) => t + T[x], 0) : null; };
-  // Custo: o do Tiny vigente na data da venda (histórico de custos do painel: cada mudança fica gravada com a data);
-  // sem custo no Tiny, o Custo da Precificação do painel; a planilha antiga só como último recurso
+  // Custo: o do Tiny vigente na data da venda (histórico de custos: cada mudança fica gravada com a data);
+  // sem custo no Tiny, o Custo da Precificação do painel
   const cmod = require('./custos_ml');
   const custo = (s, dataIso) => {
     if (cfg.erp) { try { const f = cmod.custoComFonte(2, s, dataIso ? cmod.custosNaData(2, dataIso, cfg.erp) : cfg.erp); if (f) return [f.v, f.fonte === 'planilha' ? 'Precificação' : f.fonte + (dataIso ? ' (custo em ' + dataIso.split('-').reverse().join('/') + ')' : '')]; } catch (e) {} }
-    if (s in P.base) return [P.base[s], 'Planilha (Base)'];
-    if (s in P.kits) return [P.kits[s], 'Planilha (kit)'];
-    const [b, q] = semSufixo(s);
-    if (b !== s && b in P.base) return [P.base[b] * q, 'Planilha (Base x qtd kit)'];
-    const c = composto(s, P.base); if (c != null) return [c, 'Planilha (soma dos itens do kit)'];
-    const v = s.match(/^(.+)-[A-Za-zÀ-ú]+$/); if (v && v[1] in P.base) return [P.base[v[1]], 'Planilha (variação de cor)'];
     return [null, 'SEM CUSTO'];
   };
-  const regra = (canal, s) => {
-    const rr = P.regras[canal] || {};
-    if (s in rr) return [rr[s], 'SKU'];
-    const [b] = semSufixo(s);
-    if (b in rr) return [rr[b], 'SKU base'];
-    return [P.padrao[canal] || P.padrao['Outros'], 'padrão canal'];
-  };
-  const pesoSku = s => { if (s in P.peso) return P.peso[s]; const [b, q] = semSufixo(s); return b in P.peso ? P.peso[b] * q : null; };
-  const mlEnvio = (preco, kg) => {
-    kg = kg || 0.5;
-    const linha = (P.tabela.find(t => kg <= t.max) || P.tabela[P.tabela.length - 1]).v;
-    let col = 0; P.faixas.forEach((lim, i) => { if (preco >= lim) col = i; });
-    return linha[col];
-  };
+  // tarifas de cada canal: as mesmas regras da tela de Precificação (ML: comissão da categoria + tabela de frete pelo peso;
+  // Shopee/TikTok por faixa de preço; Amazon comissão da categoria + custo fixo; SHEIN 18% + frete pelo peso)
+  const regra = (canal, s, pu) => { const r = PR().regraVenda(2, canal, s, pu); return [r, r.origem]; };
+  const pesoSku = s => PR().pesoSku(2, s);
+  const mlEnvio = (preco, kg) => PR().mlFreteEmp(2, kg || 0.5, preco) ?? 0;
 
   const linhas = []; let cancelados = 0;
   for (const p of lista) {
@@ -144,12 +84,12 @@ function calcular(lista, cfg) {
       // brindes (definidos pelo Diego em 24/11): custo zero
       const brinde = BRINDES_SKU.includes(s) || (!s && BRINDES_DESC.test(String(i.descricao || '')));
       const [cu, origCusto] = brinde ? [0, 'Brinde (custo zero)'] : custo(s, brToIso(p.data_pedido));
-      const [rg, origTaxa] = regra(canal, s);
+      const [rg, origTaxa] = regra(canal, s, pu);
       const cmv = (cu || 0) * q, imposto = receita * cfg.imposto, comissao = receita * (rg.rate || 0);
       let taxa;
       if (canal === 'Mercado Livre') { const kg = pesoSku(s); taxa = pu >= 79 ? mlEnvio(pu, (kg || 0.5) * q) : mlEnvio(pu, kg) * q; }
-      else taxa = (rg.fixo + rg.frete) * q;
-      const insumos = idx === 0 ? (cfg.embalagem ?? rg.insumos) : 0;   // embalagem por pedido (página Conta)
+      else taxa = ((rg.fixo || 0) + (rg.frete || 0)) * q;
+      const insumos = idx === 0 ? (cfg.embalagem ?? 0) : 0;   // embalagem por pedido (página Conta)
       const lucro = receita - cmv - imposto - comissao - taxa - insumos;
       linhas.push({
         data: p.data_pedido, dataIso: brToIso(p.data_pedido), pedido: p.numero, pedidoCanal: p.numero_ecommerce, canal, situacao: p.situacao,
@@ -246,21 +186,12 @@ router.get('/resultado', async (req, res) => {
       if (!lista.length) return res.json({ ok: false, vazio: true });
     }
     let erp = null; try { erp = await require('./custos_ml').custosErp(2); } catch (e) {}
-    res.json({ ok: true, ini, fim, geradoEm: meta?.geradoEm || null, ...calcular(lista, { ...getConfig(), erp, embalagem: require('./config_empresas').get().find(e => e.id === 'lufe')?.embalagem }) });
+    const ce = require('./config_empresas').get().find(e => e.id === 'lufe') || {};
+    res.json({ ok: true, ini, fim, geradoEm: meta?.geradoEm || null, ...calcular(lista, { ...getConfig(), ...(ce.imposto != null ? { imposto: ce.imposto } : {}), erp, embalagem: ce.embalagem }) });
   } catch (e) { console.error('[apuracao-tiny]', e); res.status(500).json({ ok: false, erro: e.message }); }
 });
 
 router.get('/config', (req, res) => res.json(getConfig()));
-// diagnóstico (admin): primeiras linhas de uma aba da planilha da Lufe e a regra lida para um SKU
-router.get('/debug-aba', (req, res) => {
-  if (require('./auth').ativo() && !req.usuario?.admin) return res.status(403).json({ erro: 'só admin' });
-  try {
-    const wb = XLSX.readFile(PLANILHA), aba = req.query.aba || 'Shein';
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[aba], { header: 1, raw: true, defval: null });
-    const P = lerPlanilha(getConfig());
-    res.json({ abas: wb.SheetNames, linhas: rows.length, inicio: rows.slice(0, 4), regra: req.query.sku ? (P.regras[aba] || {})[K(req.query.sku)] : undefined, padrao: P.padrao[aba], nRegras: Object.keys(P.regras[aba] || {}).length });
-  } catch (e) { res.status(500).json({ erro: e.message }); }
-});
 router.post('/config', express.json(), (req, res) => {
   const c = getConfig();
   if (req.body.imposto != null) c.imposto = parseFloat(req.body.imposto);
@@ -277,18 +208,7 @@ const PLANILHAS_CUSTO = {
           { nome: 'Precificacao Atelie Com S2 de Mãe.xlsx', empresa: 'Com Amor de Mãe', json: 'custo_por_sku.json' }],
 };
 const DIAS_ALERTA = 30;
-router.get('/planilhas', (req, res) => {
-  const grupo = PLANILHAS_CUSTO[req.query.grupo] ? req.query.grupo : 'lufe';
-  const agora = Date.now();
-  res.json({ diasAlerta: DIAS_ALERTA, planilhas: PLANILHAS_CUSTO[grupo].map(p => {
-    let mtime = null, jsonMtime = null;
-    try { mtime = fs.statSync(path.join(DATA, p.nome)).mtimeMs; } catch (e) {}
-    try { if (p.json) jsonMtime = fs.statSync(path.join(DATA, p.json)).mtimeMs; } catch (e) {}
-    return { ...p, existe: mtime != null, atualizadaEm: mtime ? new Date(mtime).toISOString() : null,
-      dias: mtime ? Math.floor((agora - mtime) / 864e5) : null,
-      naoRecarregada: !!(p.json && mtime && (!jsonMtime || mtime > jsonMtime + 60000)) };
-  }) });
-});
+router.get('/planilhas', (req, res) => res.json({ diasAlerta: 30, planilhas: [] }));   // planilhas abandonadas (26/11/2026): custos e regras vêm da Precificação do painel
 
 // ─── Usado pela apuração Amazon / Shein / TikTok (apuracao_mkt.js) ─────────
 async function buscarPeriodo(ini, fim, aoProgresso) {
@@ -307,13 +227,11 @@ function pedidosPeriodo(ini, fim) {
   return per.ids.map(id => cache[id]).filter(Boolean);
 }
 function planilhaLufe() {
-  let P; try { P = lerPlanilha(getConfig()); } catch (e) { P = { base: {}, kits: {}, regras: {}, padrao: { Outros: { rate: 0, fixo: 0, insumos: 0, frete: 0 } } }; }
-  // "SKU-3" = 3 × SKU (só sufixo de 1 a 100); sufixo maior é outro código (kit "A-B" de dois produtos), não quantidade
-  const semSufixo = s => { const m = s.match(/^(.*)-(\d+)$/); return m && parseInt(m[2]) >= 1 && parseInt(m[2]) <= 100 ? [m[1], parseInt(m[2])] : [s, 1]; };
-  const composto = (s, T) => { const p = s.split('-'); return p.length >= 2 && p.every(x => x && x in T) ? p.reduce((t, x) => t + T[x], 0) : null; };
+  // (nome mantido) custo e regras da Lufe pela Precificação do painel
+  const cmod = require('./custos_ml');
   return {
-    custo: s => { if (s in P.base) return P.base[s]; if (s in P.kits) return P.kits[s]; const [b, q] = semSufixo(s); if (b !== s && b in P.base) return P.base[b] * q; const c = composto(s, P.base); if (c != null) return c; const v = s.match(/^(.+)-[A-Za-zÀ-ú]+$/); return v && v[1] in P.base ? P.base[v[1]] : null; },
-    regra: (canal, s) => { const rr = P.regras[canal] || {}; if (s in rr) return rr[s]; const [b] = semSufixo(s); return rr[b] || P.padrao[canal] || P.padrao['Outros'] || {}; },
+    custo: s => { const f = cmod.custoComFonte(2, s, {}); return f ? f.v : null; },
+    regra: (canal, s, pu) => PR().regraVenda(2, canal, s, pu),
   };
 }
 
