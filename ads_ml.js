@@ -264,4 +264,16 @@ async function criarCampanha(idx, item, { nome, budget, acos_target }) {
   return { campanha: c, anuncio: a, id: cid };
 }
 const estado = (idx, dias) => ST[idx + '|' + dias];
-module.exports = { rotas, custoPeriodo, metricasPeriodo, carregar, estado, alterarCampanha, criarCampanha, moverAnuncio: async (idx, item, body) => { const adv = await anunciante(idx); return req(idx, 'put', `/marketplace/advertising/${adv.site}/product_ads/ads/${item}`, { params: { channel: 'marketplace' }, data: body }); } };
+/** Unidades vendidas por anúncio nos últimos `dias` (pedidos pagos do ML) — vendas dos anúncios fora do ADS, que as métricas do ADS não trazem */
+async function vendasPorItem(idx, dias = 15) {
+  const me = await req(idx, 'get', '/users/me'), uid = me.id, de = new Date(Date.now() - dias * 864e5).toISOString().replace('Z', '-00:00');
+  const out = {};
+  for (let offset = 0; offset < 10000; offset += 50) {
+    const d = await req(idx, 'get', '/orders/search', { params: { seller: uid, 'order.status': 'paid', 'order.date_created.from': de, sort: 'date_desc', limit: 50, offset } });
+    for (const o of d.results || []) for (const it of o.order_items || []) { const id = it.item?.id; if (id) out[id] = (out[id] || 0) + (+it.quantity || 0); }
+    if (!(d.results || []).length || offset + 50 >= (d.paging?.total || 0)) break;
+    await delay(250);
+  }
+  return out;
+}
+module.exports = { vendasPorItem, rotas, custoPeriodo, metricasPeriodo, carregar, estado, alterarCampanha, criarCampanha, moverAnuncio: async (idx, item, body) => { const adv = await anunciante(idx); return req(idx, 'put', `/marketplace/advertising/${adv.site}/product_ads/ads/${item}`, { params: { channel: 'marketplace' }, data: body }); } };

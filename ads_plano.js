@@ -233,10 +233,10 @@ function planoConta(c, Q, S, L60) {   // Q = 15 dias, S = 7 dias, L60 = { dias, 
       if (v?.quarentena) { quarentena.push({ ...b, tipo: 'quarentena', faltam: v.faltam, prazo: v.prazo, saida: v.saida }); continue; }
       if (v?.pode) { recs.push({ ...b, tipo: 'voltar', peso: (x.organicas || 0) * (x.margem?.lucro || 0), sugestao: { budget: ORC_TESTE, acos_target: Math.max(ACOS_MIN, Math.floor(m / 3)) }, motivo: v.motivo, saida: v.saida }); continue; }
       if (v || x.custo > 0) continue;   // saiu e ainda não mudou nada · ou acabou de sair
-      if (!((!x.campanha || x.status === 'idle') && (x.estoque ?? 1) > 0 && m != null && m >= 12 && (x.organicas || 0) >= 3)) continue;
+      if (!((!x.campanha || x.status === 'idle' || x.status === 'deleted') && (x.estoque ?? 1) > 0 && m != null && m >= 12 && (x.organicas || 0) >= 3)) continue;
       // (custo > 0 nos 15 dias = esteve no ADS e foi tirado: não sugere voltar)
       recs.push({ ...b, tipo: 'criar', peso: (x.organicas || 0) * (x.margem?.lucro || 0) + (x.recomendado ? 5 : 0), sugestao: { budget: ORC_PADRAO, acos_target: acosAlvo(m) },
-        motivo: `sem ADS · ${x.organicas || 0} venda(s) orgânica(s) em 15 dias${x.recomendado ? ' · recomendado pelo ML' : ''} · margem ${m}%` });
+        motivo: `sem ADS · ${x.organicas || 0} venda(s) ${x.organicasPedidos ? 'nos pedidos do ML' : 'orgânica(s)'} em 15 dias${x.recomendado ? ' · recomendado pelo ML' : ''} · margem ${m}%` });
     }
   }
   // campanhas lucrativas batendo no orçamento
@@ -277,7 +277,10 @@ async function calcular(motivo) {
   const out = { em: new Date().toISOString(), motivo, contas: [] };
   try {
     for (const c of CONTAS) {
-      try { const f = motivo === 'manual', Q = await pronto(c.idx, 15, f), S = await pronto(c.idx, 7, f), L60 = await A.metricasPeriodo(c.idx, 60).catch(() => null); out.contas.push(planoConta(c, Q, S, L60)); }
+      try { const f = motivo === 'manual', Q = await pronto(c.idx, 15, f), S = await pronto(c.idx, 7, f), L60 = await A.metricasPeriodo(c.idx, 60).catch(() => null);
+        // anúncio fora do ADS: as métricas do ADS não trazem as vendas orgânicas dele (vinham zeradas) → conta pelos pedidos do ML
+        try { const V = await A.vendasPorItem(c.idx, 15); for (const x of Q.itens) if (!(x.campanha && x.status === 'active') && V[x.id] > (x.organicas || 0)) { x.organicas = V[x.id]; x.organicasPedidos = true; } } catch (e) { console.warn('[ads-plano] vendas por pedido', c.nome, e.message); }
+        out.contas.push(planoConta(c, Q, S, L60)); }
       catch (e) { out.contas.push({ conta: c.nome, idx: c.idx, erro: e.message, recs: [], manter: [] }); }
     }
     P = out; gravar(ARQ, P);
