@@ -727,7 +727,7 @@ function conferirSites(idx) {
     if (st.mlFrete) F.mlFrete = st.mlFrete;
     for (const A of F.abas) { if (A.tipo === 'base') continue; const S = achados[A.tipo]; if (!S) { A.conferido = null; continue; }
       A.conferido = agora;
-      for (const L of A.linhas) { const ok = S.has(z(L.sku)) || (L.skuPlanilha && S.has(z(L.skuPlanilha))); L.noSite = ok;
+      for (const L of A.linhas) { const ok = !!(S.has(z(L.sku)) || (L.skuPlanilha && S.has(z(L.skuPlanilha)))); L.noSite = ok;
         if (A.tipo === 'ml') { const c = comML[z(L.sku)], v = c && (/premium/i.test(A.aba) ? c.premium : c.classico); if (v) L.p = { ...(L.p || {}), com: v, comPromo: v, comFonte: 'ML ' + (/premium/i.test(A.aba) ? 'Premium' : 'Clássico') + ' — categoria ' + c.cat + ' (' + c.mlb + ')' }; } } }
     fs.writeFileSync(arq(idx), JSON.stringify(F)); delete _cache[idx];
   })().catch(e => { st.erro = e.message; }).finally(() => { st.rodando = false; st.fim = new Date().toISOString(); st.fase = ''; });
