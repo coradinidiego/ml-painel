@@ -335,7 +335,7 @@ async function montar(idx) {
       }
     }
   }
-  return { ...F, erp: erpNome, erpItens: Object.keys(erp).length, cfg };
+  return { ...F, erp: erpNome, erpItens: Object.keys(erp).length, cfg, comPadrao };
 }
 
 function pagina(admin) {
@@ -352,9 +352,9 @@ button{background:#0d1b2a;color:#fff;border:none;cursor:pointer;font-weight:600}
 #mod table td{text-align:left}#mod input{padding:6px 8px}.inf{cursor:pointer;color:#1565c0;font-size:13px;margin-left:3px}</style></head><body>
 <div class="top"><b>💲 Precificação</b><span style="font-size:12px;opacity:.75">custos e margens por canal</span><span style="flex:1"></span>
 <select id="emp" onchange="carregar()"><option value="0">Zagodini</option><option value="1">Com Amor de Mãe</option><option value="2">Lufe</option></select>
-<select id="sit" onchange="render()"><option value="">Tudo</option><option value="dif">Custo diferente do ERP</option><option value="sem">Sem custo no ERP</option><option value="meta">Abaixo da meta</option></select>
+<select id="sit" onchange="render()"><option value="">Tudo</option><option value="dif">Custo diferente do ERP</option><option value="sem">Sem custo no ERP</option><option value="meta">Abaixo da meta</option><option value="site">Não encontrado no site</option></select>
 <input id="q" placeholder="Buscar código ou produto" oninput="render()">
-<button onclick="novo()" style="background:#2e7d32">＋ Incluir item ou kit</button><button id="aterp" onclick="atualizarErp()">↻ Atualizar custos do ERP</button><button onclick="igualarTodos()" style="background:#1565c0">⇐ Usar custo do ERP nos diferentes</button><a href="/painel.html">← Painel</a></div>
+<button onclick="novo()" style="background:#2e7d32">＋ Incluir item ou kit</button><button id="btconf" onclick="conferir()" style="background:#6a1b9a">↻ Conferir anúncios nos sites</button><button id="aterp" onclick="atualizarErp()">↻ Atualizar custos do ERP</button><button onclick="igualarTodos()" style="background:#1565c0">⇐ Usar custo do ERP nos diferentes</button><a href="/painel.html">← Painel</a></div>
 <div id="mod" onclick="if(event.target.id==='mod')fechar()"><div id="modc"></div></div><div class="box" id="info">Carregando… (a primeira leitura dos custos do ERP pode levar 1–2 min)</div><div class="box"><div class="abas" id="abas"></div><div id="lista"></div></div>
 <script>
 let D=null,A=0;const $=id=>document.getElementById(id);const esc=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -370,14 +370,14 @@ function info(){const t={l:0,c:0,s:0,m:0};D.abas.forEach(a=>{t.l+=a.resumo.linha
  '<div class="cards"><div class="card">Itens<br><b>'+t.l+'</b></div><div class="card">Com custo<br><b class="ok">'+t.c+'</b></div><div class="card">Sem custo<br><b class="sem">'+t.s+'</b></div><div class="card">Abaixo da meta ('+Math.round(D.cfg.meta*100)+'%)<br><b class="dif">'+t.m+'</b></div></div>';
  $('abas').innerHTML=D.abas.map((a,i)=>'<button class="aba'+(i===A?' on':'')+'" onclick="A='+i+';render()">'+esc(a.aba)+(a.resumo.semErp?' <small>'+a.resumo.semErp+' sem custo</small>':'')+'</button>').join('');}
 function render(){if(!D||D.erro)return;info();const a=D.abas[A],s=$('sit').value,q=$('q').value.toLowerCase();
- let L=a.linhas.filter(l=>(!s||(s==='sem'?/sem custo no/.test(l.situacao||''):s==='dif'?l.situacao==='diferente':abaixo(l)))&&(!q||(l.sku+' '+l.nome).toLowerCase().includes(q)));
- const base=a.tipo==='base';
- $('lista').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:8px">'+L.length+' de '+a.linhas.length+' linhas · colunas de preço lidas: '+esc((a.colunas.precos||[]).join(', ')||'—')+'</div><table><tr><th></th><th class="l">Código</th><th class="l">Produto</th><th>Qtd</th>'+(base?'':'<th>Peso</th>')+'<th>Custo</th><th>Custo ERP</th><th>Diferença</th>'+
+ let L=a.linhas.filter(l=>(!s||(s==='sem'?/sem custo no/.test(l.situacao||''):s==='dif'?l.situacao==='diferente':s==='site'?l.noSite===false:abaixo(l)))&&(!q||(l.sku+' '+l.nome).toLowerCase().includes(q)));
+ const base=a.tipo==='base';LV=L.slice(0,2000);
+ $('lista').innerHTML='<div style="font-size:13px;color:#555;margin-bottom:8px">'+L.length+' de '+a.linhas.length+' linhas'+(base?'':' · '+(a.conferido?'anúncios conferidos no site em '+dt(a.conferido)+' ('+a.linhas.filter(l=>l.noSite===false).length+' não encontrados, em vermelho)':'anúncios ainda não conferidos no site'))+' · altere Preço/Promoção para simular a margem; 💾 grava</div><table><tr><th></th><th class="l">Código</th><th class="l">Produto</th><th>Qtd</th>'+(base?'':'<th>Peso</th>')+'<th>Custo</th><th>Custo ERP</th><th>Diferença</th>'+
  (base?'':'<th>Preço</th><th>Margem</th><th>Preço p/ meta</th><th>Promoção</th><th>Margem</th><th>Preço p/ meta</th>')+'</tr>'+
- L.slice(0,2000).map(l=>'<tr><td><span class="ed" style="color:#c62828" title="Excluir este item da aba" onclick="excluir(\\''+esc(l.sku)+'\\')">🗑</span></td><td class="l">'+esc(l.sku)+'<br><small>linha '+l.linha+(l.skuPlanilha?' · na planilha: '+esc(l.skuPlanilha):'')+'</small></td><td class="l">'+esc(l.nome)+(l.novo?' <small style="color:#2e7d32">· incluído no painel</small>':'')+'</td><td>'+l.qtd+'</td>'+(base?'':'<td>'+(pw(l)!=null?String(pw(l)).replace('.',',')+' kg':'—')+'<span class="ed" title="Alterar o peso (vale para todas as abas)" onclick="editPeso(\\''+esc(l.sku)+'\\','+(pw(l)??0)+')">✎</span></td>')+'<td>'+brl(l.custo)+'<span class="ed" title="Alterar o Custo do painel" onclick="editarPainel(\\''+esc(l.sku)+'\\','+(l.custo??0)+')">✎</span><br><small title="Lançado por '+esc(l.custoPor||'')+'">'+dd(l.custoEm)+'</small><span class="inf" title="Quem lançou e histórico do custo" onclick="hist(\\''+esc(l.sku)+'\\')">ⓘ</span>'+(l.situacao==='diferente'?'<br><span class="ed" style="margin:0" title="Usar o custo do ERP" onclick="igualar(\\''+esc(l.sku)+'\\','+l.custoErp+')">⇐ usar ERP</span>':'')+'</td>'+
+ LV.map((l,j)=>'<tr'+(l.noSite===false?' style="background:#ffebee" title="Não encontrado no site ('+esc(a.aba)+')"':'')+'><td><span class="ed" style="color:#c62828" title="Excluir este item da aba" onclick="excluir(\\''+esc(l.sku)+'\\')">🗑</span></td><td class="l">'+esc(l.sku)+'<br><small>linha '+l.linha+(l.skuPlanilha?' · na planilha: '+esc(l.skuPlanilha):'')+'</small></td><td class="l">'+esc(l.nome)+(l.novo?' <small style="color:#2e7d32">· incluído no painel</small>':'')+'</td><td>'+l.qtd+'</td>'+(base?'':'<td>'+(pw(l)!=null?String(pw(l)).replace('.',',')+' kg':'—')+'<span class="ed" title="Alterar o peso (vale para todas as abas)" onclick="editPeso(\\''+esc(l.sku)+'\\','+(pw(l)??0)+')">✎</span></td>')+'<td>'+brl(l.custo)+'<span class="ed" title="Alterar o Custo do painel" onclick="editarPainel(\\''+esc(l.sku)+'\\','+(l.custo??0)+')">✎</span><br><small title="Lançado por '+esc(l.custoPor||'')+'">'+dd(l.custoEm)+'</small><span class="inf" title="Quem lançou e histórico do custo" onclick="hist(\\''+esc(l.sku)+'\\')">ⓘ</span>'+(l.situacao==='diferente'?'<br><span class="ed" style="margin:0" title="Usar o custo do ERP" onclick="igualar(\\''+esc(l.sku)+'\\','+l.custoErp+')">⇐ usar ERP</span>':'')+'</td>'+
  '<td>'+(l.custoErp!=null?brl(l.custoErp)+(l.fonteErp&&l.fonteErp!=='item'?'<br><small>'+esc(l.fonteErp)+'</small>':''):'<span class="sem">sem custo no '+D.erp+'</span>')+(!l.kit&&!l.variacoes?'<span class="ed" title="Alterar o custo no '+D.erp+'" onclick="editar(\\''+esc(l.sku)+'\\','+(l.custoErp??l.custo??0)+','+l.qtd+')">✎</span>':'')+'</td>'+
  '<td class="'+(l.situacao==='diferente'?'dif':'')+'">'+(l.dif==null?'—':(l.dif>0?'+':'')+brl(l.dif))+'</td>'+
- (base?'':'<td>'+brl(l.preco)+'<span class="ed" title="Alterar o preço" onclick="editPreco(\\''+esc(l.sku)+'\\',\\'preco\\','+(l.preco??0)+')">✎</span>'+(l.semRegra?'<br><small class="sem">'+esc(l.semRegra)+'</small>':'')+((a.tipo==='ml'||a.tipo==='amazon')&&l.p&&l.p.com?'<br><small title="'+esc(l.p.comFonte||'comissão do item')+'">comissão '+(l.p.com*100).toFixed(1).replace('.',',')+'%</small>':'')+'</td><td>'+pc(l.margemPainel)+'</td><td>'+brl(l.precoMeta)+'</td><td>'+brl(l.promo)+'<span class="ed" title="Alterar o preço de promoção" onclick="editPreco(\\''+esc(l.sku)+'\\',\\'promo\\','+(l.promo??0)+')">✎</span></td><td>'+pc(l.margemPromoPainel)+'</td><td>'+brl(l.precoMetaPromo)+'</td>')+'</tr>').join('')+'</table>';}
+ (base?'':'<td>'+inp(j,'preco',l.preco)+(l.semRegra?'<br><small class="sem">'+esc(l.semRegra)+'</small>':'')+((a.tipo==='ml'||a.tipo==='amazon')&&l.p&&l.p.com?'<br><small title="'+esc(l.p.comFonte||'comissão do item')+'">comissão '+(l.p.com*100).toFixed(1).replace('.',',')+'%</small>':'')+'</td><td id="m_'+j+'_preco">'+pc(l.margemPainel)+'</td><td>'+brl(l.precoMeta)+'</td><td>'+inp(j,'promo',l.promo)+'</td><td id="m_'+j+'_promo">'+pc(l.margemPromoPainel)+'</td><td>'+brl(l.precoMetaPromo)+'</td>')+'</tr>').join('')+'</table>';}
 async function atualizarErp(){const b=$('aterp'),e=$('emp').value;b.disabled=true;b.textContent='Atualizando custos…';
  await fetch('/precificacao/atualizar-erp?emp='+e,{method:'POST'});
  let st;for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,3000));st=await fetch('/precificacao/atualizar-erp?emp='+e).then(r=>r.json());if(!st.rodando)break;}
@@ -399,6 +399,24 @@ async function editar(sku,atual,qtd){
  const r=await fetch('/precificacao/custo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emp:$('emp').value,sku,custo:n})}).then(r=>r.json());
  if(r.erro)return alert('Não gravou: '+r.erro);
  const aba=A;const x=await fetch('/precificacao/dados?emp='+$('emp').value);D=await x.json();A=aba;render();}
+const ML_FRETE_PADRAO=${JSON.stringify(ML_FRETE_PADRAO).replace(/null/g,'Infinity')};
+${mlFrete.toString()}
+${sheinFrete.toString()}
+${tarifas.toString()}
+let LV=[];
+const nf=v=>v==null?'':Number(v).toFixed(2).replace('.',',');
+function inp(j,c,v){return '<input class="pr" id="i_'+j+'_'+c+'" value="'+nf(v)+'" oninput="sim('+j+',\\''+c+'\\')" style="width:78px;text-align:right;padding:4px 6px;font-size:12.5px"><span class="ed" id="s_'+j+'_'+c+'" style="display:none" title="Gravar este preço" onclick="gravarSim('+j+',\\''+c+'\\')">💾</span>';}
+function margemCalc(l,tipo,preco,promo){const custo=l.custoErp??l.custo;if(!(preco>0)||custo==null)return null;const t=tarifas(tipo,preco,{...l,peso:pw(l)},promo,D.mlFrete,(D.comPadrao||{})[D.abas[A].aba]);if(t==null)return null;return (preco-custo-t-D.cfg.imposto*preco-D.cfg.insumos)/preco;}
+function sim(j,c){const l=LV[j],el=$('i_'+j+'_'+c),v=parseFloat(el.value.replace(/\./g,'').replace(',','.'));const tipo=D.abas[A].tipo;
+ const m=margemCalc(l,tipo,v,c==='promo');$('m_'+j+'_'+c).innerHTML=pc(m)+(m!=null?'<br><small>lucro '+brl(m*v)+'</small>':'');
+ const mud=!(Math.abs((v||0)-(l[c]||0))<0.005);$('s_'+j+'_'+c).style.display=mud?'':'none';el.style.background=mud?'#fff8e1':'';}
+async function gravarSim(j,c){const l=LV[j],a=D.abas[A],v=$('i_'+j+'_'+c).value.trim();const b={emp:$('emp').value,aba:a.aba,sku:l.sku};b[c]=v===''?null:parseFloat(v.replace(/\./g,'').replace(',','.'));
+ const r=await fetch('/precificacao/preco',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());if(r.erro)return alert(r.erro);
+ const aba=A;D=await (await fetch('/precificacao/dados?emp='+$('emp').value)).json();A=aba;render();}
+async function conferir(){const b=$('btconf'),e=$('emp').value;b.disabled=true;await fetch('/precificacao/conferir?emp='+e,{method:'POST'});let st;
+ for(let i=0;i<400;i++){await new Promise(r=>setTimeout(r,4000));st=await fetch('/precificacao/conferir?emp='+e).then(r=>r.json());b.textContent='Conferindo… '+(st.fase||'');if(!st.rodando)break;}
+ b.disabled=false;b.textContent='↻ Conferir anúncios nos sites';if(st&&st.erro)alert('Erro: '+st.erro);const aba=A;D=await (await fetch('/precificacao/dados?emp='+e)).json();A=aba;render();}
+
 function fechar(){$('mod').style.display='none';}
 function abrir(h){$('modc').innerHTML=h;$('mod').style.display='flex';}
 const brn=v=>v==null||v===''?'—':(typeof v==='number'?brl(v):esc(v));
@@ -636,13 +654,96 @@ function amazonComissoes(idx, skus) {
   return st;
 }
 
+// ─── Conferência com os sites: anúncio existe? + regras do ML (comissão por categoria e tabela de frete da conta) ───
+let _ml = null;   // função ml(idx, path, params) do server.js
+const _site = {};
+const ML_REPR = [10, 30, 60, 90, 110, 130, 170, 250];   // um preço dentro de cada faixa da tabela de frete do ML
+function conferirSites(idx) {
+  if (_site[idx]?.rodando) return _site[idx];
+  const st = _site[idx] = { rodando: true, inicio: new Date().toISOString(), fase: '', canais: {} };
+  const z = v => K(v).replace(/^0+(?=.)/, ''), D = ms => new Promise(r => setTimeout(r, ms));
+  (async () => {
+    const achados = {};   // tipo → Set de códigos encontrados no site (ou null = não deu para conferir)
+    const comML = {};     // código → {com, mlb, tipo}
+    // Mercado Livre
+    if (_ml) try {
+      st.fase = 'Mercado Livre: anúncios';
+      const uid = (await _ml(idx, '/users/me')).id, ids = new Set();
+      for (const status of ['active', 'paused']) { let scroll = null;
+        for (let k = 0; k < 200; k++) { const r = await _ml(idx, `/users/${uid}/items/search`, { status, limit: 100, search_type: 'scan', ...(scroll ? { scroll_id: scroll } : {}) });
+          (r.results || []).forEach(x => ids.add(x)); scroll = r.scroll_id; if (!(r.results || []).length) break; } }
+      const L = [...ids], cats = {}, S = new Set();
+      for (let i = 0; i < L.length; i += 20) {
+        const R = await _ml(idx, '/items', { ids: L.slice(i, i + 20).join(','), attributes: 'id,category_id,listing_type_id,attributes,variations,seller_custom_field' });
+        for (const w of Array.isArray(R) ? R : [R]) { const x = w.body || w; if (!x?.id) continue;
+          const skus = [(x.attributes || []).find(a => a.id === 'SELLER_SKU')?.value_name, x.seller_custom_field, ...(x.variations || []).map(v => (v.attributes || []).find(a => a.id === 'SELLER_SKU')?.value_name || v.seller_custom_field)].filter(Boolean);
+          for (const s of skus) { S.add(z(s)); cats[x.category_id] = 1; if (!comML[z(s)] || x.listing_type_id === 'gold_special') comML[z(s)] = { cat: x.category_id, mlb: x.id }; } }
+        st.canais.ml = S.size;
+      }
+      st.fase = 'Mercado Livre: comissão por categoria';
+      const pct = {};
+      for (const cat of Object.keys(cats)) for (const tipo of ['gold_special', 'gold_pro']) { try {
+        const r = await _ml(idx, '/sites/MLB/listing_prices', { price: 100, category_id: cat, listing_type_id: tipo }); const x = Array.isArray(r) ? r[0] : r;
+        const pf = x?.sale_fee_details?.percentage_fee; if (pf > 0) pct[cat + '|' + tipo] = pf / 100; } catch (e) {} await D(120); }
+      for (const v of Object.values(comML)) { v.classico = pct[v.cat + '|gold_special'] ?? null; v.premium = pct[v.cat + '|gold_pro'] ?? null; }
+      achados.ml = S;
+      // tabela de frete/custo operacional da conta (peso × faixa de preço), direto do ML
+      st.fase = 'Mercado Livre: tabela de frete';
+      const T = { faixas: ML_FRETE_PADRAO.faixas, pesos: ML_FRETE_PADRAO.pesos, tab: [] };
+      for (const w of T.pesos) { const lin = [];
+        for (const p of ML_REPR) { let v = null; try { const r = await _ml(idx, `/users/${uid}/shipping_options/free`, { dimensions: '10x10x10,' + Math.round((w === Infinity ? 160 : w) * 1000), item_price: p, listing_type_id: 'gold_special', mode: 'me2', condition: 'new', logistic_type: 'drop_off', verbose: true });
+          v = r?.coverage?.all_country?.list_cost ?? null; } catch (e) {} lin.push(v); await D(120); }
+        T.tab.push(lin); }
+      if (T.tab.every(l => l.every(v => typeof v === 'number'))) { T.em = new Date().toISOString(); st.mlFrete = T; }
+    } catch (e) { st.erroMl = e.message; }
+    // Amazon
+    try { st.fase = 'Amazon';
+      const amazon = require('./amazon'), ch = Object.keys(amazon.LOJAS).find(k => amazon.LOJAS[k].ml === idx);
+      if (ch) { const A = amazon.loja(ch); if (A.configurada()) { const seller = await A.sellerId('B07HGLN8R5'), S = new Set(); let tok = null;
+        for (let pg = 0; pg < 400; pg++) { const q = { marketplaceIds: A.MARKETPLACE_BR, includedData: 'summaries', pageSize: 20 }; if (tok) q.pageToken = tok;
+          const d = await A.get('/listings/2021-08-01/items/' + encodeURIComponent(seller), q); (d.items || []).forEach(it => S.add(z(it.sku))); tok = d.pagination?.nextToken; if (!tok) break; await D(250); }
+        achados.amazon = S; st.canais.amazon = S.size; } }
+    } catch (e) { st.erroAmazon = e.message; }
+    // Shopee
+    try { st.fase = 'Shopee';
+      const shopee = require('./shopee'), ch = Object.keys(shopee.LOJAS).find(k => shopee.LOJAS[k].ml === idx);
+      if (ch) { const SP = shopee.loja(ch), S = new Set(), ids = [];
+        for (const status of ['NORMAL', 'UNLIST']) for (let offset = 0; ;) { const d = await SP.shopeeGet('/api/v2/product/get_item_list', { offset, page_size: 100, item_status: status });
+          ids.push(...(d.response?.item || []).map(i => i.item_id)); if (!d.response?.has_next_page) break; offset = d.response.next_offset; }
+        for (let i = 0; i < ids.length; i += 50) { const d = await SP.shopeeGet('/api/v2/product/get_item_base_info', { item_id_list: ids.slice(i, i + 50).join(',') });
+          for (const it of d.response?.item_list || []) { if (it.item_sku) S.add(z(it.item_sku));
+            if (it.has_model) { const m = await SP.shopeeGet('/api/v2/product/get_model_list', { item_id: it.item_id }); (m.response?.model || []).forEach(x => x.model_sku && S.add(z(x.model_sku))); } } }
+        achados.shopee = S; st.canais.shopee = S.size; }
+    } catch (e) { st.erroShopee = e.message; }
+    // SHEIN (catálogo que o painel já mantém)
+    try { st.fase = 'SHEIN';
+      const shein = require('./shein'), ch = Object.keys(shein.LOJAS).find(k => ({ zagodini: 0, mae: 1, lufe: 2 })[k] === idx);
+      if (ch) { let C = shein.catCache(ch); if (!C.ts || Date.now() - C.ts > 864e5) { try { await shein.catalogo(ch); C = shein.catCache(ch); } catch (e) {} }
+        const S = new Set(Object.values(C.skus || {}).map(v => z(v.sku)).filter(Boolean)); if (S.size) { achados.shein = S; st.canais.shein = S.size; } }
+    } catch (e) { st.erroShein = e.message; }
+    // grava: linha vermelha quando o código não está no site; comissão do ML pela categoria do anúncio
+    st.fase = 'gravando';
+    const F = fotografia(idx), agora = new Date().toISOString();
+    if (st.mlFrete) F.mlFrete = st.mlFrete;
+    for (const A of F.abas) { if (A.tipo === 'base') continue; const S = achados[A.tipo]; if (!S) { A.conferido = null; continue; }
+      A.conferido = agora;
+      for (const L of A.linhas) { const ok = S.has(z(L.sku)) || (L.skuPlanilha && S.has(z(L.skuPlanilha))); L.noSite = ok;
+        if (A.tipo === 'ml') { const c = comML[z(L.sku)], v = c && (/premium/i.test(A.aba) ? c.premium : c.classico); if (v) L.p = { ...(L.p || {}), com: v, comPromo: v, comFonte: 'ML ' + (/premium/i.test(A.aba) ? 'Premium' : 'Clássico') + ' — categoria ' + c.cat + ' (' + c.mlb + ')' }; } } }
+    fs.writeFileSync(arq(idx), JSON.stringify(F)); delete _cache[idx];
+  })().catch(e => { st.erro = e.message; }).finally(() => { st.rodando = false; st.fim = new Date().toISOString(); st.fase = ''; });
+  return st;
+}
+
 function historicoSku(idx, sku) {
   const z = v => K(v).replace(/^0+(?=.)/, ''), alvo = z(sku);
   let H = []; try { H = JSON.parse(fs.readFileSync(ARQ_ED)); } catch (e) {}
   return H.filter(x => x.emp === idx && z(x.sku) === alvo).slice(-50).reverse();
 }
 
-function rotas(app) {
+function rotas(app, deps = {}) {
+  _ml = deps.ml || null;
+  // conferência diária com os sites (madrugada): uma empresa de cada vez
+  setInterval(() => { const h = new Date().getUTCHours(); if (h !== 7) return; for (const i of [0, 1, 2]) if (!_site[i] || Date.now() - new Date(_site[i].inicio).getTime() > 20 * 3600e3) { conferirSites(i); break; } }, 15 * 60e3);
   const admin = req => !require('./auth').ativo() || !!req.usuario?.admin;
   app.get('/precificacao', (req, res) => res.send(pagina(admin(req))));
   app.get('/precificacao/dados', async (req, res) => {
@@ -689,6 +790,8 @@ function rotas(app) {
   app.get('/precificacao/completar-pesos', (req, res) => res.json(_pesos[parseInt(req.query.emp)] || {}));
   app.post('/precificacao/amazon-comissoes', (req, res) => { const idx = parseInt(req.query.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' }); res.json(amazonComissoes(idx)); });
   app.get('/precificacao/amazon-comissoes', (req, res) => res.json(_amz[parseInt(req.query.emp)] || {}));
+  app.post('/precificacao/conferir', (req, res) => { const idx = parseInt(req.query.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' }); res.json(conferirSites(idx)); });
+  app.get('/precificacao/conferir', (req, res) => res.json(_site[parseInt(req.query.emp)] || {}));
   app.get('/precificacao/edicoes', (req, res) => { try { res.json(JSON.parse(fs.readFileSync(ARQ_ED)).slice(-300).reverse()); } catch (e) { res.json([]); } });
 }
 module.exports = { rotas, importar, dados, lerAba, tipoAba, adicionar, alterarPreco, historicoSku, custoPainel };

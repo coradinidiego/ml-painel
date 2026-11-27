@@ -2344,7 +2344,7 @@ require('./promos_ml').rotas(app, { ml, mlReq, dados: () => dadosCache, uid: asy
 require('./queima_full').rotas(app, { ml, mlReq, uid: async idx => (_uidML[idx] ||= (await ml(idx, '/users/me')).id) }); // Queima de estoque parado no Full: mantém ganhando o catálogo até o piso e avisa quando o Full acabar
 require('./ads_ml').rotas(app, { ml, token: getToken, dados: () => dadosCache, uid: async idx => (_uidML[idx] ||= (await ml(idx, '/users/me')).id) }); // ADS do ML com lucro real
 require('./ads_plano').rotas(app); // ADS: o que fazer hoje (7 e 15 dias, todas as contas)
-require('./precificacao').rotas(app); // Precificação no painel (Etapa 1: planilha importada × custo do ERP)
+require('./precificacao').rotas(app, { ml }); // Precificação no painel (Etapa 1: planilha importada × custo do ERP)
 require('./precos').rotas(app, { ml: () => dadosCache, shp: () => SHP, az: () => AZ_ANUNCIOS,
   // "Refazer análise agora": baixa a planilha de novo e recarrega os sites da empresa
   refazer: (idx, k) => {
