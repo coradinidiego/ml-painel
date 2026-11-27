@@ -30,7 +30,7 @@ const arq = idx => path.join(DIR, `emp_${idx}.json`);
 // ML: comissão = preço × % da linha (fórmula "=G2*0,115"); taxa fixa/frete pela tabela ML_FRETE (peso da linha × faixa de preço);
 //     + "Frete Grátis" informado na linha; na promoção soma o "Desc. comissão".
 // Shopee: comissão 20% até 79,99 e 14% acima; taxa fixa 4,50 até 79,99 · 16 até 99,99 · 20 até 199,99 · 26 acima (na promoção, mesma regra pelo preço da promoção).
-// Amazon: comissão 12%; custo fixo 4,50 até 30 · 6,50 até 49,99 · 6,75 até 78,99 · 0 acima; + "Frete Grátis" da linha.
+// Amazon: comissão da categoria do produto (lida da própria Amazon por SKU; mínimo R$ 1–2), 12% se ainda não lida; custo fixo 4,50 até 30 · 6,50 até 49,99 · 6,75 até 78,99 · 0 acima; + "Frete Grátis" da linha.
 // SHEIN: comissão 18% + custo fixo (frete pelo peso) + "Frete Grátis" da linha; promoção = preço − % desconto.
 // TikTok: comissão 16% abaixo de 50 e 12% acima; custo fixo 4 abaixo de 50 e 6 acima; promoção desconta o % de afiliado.
 const ML_FRETE_PADRAO = { faixas: [0, 19, 49, 79, 100, 120, 150, 200], pesos: [0.3, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 125, 150, Infinity], tab: [
@@ -76,7 +76,7 @@ function tarifas(tipo, preco, L, promo, T, padraoCom) {
     return com + fixa + (p.frete || 0) - (promo ? (p.descCom || 0) : 0);
   }
   if (tipo === 'shopee') return (preco <= 79.99 ? preco * 0.2 : preco * 0.14) + (preco <= 79.99 ? 4.5 : preco <= 99.99 ? 16 : preco <= 199.99 ? 20 : 26);
-  if (tipo === 'amazon') return preco * 0.12 + (preco <= 30 ? 4.5 : preco < 50 ? 6.5 : preco < 79 ? 6.75 : 0) + (p.frete || 0);
+  if (tipo === 'amazon') return Math.max(preco * (p.com ?? 0.12), p.comMin ?? 0) + (preco <= 30 ? 4.5 : preco < 50 ? 6.5 : preco < 79 ? 6.75 : 0) + (p.frete || 0);
   if (tipo === 'shein') { const fixo = p.fixo ?? sheinFrete(L.peso ?? p.peso); if (fixo == null) return null; return preco * 0.18 + fixo + (p.frete || 0); }
   if (tipo === 'tiktok') return (preco < 50 ? preco * 0.16 : preco * 0.12) + (preco < 50 ? 4 : 6) + (promo ? preco * (p.afiliado || 0) : 0);
   return null;
@@ -377,7 +377,7 @@ function render(){if(!D||D.erro)return;info();const a=D.abas[A],s=$('sit').value
  L.slice(0,2000).map(l=>'<tr><td><span class="ed" style="color:#c62828" title="Excluir este item da aba" onclick="excluir(\\''+esc(l.sku)+'\\')">🗑</span></td><td class="l">'+esc(l.sku)+'<br><small>linha '+l.linha+(l.skuPlanilha?' · na planilha: '+esc(l.skuPlanilha):'')+'</small></td><td class="l">'+esc(l.nome)+(l.novo?' <small style="color:#2e7d32">· incluído no painel</small>':'')+'</td><td>'+l.qtd+'</td>'+(base?'':'<td>'+(pw(l)!=null?String(pw(l)).replace('.',',')+' kg':'—')+'<span class="ed" title="Alterar o peso (vale para todas as abas)" onclick="editPeso(\\''+esc(l.sku)+'\\','+(pw(l)??0)+')">✎</span></td>')+'<td>'+brl(l.custo)+'<span class="ed" title="Alterar o Custo do painel" onclick="editarPainel(\\''+esc(l.sku)+'\\','+(l.custo??0)+')">✎</span><br><small title="Lançado por '+esc(l.custoPor||'')+'">'+dd(l.custoEm)+'</small><span class="inf" title="Quem lançou e histórico do custo" onclick="hist(\\''+esc(l.sku)+'\\')">ⓘ</span>'+(l.situacao==='diferente'?'<br><span class="ed" style="margin:0" title="Usar o custo do ERP" onclick="igualar(\\''+esc(l.sku)+'\\','+l.custoErp+')">⇐ usar ERP</span>':'')+'</td>'+
  '<td>'+(l.custoErp!=null?brl(l.custoErp)+(l.fonteErp&&l.fonteErp!=='item'?'<br><small>'+esc(l.fonteErp)+'</small>':''):'<span class="sem">sem custo no '+D.erp+'</span>')+(!l.kit&&!l.variacoes?'<span class="ed" title="Alterar o custo no '+D.erp+'" onclick="editar(\\''+esc(l.sku)+'\\','+(l.custoErp??l.custo??0)+','+l.qtd+')">✎</span>':'')+'</td>'+
  '<td class="'+(l.situacao==='diferente'?'dif':'')+'">'+(l.dif==null?'—':(l.dif>0?'+':'')+brl(l.dif))+'</td>'+
- (base?'':'<td>'+brl(l.preco)+'<span class="ed" title="Alterar o preço" onclick="editPreco(\\''+esc(l.sku)+'\\',\\'preco\\','+(l.preco??0)+')">✎</span>'+(l.semRegra?'<br><small class="sem">'+esc(l.semRegra)+'</small>':'')+'</td><td>'+pc(l.margemPainel)+'</td><td>'+brl(l.precoMeta)+'</td><td>'+brl(l.promo)+'<span class="ed" title="Alterar o preço de promoção" onclick="editPreco(\\''+esc(l.sku)+'\\',\\'promo\\','+(l.promo??0)+')">✎</span></td><td>'+pc(l.margemPromoPainel)+'</td><td>'+brl(l.precoMetaPromo)+'</td>')+'</tr>').join('')+'</table>';}
+ (base?'':'<td>'+brl(l.preco)+'<span class="ed" title="Alterar o preço" onclick="editPreco(\\''+esc(l.sku)+'\\',\\'preco\\','+(l.preco??0)+')">✎</span>'+(l.semRegra?'<br><small class="sem">'+esc(l.semRegra)+'</small>':'')+((a.tipo==='ml'||a.tipo==='amazon')&&l.p&&l.p.com?'<br><small title="'+esc(l.p.comFonte||'comissão do item')+'">comissão '+(l.p.com*100).toFixed(1).replace('.',',')+'%</small>':'')+'</td><td>'+pc(l.margemPainel)+'</td><td>'+brl(l.precoMeta)+'</td><td>'+brl(l.promo)+'<span class="ed" title="Alterar o preço de promoção" onclick="editPreco(\\''+esc(l.sku)+'\\',\\'promo\\','+(l.promo??0)+')">✎</span></td><td>'+pc(l.margemPromoPainel)+'</td><td>'+brl(l.precoMetaPromo)+'</td>')+'</tr>').join('')+'</table>';}
 async function atualizarErp(){const b=$('aterp'),e=$('emp').value;b.disabled=true;b.textContent='Atualizando custos…';
  await fetch('/precificacao/atualizar-erp?emp='+e,{method:'POST'});
  let st;for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,3000));st=await fetch('/precificacao/atualizar-erp?emp='+e).then(r=>r.json());if(!st.rodando)break;}
@@ -558,6 +558,7 @@ async function adicionar(idx, b, quem) {
   let H = []; try { H = JSON.parse(fs.readFileSync(ARQ_ED)); } catch (e) {}
   H.push({ quando: agora, quem, emp: idx, sku, de: null, para: custo, onde: 'incluído: ' + feitas.join(', ') }); fs.writeFileSync(ARQ_ED, JSON.stringify(H.slice(-5000)));
   console.log(`[precificacao] incluído ${EMP[idx].nome} ${sku} em ${feitas.join(', ')} (${quem})`);
+  if (feitas.some(a => F.abas.find(x => x.aba === a)?.tipo === 'amazon')) setTimeout(() => { try { amazonComissoes(idx, [sku]); } catch (e) {} }, 500);
   return { sku, abas: feitas };
 }
 /** Altera preço cheio e/ou promoção de uma linha de canal; as tarifas passam a ser % do preço (como estavam na planilha) */
@@ -597,6 +598,41 @@ function completarPesos(idx) {
     st.total = skus.size;
     for (const sku of skus) { try { const i = await buscarItem(idx, sku); if (i.peso > 0) { alterarPeso(idx, sku, i.peso, 'ERP'); st.feitos++; } else st.falta.push(sku); } catch (e) { st.falta.push(sku); } }
   })().catch(e => { st.erro = e.message; }).finally(() => { st.rodando = false; });
+  return st;
+}
+
+/** Amazon: comissão real da categoria de cada SKU (estimativa de tarifas da própria Amazon). skus = só estes (itens novos) */
+const _amz = {};
+function amazonComissoes(idx, skus) {
+  if (_amz[idx]?.rodando) return _amz[idx];
+  const st = _amz[idx] = { rodando: true, inicio: new Date().toISOString(), lidos: 0, gravados: 0, semAnuncio: [] };
+  (async () => {
+    const amazon = require('./amazon'); const chave = Object.keys(amazon.LOJAS).find(k => amazon.LOJAS[k].ml === idx);
+    if (!chave) throw new Error('empresa sem conta Amazon'); const A = amazon.loja(chave);
+    const F0 = fotografia(idx); const z = v => K(v).replace(/^0+(?=.)/, '');
+    const alvo = new Set(); for (const T of F0.abas) if (T.tipo === 'amazon') for (const L of T.linhas) if (!skus || skus.map(z).includes(z(L.sku))) alvo.add(L.sku);
+    st.total = alvo.size;
+    // SKU → ASIN pelos anúncios da conta
+    const seller = await A.sellerId('B07HGLN8R5'); const asin = {}; let tok = null;
+    for (let pg = 0; pg < 400; pg++) {
+      const q = { marketplaceIds: A.MARKETPLACE_BR, includedData: 'summaries', pageSize: 20 }; if (tok) q.pageToken = tok;
+      const d = await A.get('/listings/2021-08-01/items/' + encodeURIComponent(seller), q);
+      for (const it of d.items || []) { const a = it.summaries?.[0]?.asin; if (a) asin[z(it.sku)] = a; }
+      st.lidos = Object.keys(asin).length; tok = d.pagination?.nextToken; if (!tok) break; await new Promise(r => setTimeout(r, 250));
+    }
+    const lista = [...alvo].filter(s => asin[z(s)]); st.semAnuncio = [...alvo].filter(s => !asin[z(s)]);
+    const precoDe = s => { for (const T of F0.abas) if (T.tipo === 'amazon') { const L = T.linhas.find(x => z(x.sku) === z(s)); if (L?.preco > 0) return L.preco; } return 100; };
+    const res = {};
+    for (let i = 0; i < lista.length; i += 20) {
+      const lote = lista.slice(i, i + 20).map((s, j) => ({ asin: asin[z(s)], preco: Math.max(precoDe(s), 40), id: 'k' + (i + j) }));
+      let out = {}; for (let t = 0; t < 6; t++) { try { out = await A.tarifas(lote); break; } catch (e) { await new Promise(r => setTimeout(r, 3000 * (t + 1))); } }
+      lote.forEach((x, j) => { const o = out[x.id]; const fee = o?.det?.ReferralFee; if (fee > 0) res[z(lista[i + j])] = { com: Math.round(fee / x.preco * 10000) / 10000 }; });
+      await new Promise(r => setTimeout(r, 2100));
+    }
+    const F = fotografia(idx);
+    for (const T of F.abas) if (T.tipo === 'amazon') for (const L of T.linhas) { const r = res[z(L.sku)]; if (r) { L.p = { ...(L.p || {}), com: r.com, comMin: r.com >= 0.1 ? 2 : 1, comFonte: 'Amazon ' + new Date().toISOString().slice(0, 10) }; st.gravados++; } }
+    fs.writeFileSync(arq(idx), JSON.stringify(F)); delete _cache[idx];
+  })().catch(e => { st.erro = e.message; }).finally(() => { st.rodando = false; st.fim = new Date().toISOString(); });
   return st;
 }
 
@@ -651,6 +687,8 @@ function rotas(app) {
   });
   app.post('/precificacao/completar-pesos', (req, res) => { const idx = parseInt(req.query.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' }); res.json(completarPesos(idx)); });
   app.get('/precificacao/completar-pesos', (req, res) => res.json(_pesos[parseInt(req.query.emp)] || {}));
+  app.post('/precificacao/amazon-comissoes', (req, res) => { const idx = parseInt(req.query.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' }); res.json(amazonComissoes(idx)); });
+  app.get('/precificacao/amazon-comissoes', (req, res) => res.json(_amz[parseInt(req.query.emp)] || {}));
   app.get('/precificacao/edicoes', (req, res) => { try { res.json(JSON.parse(fs.readFileSync(ARQ_ED)).slice(-300).reverse()); } catch (e) { res.json([]); } });
 }
 module.exports = { rotas, importar, dados, lerAba, tipoAba, adicionar, alterarPreco, historicoSku, custoPainel };
