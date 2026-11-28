@@ -377,7 +377,7 @@ function render(){if(!D||D.erro)return;info();const a=D.abas[A],s=$('sit').value
  LV.map((l,j)=>'<tr'+(l.noSite===false?' style="background:#ffebee" title="Não encontrado no site ('+esc(a.aba)+')"':'')+'><td><span class="ed" style="color:#c62828" title="Excluir este item da aba" onclick="excluir(\\''+esc(l.sku)+'\\')">🗑</span></td><td class="l">'+esc(l.sku)+'<br><small>linha '+l.linha+(l.skuPlanilha?' · na planilha: '+esc(l.skuPlanilha):'')+'</small></td><td class="l">'+esc(l.nome)+(l.novo?' <small style="color:#2e7d32">· incluído no painel</small>':'')+'</td><td>'+l.qtd+'</td>'+(base?'':'<td>'+(pw(l)!=null?String(pw(l)).replace('.',',')+' kg':'—')+'<span class="ed" title="Alterar o peso (vale para todas as abas)" onclick="editPeso(\\''+esc(l.sku)+'\\','+(pw(l)??0)+')">✎</span></td>')+'<td>'+brl(l.custo)+'<span class="ed" title="Alterar o Custo do painel" onclick="editarPainel(\\''+esc(l.sku)+'\\','+(l.custo??0)+')">✎</span><br><small title="Lançado por '+esc(l.custoPor||'')+'">'+dd(l.custoEm)+'</small><span class="inf" title="Quem lançou e histórico do custo" onclick="hist(\\''+esc(l.sku)+'\\')">ⓘ</span>'+(l.situacao==='diferente'?'<br><span class="ed" style="margin:0" title="Usar o custo do ERP" onclick="igualar(\\''+esc(l.sku)+'\\','+l.custoErp+')">⇐ usar ERP</span>':'')+'</td>'+
  '<td>'+(l.custoErp!=null?brl(l.custoErp)+(l.fonteErp&&l.fonteErp!=='item'?'<br><small>'+esc(l.fonteErp)+'</small>':''):'<span class="sem">sem custo no '+D.erp+'</span>')+(!l.kit&&!l.variacoes?'<span class="ed" title="Alterar o custo no '+D.erp+'" onclick="editar(\\''+esc(l.sku)+'\\','+(l.custoErp??l.custo??0)+','+l.qtd+')">✎</span>':'')+'</td>'+
  '<td class="'+(l.situacao==='diferente'?'dif':'')+'">'+(l.dif==null?'—':(l.dif>0?'+':'')+brl(l.dif))+'</td>'+
- (base?'':'<td>'+inp(j,'preco',l.preco)+(l.semRegra?'<br><small class="sem">'+esc(l.semRegra)+'</small>':'')+((a.tipo==='ml'||a.tipo==='amazon')&&l.p&&l.p.com?'<br><small title="'+esc(l.p.comFonte||'comissão do item')+'">comissão '+(l.p.com*100).toFixed(1).replace('.',',')+'%</small>':'')+'</td><td id="m_'+j+'_preco">'+pc(l.margemPainel)+'</td><td>'+brl(l.precoMeta)+'</td><td>'+inp(j,'promo',l.promo)+'</td><td id="m_'+j+'_promo">'+pc(l.margemPromoPainel)+'</td><td>'+brl(l.precoMetaPromo)+'</td>')+'</tr>').join('')+'</table>';}
+ (base?'':'<td>'+inp(j,'preco',l.preco)+(l.semRegra?'<br><small class="sem">'+esc(l.semRegra)+'</small>':'')+(a.tipo==='tiktok'&&l.p&&l.p.afiliado?'<br><small>afiliado '+Math.round(l.p.afiliado*100)+'% na promoção</small>':'')+((a.tipo==='ml'||a.tipo==='amazon')&&l.p&&l.p.com?'<br><small title="'+esc(l.p.comFonte||'comissão do item')+'">comissão '+(l.p.com*100).toFixed(1).replace('.',',')+'%</small>':'')+'</td><td id="m_'+j+'_preco">'+pc(l.margemPainel)+'</td><td>'+brl(l.precoMeta)+'</td><td>'+inp(j,'promo',l.promo)+'</td><td id="m_'+j+'_promo">'+pc(l.margemPromoPainel)+'</td><td>'+brl(l.precoMetaPromo)+'</td>')+'</tr>').join('')+'</table>';}
 async function atualizarErp(){const b=$('aterp'),e=$('emp').value;b.disabled=true;b.textContent='Atualizando custos…';
  await fetch('/precificacao/atualizar-erp?emp='+e,{method:'POST'});
  let st;for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,3000));st=await fetch('/precificacao/atualizar-erp?emp='+e).then(r=>r.json());if(!st.rodando)break;}
@@ -567,6 +567,7 @@ async function adicionar(idx, b, quem) {
     if (!L) { L = nova(); A.linhas.push(L); }
     L.preco = r2(preco); L.promo = promo > 0 ? r2(promo) : null; if (peso) L.peso = peso;
     L.p = { ...(L.p || {}) }; const com = num(v?.com); if (A.tipo === 'ml' && com > 0) L.p.com = L.p.comPromo = com > 1 ? com / 100 : com;
+    if (A.tipo === 'tiktok') { const af = num(v?.afiliado); L.p.afiliado = af > 0 ? (af > 1 ? af / 100 : af) : (A.afiliado ?? 0.10); }
     const fr = num(v?.frete); if (fr > 0) L.p.frete = fr;
     L.lucro = L.lucroPromo = L.margem = L.margemPromo = null; feitas.push(aba);
   }
@@ -789,6 +790,18 @@ function exportarLegado() {
   return { fixo: Object.fromEntries(Object.entries(fixo).map(([k, v]) => [k, { amazon: Object.keys(v.amazon).length, shein: Object.keys(v.shein).length }])) };
 }
 
+/** Cria uma aba de canal na precificação (ex.: TikTok da Zagodini). afiliado = % fixo de afiliado da aba (TikTok) */
+function criarAba(idx, nome, tipo, opc = {}, quem) {
+  const F = fotografia(idx); if (!F) throw new Error('precificação ainda não carregada');
+  nome = String(nome || '').trim(); if (!nome) throw new Error('nome da aba');
+  if (!['ml', 'shopee', 'amazon', 'shein', 'tiktok'].includes(tipo)) throw new Error('tipo inválido');
+  if (F.abas.some(a => a.aba.toLowerCase() === nome.toLowerCase())) throw new Error('já existe a aba ' + nome);
+  const A = { aba: nome, abaPlanilha: null, tipo, colunas: { precos: ['Preço', 'Promoção'] }, linhas: [], criadaEm: new Date().toISOString(), criadaPor: quem };
+  if (tipo === 'tiktok') A.afiliado = num(opc.afiliado) > 0 ? (num(opc.afiliado) > 1 ? num(opc.afiliado) / 100 : num(opc.afiliado)) : 0.10;
+  F.abas.push(A); fs.writeFileSync(arq(idx), JSON.stringify(F)); delete _cache[idx];
+  return { aba: nome, tipo, afiliado: A.afiliado };
+}
+
 function historicoSku(idx, sku) {
   const z = v => K(v).replace(/^0+(?=.)/, ''), alvo = z(sku);
   let H = []; try { H = JSON.parse(fs.readFileSync(ARQ_ED)); } catch (e) {}
@@ -853,6 +866,10 @@ function rotas(app, deps = {}) {
   app.get('/precificacao/amazon-comissoes', (req, res) => res.json(_amz[parseInt(req.query.emp)] || {}));
   app.post('/precificacao/conferir', (req, res) => { const idx = parseInt(req.query.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' }); res.json(conferirSites(idx)); });
   app.get('/precificacao/conferir', (req, res) => res.json(_site[parseInt(req.query.emp)] || {}));
+  app.post('/precificacao/aba', require('express').json(), (req, res) => {
+    const idx = parseInt(req.body?.emp); if (!EMP[idx]) return res.status(400).json({ erro: 'empresa inválida' });
+    try { res.json({ ok: true, ...criarAba(idx, req.body.nome, req.body.tipo, req.body, req.usuario?.email || 'local') }); } catch (e) { res.status(400).json({ erro: e.message }); }
+  });
   app.get('/precificacao/edicoes', (req, res) => { try { res.json(JSON.parse(fs.readFileSync(ARQ_ED)).slice(-300).reverse()); } catch (e) { res.json([]); } });
 }
 module.exports = { rotas, importar, dados, lerAba, tipoAba, adicionar, alterarPreco, historicoSku, custoPainel, regraVenda, pesoSku, mlFreteEmp, exportarLegado, fotografia };
